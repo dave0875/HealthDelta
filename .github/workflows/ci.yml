@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-tests:
+    name: Linux (non-iOS tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run non-iOS tests (headless)
+        run: |
+          set -euo pipefail
+          python3 --version
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+  ios-xcode-tests:
+    name: macOS (Xcode simulator tests)
+    runs-on: [self-hosted, macOS, xcode]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+
+      - name: List available simulators
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+
+      - name: Ensure xcodegen is available
+        run: |
+          set -euo pipefail
+          if command -v xcodegen >/dev/null 2>&1; then
+            xcodegen --version
+            exit 0
+          fi
+
+          if command -v brew >/dev/null 2>&1; then
+            brew install xcodegen
+            xcodegen --version
+            exit 0
+          fi
+
+          echo "ERROR: xcodegen is required but was not found, and Homebrew is not available."
+          echo "See docs/runbook_xcode.md for runner setup."
+          exit 1
+
+      - name: Generate Xcode project (xcodegen)
+        run: |
+          set -euo pipefail
+          (cd ios/HealthDelta && xcodegen generate)
+
+      - name: Run xcodebuild tests (iPhone Simulator)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          DESTINATION="${DESTINATION:-platform=iOS Simulator,name=iPhone 15}"
+          RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-artifacts/HealthDelta.xcresult}"
+
+          xcodebuild test \
+            -project ios/HealthDelta/HealthDelta.xcodeproj \
+            -scheme HealthDelta \
+            -destination "$DESTINATION" \
+            -resultBundlePath "$RESULT_BUNDLE_PATH" \
+            | tee artifacts/xcodebuild.log
+
+      - name: Export JUnit (if xcpretty available)
+        run: |
+          set -euo pipefail
+          if command -v xcpretty >/dev/null 2>&1; then
+            cat artifacts/xcodebuild.log | xcpretty --report junit --output artifacts/junit.xml
+          else
+            echo "xcpretty not found; skipping JUnit export (see docs/runbook_xcode.md)."
+          fi
+
+      - name: Upload xcresult + logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcresult
+          path: |
+            artifacts/HealthDelta.xcresult
+            artifacts/xcodebuild.log
+            artifacts/junit.xml
+          if-no-files-found: error

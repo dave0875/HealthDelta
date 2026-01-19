@@ -52,3 +52,5 @@ Optional clarifications or constraints.
 7) GitHub interaction
 - Use `gh` CLI for issues/PRs. No direct REST API calls.
 
+## Runbooks
+- Xcode + self-hosted runner operations are documented in `docs/runbook_xcode.md` and must be followed for iOS work and CI reliability.

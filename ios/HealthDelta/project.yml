@@ -1,0 +1,29 @@
+name: HealthDelta
+
+options:
+  deploymentTarget:
+    iOS: "17.0"
+
+targets:
+  HealthDelta:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.healthdelta.app
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.0.1
+    scheme:
+      testTargets:
+        - HealthDeltaTests
+
+  HealthDeltaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: HealthDelta
+

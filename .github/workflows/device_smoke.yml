@@ -1,0 +1,75 @@
+name: Device Smoke (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      scheme:
+        description: Xcode scheme to build
+        required: true
+        default: HealthDelta
+      configuration:
+        description: Build configuration
+        required: true
+        default: Debug
+      destination:
+        description: Destination (generic device build by default)
+        required: true
+        default: generic/platform=iOS
+
+jobs:
+  device-smoke:
+    name: macOS (device smoke)
+    runs-on: [self-hosted, macOS, xcode]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+
+      - name: Ensure xcodegen is available
+        run: |
+          set -euo pipefail
+          if command -v xcodegen >/dev/null 2>&1; then
+            xcodegen --version
+            exit 0
+          fi
+
+          if command -v brew >/dev/null 2>&1; then
+            brew install xcodegen
+            xcodegen --version
+            exit 0
+          fi
+
+          echo "ERROR: xcodegen is required but was not found, and Homebrew is not available."
+          echo "See docs/runbook_xcode.md for runner setup."
+          exit 1
+
+      - name: Generate Xcode project (xcodegen)
+        run: |
+          set -euo pipefail
+          (cd ios/HealthDelta && xcodegen generate)
+
+      - name: Build (no install/signing assumptions)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          xcodebuild build \
+            -project ios/HealthDelta/HealthDelta.xcodeproj \
+            -scheme "${{ inputs.scheme }}" \
+            -configuration "${{ inputs.configuration }}" \
+            -destination "${{ inputs.destination }}" \
+            -resultBundlePath artifacts/device_smoke.xcresult \
+            | tee artifacts/device_smoke.log
+
+      - name: Upload build result
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-smoke-xcresult
+          path: |
+            artifacts/device_smoke.xcresult
+            artifacts/device_smoke.log
+          if-no-files-found: error
