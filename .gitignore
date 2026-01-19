@@ -1,0 +1,29 @@
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Node
+node_modules/
+
+# Xcode / SwiftPM
+DerivedData/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+.swiftpm/
+
+# Misc
+.idea/
+.vscode/
+
