@@ -27,3 +27,5 @@ DerivedData/
 .idea/
 .vscode/
 
+# Generated local data
+data/

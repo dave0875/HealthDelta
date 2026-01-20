@@ -54,6 +54,7 @@ Optional clarifications or constraints.
 
 ## Runbooks
 - Xcode + self-hosted runner operations are documented in `docs/runbook_xcode.md` and must be followed for iOS work and CI reliability.
+- Ingest staging operations are documented in `docs/runbook_ingest.md` and must be followed for bootstrap ingest work.
 
 ## Codex Governance (Binding Project Law)
 

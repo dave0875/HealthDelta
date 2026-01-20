@@ -1,0 +1,9 @@
+[project]
+name = "healthdelta"
+version = "0.0.0"
+description = "HealthDelta tooling"
+requires-python = ">=3.10"
+
+[project.scripts]
+healthdelta = "healthdelta.cli:main"
+
