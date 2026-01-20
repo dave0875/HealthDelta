@@ -3,7 +3,9 @@ name = "healthdelta"
 version = "0.0.0"
 description = "HealthDelta tooling"
 requires-python = ">=3.10"
+dependencies = [
+  "duckdb>=1.0.0,<2.0.0",
+]
 
 [project.scripts]
 healthdelta = "healthdelta.cli:main"
-

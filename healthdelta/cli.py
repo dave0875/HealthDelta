@@ -3,6 +3,7 @@ import argparse
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
+from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
 
@@ -44,6 +45,19 @@ def main(argv: list[str] | None = None) -> int:
     export_nd.add_argument("--out", required=True, help="Output directory for NDJSON streams")
     export_nd.add_argument("--mode", default="local", choices=["local", "share"], help="Export mode (default: local)")
 
+    duckdb_cmd = sub.add_parser("duckdb", help="DuckDB build + query commands for canonical NDJSON")
+    duckdb_sub = duckdb_cmd.add_subparsers(dest="duckdb_command", required=True)
+
+    duckdb_build = duckdb_sub.add_parser("build", help="Build a DuckDB database from NDJSON streams")
+    duckdb_build.add_argument("--input", required=True, help="Directory containing canonical NDJSON streams")
+    duckdb_build.add_argument("--db", required=True, help="Output DuckDB file path")
+    duckdb_build.add_argument("--replace", action="store_true", help="Replace existing DB file")
+
+    duckdb_query = duckdb_sub.add_parser("query", help="Run a SQL query against a DuckDB database")
+    duckdb_query.add_argument("--db", required=True, help="DuckDB file path")
+    duckdb_query.add_argument("--sql", required=True, help="SQL to execute")
+    duckdb_query.add_argument("--out", default=None, help="Optional output CSV path (default: stdout)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -69,6 +83,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export" and args.export_command == "ndjson":
         export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
+        return 0
+
+    if args.command == "duckdb" and args.duckdb_command == "build":
+        build_duckdb(input_dir=args.input, db_path=args.db, replace=bool(args.replace))
+        return 0
+
+    if args.command == "duckdb" and args.duckdb_command == "query":
+        query_duckdb(db_path=args.db, sql=args.sql, out_path=args.out)
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")

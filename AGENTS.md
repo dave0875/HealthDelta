@@ -59,6 +59,7 @@ Optional clarifications or constraints.
 - De-identification operations are documented in `docs/runbook_deid.md` and must be followed for share-safe dataset work.
 - Pipeline orchestration is documented in `docs/runbook_pipeline.md` and must be followed for orchestrated runs.
 - NDJSON export operations are documented in `docs/runbook_ndjson.md` and must be followed for canonical stream export work.
+- DuckDB loader/query operations are documented in `docs/runbook_duckdb.md` and must be followed for local analytics work.
 
 ## Codex Governance (Binding Project Law)
 

@@ -12,6 +12,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Python dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install duckdb
+          python3 -c 'import duckdb; print("duckdb_version=" + duckdb.__version__)'
+
       - name: Run non-iOS tests (headless)
         run: |
           set -euo pipefail
