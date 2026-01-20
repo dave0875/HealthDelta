@@ -1,6 +1,7 @@
 import argparse
 
 from healthdelta.ingest import ingest_to_staging
+from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
 
 
@@ -18,6 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     identity_build = identity_sub.add_parser("build", help="Build canonical people + aliases from a staging run")
     identity_build.add_argument("--input", required=True, help="Path to data/staging/<run_id>")
 
+    deid = sub.add_parser("deid", help="De-identify a staging run into a share-safe dataset")
+    deid.add_argument("--input", required=True, help="Path to data/staging/<run_id>")
+    deid.add_argument("--identity", required=True, help="Path to data/identity directory")
+    deid.add_argument("--out", required=True, help="Output directory (e.g., data/deid/<run_id>/)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -26,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "identity" and args.identity_command == "build":
         build_identity(staging_run_dir=args.input)
+        return 0
+
+    if args.command == "deid":
+        deidentify_run(staging_run_dir=args.input, identity_dir=args.identity, out_dir=args.out)
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")

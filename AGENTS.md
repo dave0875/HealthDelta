@@ -56,6 +56,7 @@ Optional clarifications or constraints.
 - Xcode + self-hosted runner operations are documented in `docs/runbook_xcode.md` and must be followed for iOS work and CI reliability.
 - Ingest staging operations are documented in `docs/runbook_ingest.md` and must be followed for bootstrap ingest work.
 - Identity bootstrap operations are documented in `docs/runbook_identity.md` and must be followed for canonical identity work.
+- De-identification operations are documented in `docs/runbook_deid.md` and must be followed for share-safe dataset work.
 
 ## Codex Governance (Binding Project Law)
 
