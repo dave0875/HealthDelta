@@ -65,22 +65,7 @@ jobs:
           mkdir -p artifacts
 
           if [ -z "${DESTINATION:-}" ]; then
-            DESTINATION="$(python3 - <<'PY'
-import json
-import subprocess
-
-raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"], text=True)
-data = json.loads(raw)
-devices = []
-for runtime, entries in (data.get("devices") or {}).items():
-    for entry in entries:
-        if entry.get("isAvailable") and "iPhone" in (entry.get("name") or "") and entry.get("udid"):
-            devices.append(entry["udid"])
-if not devices:
-    raise SystemExit("No available iPhone simulators found.")
-print(f"platform=iOS Simulator,id={devices[0]}")
-PY
-)"
+            DESTINATION="$(python3 -c 'import json,subprocess; data=json.loads(subprocess.check_output([\"xcrun\",\"simctl\",\"list\",\"devices\",\"available\",\"-j\"], text=True)); devices=[d[\"udid\"] for runtime in (data.get(\"devices\") or {}).values() for d in runtime if d.get(\"isAvailable\") and \"iPhone\" in (d.get(\"name\") or \"\") and d.get(\"udid\")];\nif not devices: raise SystemExit(\"No available iPhone simulators found.\");\nprint(f\"platform=iOS Simulator,id={devices[0]}\")')"
           fi
           RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-artifacts/HealthDelta.xcresult}"
 
