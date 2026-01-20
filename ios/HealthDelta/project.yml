@@ -15,6 +15,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.healthdelta.app
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.0.1
+        GENERATE_INFOPLIST_FILE: YES
     scheme:
       testTargets:
         - HealthDeltaTests
@@ -26,4 +27,6 @@ targets:
       - path: Tests
     dependencies:
       - target: HealthDelta
-
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES

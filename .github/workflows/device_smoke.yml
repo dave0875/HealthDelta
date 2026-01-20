@@ -57,6 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
+          set +e
           xcodebuild build \
             -project ios/HealthDelta/HealthDelta.xcodeproj \
             -scheme "${{ inputs.scheme }}" \
@@ -64,8 +65,13 @@ jobs:
             -destination "${{ inputs.destination }}" \
             -resultBundlePath artifacts/device_smoke.xcresult \
             | tee artifacts/device_smoke.log
+          xcodebuild_exit="${PIPESTATUS[0]}"
+          set -e
+
+          echo "XCODEBUILD_EXIT=$xcodebuild_exit" >> "$GITHUB_ENV"
 
       - name: Upload build result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: device-smoke-xcresult
@@ -73,3 +79,12 @@ jobs:
             artifacts/device_smoke.xcresult
             artifacts/device_smoke.log
           if-no-files-found: error
+
+      - name: Fail if xcodebuild failed
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${XCODEBUILD_EXIT:-0}" != "0" ]; then
+            echo "xcodebuild failed with exit code ${XCODEBUILD_EXIT}"
+            exit "${XCODEBUILD_EXIT}"
+          fi

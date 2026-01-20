@@ -69,23 +69,30 @@ jobs:
           fi
           RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-artifacts/HealthDelta.xcresult}"
 
+          set +e
           xcodebuild test \
             -project ios/HealthDelta/HealthDelta.xcodeproj \
             -scheme HealthDelta \
             -destination "$DESTINATION" \
             -resultBundlePath "$RESULT_BUNDLE_PATH" \
             | tee artifacts/xcodebuild.log
+          xcodebuild_exit="${PIPESTATUS[0]}"
+          set -e
+
+          echo "XCODEBUILD_EXIT=$xcodebuild_exit" >> "$GITHUB_ENV"
 
       - name: Export JUnit (if xcpretty available)
+        if: always()
         run: |
           set -euo pipefail
-          if command -v xcpretty >/dev/null 2>&1; then
+          if [ -f artifacts/xcodebuild.log ] && command -v xcpretty >/dev/null 2>&1; then
             cat artifacts/xcodebuild.log | xcpretty --report junit --output artifacts/junit.xml
           else
             echo "xcpretty not found; skipping JUnit export (see docs/runbook_xcode.md)."
           fi
 
       - name: Upload xcresult + logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-xcresult
@@ -94,3 +101,12 @@ jobs:
             artifacts/xcodebuild.log
             artifacts/junit.xml
           if-no-files-found: error
+
+      - name: Fail if xcodebuild failed
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${XCODEBUILD_EXIT:-0}" != "0" ]; then
+            echo "xcodebuild failed with exit code ${XCODEBUILD_EXIT}"
+            exit "${XCODEBUILD_EXIT}"
+          fi
