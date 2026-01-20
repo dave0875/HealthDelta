@@ -61,6 +61,7 @@ Trigger:
 
 Notes:
 - This workflow only builds by default; installing/running on a specific device requires signing and may require additional inputs (UDID/team provisioning). Capture future changes in an issue + ADR.
+- The default `destination` input is `auto`, which selects the first available iPhone simulator on the runner via `simctl`.
 
 ## Re-running workflows
 

@@ -12,9 +12,9 @@ on:
         required: true
         default: Debug
       destination:
-        description: Destination (use simulator by default; override for device/UDID as needed)
+        description: Destination (use `auto` to pick an available iPhone simulator; override for device/UDID as needed)
         required: true
-        default: platform=iOS Simulator,name=iPhone 15
+        default: auto
 
 jobs:
   device-smoke:
@@ -57,12 +57,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
+          DESTINATION="${{ inputs.destination }}"
+          if [ -z "$DESTINATION" ] || [ "$DESTINATION" = "auto" ]; then
+            DESTINATION="$(python3 -c 'import json,subprocess; data=json.loads(subprocess.check_output(["xcrun","simctl","list","devices","available","-j"], text=True)); devices=[d["udid"] for runtime in (data.get("devices") or {}).values() for d in runtime if d.get("isAvailable") and "iPhone" in (d.get("name") or "") and d.get("udid")]; assert devices, "No available iPhone simulators found."; print(f"platform=iOS Simulator,id={devices[0]}")')"
+          fi
           set +e
           xcodebuild build \
             -project ios/HealthDelta/HealthDelta.xcodeproj \
             -scheme "${{ inputs.scheme }}" \
             -configuration "${{ inputs.configuration }}" \
-            -destination "${{ inputs.destination }}" \
+            -destination "$DESTINATION" \
             -resultBundlePath artifacts/device_smoke.xcresult \
             | tee artifacts/device_smoke.log
           xcodebuild_exit="${PIPESTATUS[0]}"
