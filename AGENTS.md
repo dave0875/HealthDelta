@@ -54,3 +54,19 @@ Optional clarifications or constraints.
 
 ## Runbooks
 - Xcode + self-hosted runner operations are documented in `docs/runbook_xcode.md` and must be followed for iOS work and CI reliability.
+
+## Codex Governance (Binding Project Law)
+
+### Codex Prompt Discipline
+- Each GitHub Issue `N` has exactly one immutable prompt: `.codex/prompts/issue_N.md`.
+- Once work begins on Issue `N`, `.codex/prompts/issue_N.md` is read-only and must never be edited, regenerated, or replaced.
+- Post-hoc clarifications or execution constraints are recorded only as: `.codex/prompts/issue_N_followup_X.md`, where `X` is in `[1–9]`.
+- Follow-up prompts are append-only and must state explicitly that they do NOT change issue scope or acceptance criteria.
+- Follow-up `9` is a forcing function: open a new GitHub issue instead of creating `issue_N_followup_10.md`.
+- Numeric forks such as `issue_N.1`, `issue_N_part2`, `issue_N_part_2`, etc. are prohibited.
+
+### Execution Discipline
+- No code, workflow, or documentation changes without a GitHub Issue capturing *why*.
+- All CI work must produce observable, persisted artifacts (logs + uploaded artifacts/test results).
+- Self-hosted runners are authoritative; cloud runners must not substitute silently.
+- Ambiguity pauses execution until clarified before proceeding.
