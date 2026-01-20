@@ -7,6 +7,7 @@ This project uses a MacBook Pro as the authoritative environment for all Xcode-r
 Required runner labels:
 - `self-hosted`
 - `macOS`
+- `arm64`
 - `xcode`
 
 Runner setup overview:

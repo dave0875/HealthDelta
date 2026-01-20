@@ -12,14 +12,14 @@ on:
         required: true
         default: Debug
       destination:
-        description: Destination (generic device build by default)
+        description: Destination (use simulator by default; override for device/UDID as needed)
         required: true
-        default: generic/platform=iOS
+        default: platform=iOS Simulator,name=iPhone 15
 
 jobs:
   device-smoke:
     name: macOS (device smoke)
-    runs-on: [self-hosted, macOS, xcode]
+    runs-on: [self-hosted, macOS, arm64, xcode]
     timeout-minutes: 60
     steps:
       - name: Checkout

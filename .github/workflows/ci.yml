@@ -20,7 +20,7 @@ jobs:
 
   ios-xcode-tests:
     name: macOS (Xcode simulator tests)
-    runs-on: [self-hosted, macOS, xcode]
+    runs-on: [self-hosted, macOS, arm64, xcode]
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -64,7 +64,24 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
 
-          DESTINATION="${DESTINATION:-platform=iOS Simulator,name=iPhone 15}"
+          if [ -z "${DESTINATION:-}" ]; then
+            DESTINATION="$(python3 - <<'PY'
+import json
+import subprocess
+
+raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"], text=True)
+data = json.loads(raw)
+devices = []
+for runtime, entries in (data.get("devices") or {}).items():
+    for entry in entries:
+        if entry.get("isAvailable") and "iPhone" in (entry.get("name") or "") and entry.get("udid"):
+            devices.append(entry["udid"])
+if not devices:
+    raise SystemExit("No available iPhone simulators found.")
+print(f"platform=iOS Simulator,id={devices[0]}")
+PY
+)"
+          fi
           RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-artifacts/HealthDelta.xcresult}"
 
           xcodebuild test \
