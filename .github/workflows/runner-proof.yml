@@ -1,0 +1,9 @@
+name: runner-proof
+on: workflow_dispatch
+jobs:
+  proof:
+    runs-on: [self-hosted, macOS, arm64, xcode]
+    steps:
+      - run: sw_vers
+      - run: uname -m
+      - run: xcodebuild -version
