@@ -1,3 +1,5 @@
 timestamp_start,timestamp_end,github_issue,minutes_spent,llm_model,token_estimate,work_summary
 2026-01-19T12:01:00-05:00,2026-01-19T13:10:00-05:00,https://github.com/dave0875/HealthDelta/issues/1,69,"gpt-5.2 (Codex CLI); ollama/llama3.1:8b",4000,"Bootstrap repo skeleton, templates, .codex audit trail, and issue #1 review"
 2026-01-19T13:10:00-05:00,2026-01-19T13:30:00-05:00,https://github.com/dave0875/HealthDelta/issues/2,20,"gpt-5.2 (Codex CLI); ollama/llama3.1:8b",3500,"Create CI issue/ADR/runbook; add GitHub Actions workflows with Linux tests + self-hosted Xcode job; trigger CI and capture run URL"
+2026-01-19T23:00:00-05:00,2026-01-20T00:06:00-05:00,https://github.com/dave0875/HealthDelta/issues/2,55,"gpt-5.2 (Codex CLI); ollama/llama3.1:8b",6500,"Fix CI workflows; enforce arm64 runner labels; ensure xcresult uploads even on failure; verify CI green + artifacts; prove runner via workflow_dispatch"
+2026-01-19T23:00:00-05:00,2026-01-20T00:06:00-05:00,https://github.com/dave0875/HealthDelta/issues/3,11,"gpt-5.2 (Codex CLI); ollama/llama3.1:8b",1500,"Codex governance lock-in: document immutable prompt/follow-up rules and execution discipline in AGENTS.md"
