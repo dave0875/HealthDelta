@@ -3,6 +3,7 @@ import argparse
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
+from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
 
 
@@ -35,6 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_run.add_argument("--run-id", default=None, help="Expected run_id (must match computed run_id)")
     pipeline_run.add_argument("--skip-deid", action="store_true", help="Skip deid even in share mode (debugging)")
 
+    export = sub.add_parser("export", help="Export canonical, share-safe datasets")
+    export_sub = export.add_subparsers(dest="export_command", required=True)
+
+    export_nd = export_sub.add_parser("ndjson", help="Export canonical NDJSON streams")
+    export_nd.add_argument("--input", required=True, help="Path to pipeline run dir (staging/<run_id> or deid/<run_id>)")
+    export_nd.add_argument("--out", required=True, help="Output directory for NDJSON streams")
+    export_nd.add_argument("--mode", default="local", choices=["local", "share"], help="Export mode (default: local)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -57,5 +66,9 @@ def main(argv: list[str] | None = None) -> int:
             expected_run_id=args.run_id,
             skip_deid=args.skip_deid,
         )
+
+    if args.command == "export" and args.export_command == "ndjson":
+        export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
+        return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")
