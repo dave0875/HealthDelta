@@ -134,7 +134,7 @@ def _walk_fhir_resources(obj: object) -> list[dict]:
     return resources
 
 
-def build_identity(*, staging_run_dir: str) -> None:
+def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -> None:
     run_dir = Path(staging_run_dir)
     layout_path = run_dir / "layout.json"
     if not layout_path.exists():
@@ -149,7 +149,7 @@ def build_identity(*, staging_run_dir: str) -> None:
     if not isinstance(clinical_paths, list):
         raise ValueError("layout.json clinical_json must be a list")
 
-    identity_dir = Path("data/identity")
+    identity_dir = Path(output_dir)
     people_path = identity_dir / "people.json"
     aliases_path = identity_dir / "aliases.json"
 
@@ -255,4 +255,3 @@ def build_identity(*, staging_run_dir: str) -> None:
 
     _write_json(people_path, people_out)
     _write_json(aliases_path, aliases_out)
-

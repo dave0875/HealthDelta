@@ -3,6 +3,7 @@ import argparse
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
+from healthdelta.pipeline import run_pipeline
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +25,16 @@ def main(argv: list[str] | None = None) -> int:
     deid.add_argument("--identity", required=True, help="Path to data/identity directory")
     deid.add_argument("--out", required=True, help="Output directory (e.g., data/deid/<run_id>/)")
 
+    pipeline = sub.add_parser("pipeline", help="Orchestrate ingest -> identity -> deid")
+    pipeline_sub = pipeline.add_subparsers(dest="pipeline_command", required=True)
+
+    pipeline_run = pipeline_sub.add_parser("run", help="Run the HealthDelta pipeline")
+    pipeline_run.add_argument("--input", required=True, help="Path to export.zip or unpacked export directory")
+    pipeline_run.add_argument("--out", default="data", help="Base output directory (default: data)")
+    pipeline_run.add_argument("--mode", default="local", choices=["local", "share"], help="Run mode (default: local)")
+    pipeline_run.add_argument("--run-id", default=None, help="Expected run_id (must match computed run_id)")
+    pipeline_run.add_argument("--skip-deid", action="store_true", help="Skip deid even in share mode (debugging)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -37,5 +48,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "deid":
         deidentify_run(staging_run_dir=args.input, identity_dir=args.identity, out_dir=args.out)
         return 0
+
+    if args.command == "pipeline" and args.pipeline_command == "run":
+        return run_pipeline(
+            input_path=args.input,
+            base_dir=args.out,
+            mode=args.mode,
+            expected_run_id=args.run_id,
+            skip_deid=args.skip_deid,
+        )
 
     raise AssertionError(f"Unhandled command: {args.command}")
