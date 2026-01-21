@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "profile_export"
+FIXTURE_DIR_WRAPPED = Path(__file__).parent / "fixtures" / "profile_export_wrapped"
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -110,7 +111,40 @@ class TestExportProfile(unittest.TestCase):
             self.assertEqual(cda_map.get("ClinicalDocument"), 1)
             self.assertEqual(cda_map.get("observation"), 2)
 
+    def test_export_profile_supports_wrapped_apple_health_export_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "out"
+
+            cmd = [
+                sys.executable,
+                "-m",
+                "healthdelta",
+                "export",
+                "profile",
+                "--input",
+                str(FIXTURE_DIR_WRAPPED),
+                "--out",
+                str(out),
+                "--sample-json",
+                "10",
+                "--top-files",
+                "10",
+            ]
+            r1 = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(r1.returncode, 0, msg=f"stdout={r1.stdout}\nstderr={r1.stderr}")
+
+            prof = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            self.assertEqual(prof["summary"]["export_root_rel"], "apple_health_export")
+
+            # Ensure unrelated outer file is not included in file list outputs.
+            top_rows = _read_csv(out / "files_top.csv")
+            paths = [r["path"] for r in top_rows]
+            self.assertNotIn("README.txt", paths)
+
+            combined = b"".join(p.read_bytes() for p in out.iterdir() if p.is_file()).decode("utf-8", errors="replace")
+            for banned in ["John Doe", "1980-01-02", "19800102"]:
+                self.assertNotIn(banned, combined)
+
 
 if __name__ == "__main__":
     unittest.main()
-

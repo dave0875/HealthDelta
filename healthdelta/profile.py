@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from healthdelta.export_layout import resolve_export_layout
+
 
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,19 +223,22 @@ def _stable_profile_id(files: list[FileInfo]) -> str:
 
 
 def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200, top_files: int = 20) -> None:
-    root = Path(input_dir)
-    if not root.is_dir():
+    input_root = Path(input_dir)
+    if not input_root.is_dir():
         raise ValueError("--input must be an unpacked export directory")
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    files = _walk_files(root)
+    layout = resolve_export_layout(input_root)
+    export_root = input_root if layout.export_root_rel == "." else (input_root / layout.export_root_rel)
+
+    files = _walk_files(export_root)
     total_bytes = sum(f.size_bytes for f in files)
 
-    export_xml = root / "export.xml"
-    export_cda = root / "export_cda.xml"
-    clinical_dir = root / "clinical-records"
+    export_xml = export_root / layout.export_xml_rel
+    export_cda = export_root / layout.export_cda_rel if isinstance(layout.export_cda_rel, str) else export_root / "export_cda.xml"
+    clinical_dir = export_root / layout.clinical_dir_rel if isinstance(layout.clinical_dir_rel, str) else export_root / "clinical-records"
 
     hk_counts = _count_healthkit_record_types(export_xml) if export_xml.exists() else []
     fhir_counts, fhir_meta = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
@@ -248,6 +253,7 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         "profile_id": profile_id,
         "input": {"path_redacted": True, "kind": "export_dir"},
         "summary": {
+            "export_root_rel": layout.export_root_rel,
             "file_count": len(files),
             "total_bytes": total_bytes,
             "has_export_xml": export_xml.exists(),
@@ -340,4 +346,3 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
     md_lines.append("- Only schema-level strings (HK `type`, FHIR `resourceType`, CDA tag names) and aggregate counts are emitted.")
 
     _write_text_atomic(out / "profile.md", "\n".join(md_lines) + "\n")
-
