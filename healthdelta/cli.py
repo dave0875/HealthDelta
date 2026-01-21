@@ -9,6 +9,7 @@ from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
 from healthdelta.operator import run_all as run_all_operator
+from healthdelta.note import build_doctor_note
 from healthdelta.state import register_existing_run_dir
 
 
@@ -92,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     report_show = report_sub.add_parser("show", help="Print a short deterministic report summary to stdout")
     report_show.add_argument("--db", required=True, help="DuckDB file path")
 
+    note = sub.add_parser("note", help="Share-safe one-screen doctor note summaries from DuckDB")
+    note_sub = note.add_subparsers(dest="note_command", required=True)
+
+    note_build = note_sub.add_parser("build", help="Build a deterministic, share-safe doctor note summary")
+    note_build.add_argument("--db", required=True, help="DuckDB file path")
+    note_build.add_argument("--out", required=True, help="Output directory for doctor note artifacts")
+    note_build.add_argument("--mode", default="share", choices=["local", "share"], help="Note mode (default: share)")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -137,6 +146,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "report" and args.report_command == "show":
         show_report(db_path=args.db)
+        return 0
+
+    if args.command == "note" and args.note_command == "build":
+        build_doctor_note(db_path=args.db, out_dir=args.out, mode=args.mode)
         return 0
 
     if args.command == "run" and args.run_command == "register":

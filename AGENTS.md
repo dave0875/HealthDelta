@@ -63,6 +63,7 @@ Optional clarifications or constraints.
 - Reporting operations are documented in `docs/runbook_reports.md` and must be followed for share-safe summary artifacts.
 - Incremental run registry operations are documented in `docs/runbook_incremental.md` and must be followed for stateful runs.
 - Operator end-to-end command usage is documented in `docs/runbook_operator.md` and is the preferred entrypoint for operators.
+- Doctor’s note summary output is documented in `docs/runbook_note.md` and must be followed for share-safe copy/paste summaries.
 
 ## Codex Governance (Binding Project Law)
 
