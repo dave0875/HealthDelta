@@ -5,7 +5,6 @@ import hashlib
 import json
 import platform
 import sys
-import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -63,35 +62,6 @@ def _redacted_input_summary(input_path: Path) -> dict:
         summary["sha256"] = _sha256_file(input_path)
         summary["size_bytes"] = input_path.stat().st_size
     return summary
-
-
-def _stage_export_cda_if_present(input_path: Path, run_dir: Path) -> dict | None:
-    target_rel = Path("source") / "unpacked" / "export_cda.xml"
-    target = run_dir / target_rel
-
-    if input_path.is_dir():
-        candidates = [
-            input_path / "export_cda.xml",
-            input_path / "apple_health_export" / "export_cda.xml",
-        ]
-        src = next((p for p in candidates if p.exists()), None)
-        if src is None:
-            return None
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(src.read_bytes())
-        return {"staged": True, "path": target_rel.as_posix(), "sha256": _sha256_file(target), "size_bytes": target.stat().st_size}
-
-    if input_path.is_file() and zipfile.is_zipfile(input_path):
-        with zipfile.ZipFile(input_path) as zf:
-            members = sorted([m for m in zf.namelist() if not m.endswith("/") and m.lower().endswith("export_cda.xml")])
-            if not members:
-                return None
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(members[0]) as src:
-                target.write_bytes(src.read())
-        return {"staged": True, "path": target_rel.as_posix(), "sha256": _sha256_file(target), "size_bytes": target.stat().st_size}
-
-    return None
 
 
 def run_pipeline(
@@ -157,8 +127,6 @@ def run_pipeline(
     ingest_layout_path = ingest_run_dir / "layout.json"
     ingest_manifest_sha256 = _sha256_file(ingest_manifest_path) if ingest_manifest_path.exists() else None
 
-    staged_cda = _stage_export_cda_if_present(input_p, ingest_run_dir)
-
     build_identity(staging_run_dir=str(ingest_run_dir), output_dir=str(identity_dir))
 
     deid_executed = False
@@ -222,9 +190,6 @@ def run_pipeline(
             report["counts"] = {"ingest": m["counts"]}
         if isinstance(m, dict) and isinstance(m.get("files"), list):
             report["counts"]["staged_file_count"] = len(m["files"])
-
-    if staged_cda is not None:
-        report["counts"]["staged_export_cda"] = staged_cda
 
     _write_json(run_report_path, report)
 

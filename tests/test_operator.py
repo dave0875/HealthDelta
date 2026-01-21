@@ -158,6 +158,14 @@ class TestOperatorAll(unittest.TestCase):
             for p in ndjson_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
 
+            # CDA should propagate through ingest -> deid -> ndjson in share mode.
+            deid_cda = expected["deid"] / "source" / "unpacked" / "export_cda.xml"
+            self.assertTrue(deid_cda.exists(), msg=f"missing {deid_cda}")
+
+            obs_lines = (expected["ndjson"] / "observations.ndjson").read_text(encoding="utf-8").splitlines()
+            obs = [json.loads(line) for line in obs_lines if line.strip()]
+            self.assertTrue(any(o.get("source") == "cda" for o in obs), msg="expected at least one CDA-derived observation")
+
             reports_files = [
                 expected["reports"] / "summary.json",
                 expected["reports"] / "summary.md",

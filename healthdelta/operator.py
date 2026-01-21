@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 
 from healthdelta.deid import deidentify_run
@@ -20,35 +19,6 @@ from healthdelta.state import (
     update_run_artifacts,
     write_last_run_id,
 )
-
-
-def _stage_export_cda_if_present(input_path: Path, staging_dir: Path) -> bool:
-    target_rel = Path("source") / "unpacked" / "export_cda.xml"
-    target = staging_dir / target_rel
-
-    if input_path.is_dir():
-        candidates = [
-            input_path / "export_cda.xml",
-            input_path / "apple_health_export" / "export_cda.xml",
-        ]
-        src = next((p for p in candidates if p.exists()), None)
-        if src is None:
-            return False
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(src.read_bytes())
-        return True
-
-    if input_path.is_file() and zipfile.is_zipfile(input_path):
-        with zipfile.ZipFile(input_path) as zf:
-            members = sorted([m for m in zf.namelist() if not m.endswith("/") and m.lower().endswith("export_cda.xml")])
-            if not members:
-                return False
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(members[0]) as src:
-                target.write_bytes(src.read())
-        return True
-
-    return False
 
 
 def _artifact_paths(*, base_out: Path, run_id: str, include_deid: bool) -> dict[str, str | None]:
@@ -154,8 +124,6 @@ def run_all(
     if staging_dir.exists():
         raise FileExistsError(f"staging dir already exists: {staging_dir}")
     staged_tmp.replace(staging_dir)
-
-    _stage_export_cda_if_present(input_p, staging_dir)
 
     build_identity(staging_run_dir=str(staging_dir), output_dir=str(identity_dir))
 

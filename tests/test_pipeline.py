@@ -90,6 +90,8 @@ class TestPipeline(unittest.TestCase):
             report = json.loads((run_dir / "run_report.json").read_text(encoding="utf-8"))
             self.assertEqual(report["mode"], "share")
             self.assertTrue(report["stages"]["deid"]["executed"])
+            # Pipeline should rely on ingest staging/layout and not re-stage export_cda.xml itself.
+            self.assertNotIn("staged_export_cda", report.get("counts", {}))
 
             deid_dir = base_dir / "deid" / run_dir.name
             self.assertTrue((deid_dir / "mapping.json").exists())
@@ -137,4 +139,3 @@ class TestPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
