@@ -70,6 +70,9 @@ Optional clarifications or constraints.
 ## ADRs
 - Doctor’s Note architecture (reusable component + operator integration): `docs/adr/ADR_3_doctors_note_architecture.md`
 
+## Project Plan
+- Living plan/backlog: `docs/plan.md` (share-safe; links to the prioritized next GitHub issues)
+
 ## Codex Governance (Binding Project Law)
 
 ### Codex Prompt Discipline
