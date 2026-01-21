@@ -29,5 +29,4 @@ Review
 - Wrote AI-on-AI review notes: `docs/reviews/2026-01-21_10.md`
 
 CI evidence
-- CI run (green): TBD (populate after push + CI completion)
-
+- CI run (green): https://github.com/dave0875/HealthDelta/actions/runs/21192288194
