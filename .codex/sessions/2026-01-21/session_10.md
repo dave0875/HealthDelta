@@ -27,5 +27,5 @@ Review
 - Wrote AI-on-AI review notes: `docs/reviews/2026-01-21_12.md`
 
 CI evidence
-- Pending: verify CI is green for the Issue #12 commit (Linux tests + macOS Xcode job with `.xcresult` artifact) and post the run URL on Issue #12 before closing.
-
+- CI run (green): https://github.com/dave0875/HealthDelta/actions/runs/21193460275
+- macOS artifact: `ios-xcresult`
