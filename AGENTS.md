@@ -45,6 +45,7 @@ Optional clarifications or constraints.
 - Record each session in `.codex/sessions/YYYY-MM-DD/session_<n>.md`.
 - Record architectural decisions as ADRs in `.codex/decisions/`.
 - `.codex/` must never contain secrets.
+- Additional architecture ADRs may be recorded under `docs/adr/` when explicitly required by an issue; these ADRs must be referenced from this file.
 
 6) TIME.csv is mandatory
 - Every work session appends a row referencing a GitHub issue.
@@ -64,6 +65,9 @@ Optional clarifications or constraints.
 - Incremental run registry operations are documented in `docs/runbook_incremental.md` and must be followed for stateful runs.
 - Operator end-to-end command usage is documented in `docs/runbook_operator.md` and is the preferred entrypoint for operators.
 - Doctor’s note summary output is documented in `docs/runbook_note.md` and must be followed for share-safe copy/paste summaries.
+
+## ADRs
+- Doctor’s Note architecture (reusable component + operator integration): `docs/adr/ADR_3_doctors_note_architecture.md`
 
 ## Codex Governance (Binding Project Law)
 

@@ -1,6 +1,6 @@
 # Runbook: Operator Command (`healthdelta run all`)
 
-This runbook describes the preferred one-command “operator path” for HealthDelta: ingest + identity + de-id (optional) + NDJSON + DuckDB + reports.
+This runbook describes the preferred one-command “operator path” for HealthDelta: ingest + identity + de-id (optional) + NDJSON + DuckDB + reports + Doctor’s Note.
 
 ## Command
 
@@ -17,6 +17,7 @@ Defaults:
 Notes:
 - Runs are local-only: no network access, no uploads.
 - `share` mode is the default and is the recommended operator workflow.
+- Doctor’s Note is generated automatically by default; use `--skip-note` to disable.
 
 ## Output layout
 
@@ -30,6 +31,7 @@ For a created run, outputs are written under:
   ndjson/
   duckdb/run.duckdb
   reports/
+  note/
 <base_out>/state/
   runs.json
   LAST_RUN
@@ -41,6 +43,7 @@ In `--mode share`:
 - NDJSON is exported from `<base_out>/<run_id>/deid` (not raw staging).
 - DuckDB is built only from canonical NDJSON outputs.
 - Reports are built only from DuckDB and contain no names/DOB/free-text patient identifiers.
+- Doctor’s Note is generated from DuckDB and is share-safe by design; see `docs/runbook_note.md`.
 
 Reminder: `<base_out>/<run_id>/staging` is not share-safe by definition and must not be shared.
 
@@ -73,4 +76,3 @@ Force local mode (not share-safe):
 ```bash
 healthdelta run all --input /path/to/apple_health_export_dir --out data --mode local
 ```
-

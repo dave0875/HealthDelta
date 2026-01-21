@@ -137,6 +137,9 @@ class TestOperatorAll(unittest.TestCase):
                 "ndjson": run_root / "ndjson",
                 "duckdb": run_root / "duckdb" / "run.duckdb",
                 "reports": run_root / "reports",
+                "note": run_root / "note",
+                "note_txt": run_root / "note" / "doctor_note.txt",
+                "note_md": run_root / "note" / "doctor_note.md",
             }
             self.assertTrue(expected["staging"].is_dir())
             self.assertTrue(expected["identity"].is_dir())
@@ -144,6 +147,9 @@ class TestOperatorAll(unittest.TestCase):
             self.assertTrue(expected["ndjson"].is_dir())
             self.assertTrue(expected["duckdb"].is_file())
             self.assertTrue(expected["reports"].is_dir())
+            self.assertTrue(expected["note"].is_dir())
+            self.assertTrue(expected["note_txt"].is_file())
+            self.assertTrue(expected["note_md"].is_file())
 
             ndjson_files = [
                 expected["ndjson"] / "observations.ndjson",
@@ -162,19 +168,34 @@ class TestOperatorAll(unittest.TestCase):
             for p in reports_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
 
+            note_files = [expected["note_txt"], expected["note_md"]]
+            for p in note_files:
+                self.assertTrue(p.exists(), msg=f"missing {p}")
+                self.assertTrue(p.read_bytes().endswith(b"\n"), msg=f"not newline-terminated: {p}")
+
             # Save bytes for no-op verification.
             runs_bytes_1 = (base_out / "state" / "runs.json").read_bytes()
             last_1 = (base_out / "state" / "LAST_RUN").read_text(encoding="utf-8").strip()
             self.assertEqual(last_1, run_id)
             summary_json_1 = (expected["reports"] / "summary.json").read_bytes()
             summary_md_1 = (expected["reports"] / "summary.md").read_bytes()
+            note_txt_1 = expected["note_txt"].read_bytes()
+            note_md_1 = expected["note_md"].read_bytes()
 
             # Share-safe: outputs must not contain synthetic name or DOB tokens.
             combined = ""
-            for p in [*ndjson_files, *reports_files, base_out / "state" / "runs.json"]:
+            for p in [*ndjson_files, *reports_files, *note_files, base_out / "state" / "runs.json"]:
                 combined += p.read_text(encoding="utf-8", errors="replace")
             for banned in ["John Doe", "Doe, John", "1980-01-02", "19800102", "John Doe export"]:
                 self.assertNotIn(banned, combined)
+
+            # Registry pointers include note paths.
+            registry = json.loads(runs_bytes_1.decode("utf-8"))
+            entry = registry.get("runs", {}).get(run_id, {})
+            artifacts = entry.get("artifacts", {}) if isinstance(entry, dict) else {}
+            self.assertEqual(artifacts.get("note_dir"), f"{run_id}/note")
+            self.assertEqual(artifacts.get("doctor_note_txt"), f"{run_id}/note/doctor_note.txt")
+            self.assertEqual(artifacts.get("doctor_note_md"), f"{run_id}/note/doctor_note.md")
 
             # Second run: no-op, no new run directory, no file changes.
             run2 = subprocess.run(
@@ -194,8 +215,9 @@ class TestOperatorAll(unittest.TestCase):
             self.assertEqual((base_out / "state" / "LAST_RUN").read_text(encoding="utf-8").strip(), last_1)
             self.assertEqual((expected["reports"] / "summary.json").read_bytes(), summary_json_1)
             self.assertEqual((expected["reports"] / "summary.md").read_bytes(), summary_md_1)
+            self.assertEqual(expected["note_txt"].read_bytes(), note_txt_1)
+            self.assertEqual(expected["note_md"].read_bytes(), note_md_1)
 
 
 if __name__ == "__main__":
     unittest.main()
-

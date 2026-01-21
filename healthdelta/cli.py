@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     run_all.add_argument("--since", default="last", help="Parent run selector: 'last' (default) or an explicit run_id")
     run_all.add_argument("--mode", default="share", choices=["local", "share"], help="Run mode (default: share)")
     run_all.add_argument("--note", default=None, help="Optional run note (stored in run registry)")
+    run_all.add_argument("--skip-note", action="store_true", help="Skip doctor note generation")
 
     export = sub.add_parser("export", help="Export canonical, share-safe datasets")
     export_sub = export.add_subparsers(dest="export_command", required=True)
@@ -164,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             since=args.since,
             mode=args.mode,
             note=args.note,
+            skip_note=bool(args.skip_note),
         )
 
     raise AssertionError(f"Unhandled command: {args.command}")
