@@ -6,6 +6,7 @@ from healthdelta.identity import build_identity
 from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
+from healthdelta.reporting import build_report, show_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +59,17 @@ def main(argv: list[str] | None = None) -> int:
     duckdb_query.add_argument("--sql", required=True, help="SQL to execute")
     duckdb_query.add_argument("--out", default=None, help="Optional output CSV path (default: stdout)")
 
+    report = sub.add_parser("report", help="Deterministic share-safe reports from DuckDB")
+    report_sub = report.add_subparsers(dest="report_command", required=True)
+
+    report_build = report_sub.add_parser("build", help="Generate share-safe report artifacts from a DuckDB database")
+    report_build.add_argument("--db", required=True, help="DuckDB file path")
+    report_build.add_argument("--out", required=True, help="Output directory for report artifacts")
+    report_build.add_argument("--mode", default="local", choices=["local", "share"], help="Report mode (default: local)")
+
+    report_show = report_sub.add_parser("show", help="Print a short deterministic report summary to stdout")
+    report_show.add_argument("--db", required=True, help="DuckDB file path")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -91,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "duckdb" and args.duckdb_command == "query":
         query_duckdb(db_path=args.db, sql=args.sql, out_path=args.out)
+        return 0
+
+    if args.command == "report" and args.report_command == "build":
+        build_report(db_path=args.db, out_dir=args.out, mode=args.mode)
+        return 0
+
+    if args.command == "report" and args.report_command == "show":
+        show_report(db_path=args.db)
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")

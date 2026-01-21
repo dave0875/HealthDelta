@@ -60,6 +60,7 @@ Optional clarifications or constraints.
 - Pipeline orchestration is documented in `docs/runbook_pipeline.md` and must be followed for orchestrated runs.
 - NDJSON export operations are documented in `docs/runbook_ndjson.md` and must be followed for canonical stream export work.
 - DuckDB loader/query operations are documented in `docs/runbook_duckdb.md` and must be followed for local analytics work.
+- Reporting operations are documented in `docs/runbook_reports.md` and must be followed for share-safe summary artifacts.
 
 ## Codex Governance (Binding Project Law)
 
