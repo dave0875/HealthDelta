@@ -30,5 +30,4 @@ Review
 - Wrote AI-on-AI review notes: `docs/reviews/2026-01-21_21.md`
 
 CI evidence
-- Pending: push Issue #21 changes and record the green CI run URL (Linux + macOS with `ios-xcresult` artifact) before closing.
-
+- GitHub Actions run: https://github.com/dave0875/HealthDelta/actions/runs/21213394118 (Linux tests + macOS Xcode job); artifact: `ios-xcresult`.
