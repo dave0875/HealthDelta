@@ -10,6 +10,7 @@ from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
 from healthdelta.operator import run_all as run_all_operator
 from healthdelta.note import build_doctor_note
+from healthdelta.profile import build_export_profile
 from healthdelta.state import register_existing_run_dir
 
 
@@ -69,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     export_nd.add_argument("--input", required=True, help="Path to pipeline run dir (staging/<run_id> or deid/<run_id>)")
     export_nd.add_argument("--out", required=True, help="Output directory for NDJSON streams")
     export_nd.add_argument("--mode", default="local", choices=["local", "share"], help="Export mode (default: local)")
+
+    export_profile = export_sub.add_parser("profile", help="Profile an unpacked Apple Health export directory (share-safe)")
+    export_profile.add_argument("--input", required=True, help="Path to an unpacked export directory")
+    export_profile.add_argument("--out", required=True, help="Output directory for profile artifacts")
+    export_profile.add_argument("--sample-json", type=int, default=200, help="Deterministic sample size for clinical JSON (0=all)")
+    export_profile.add_argument("--top-files", type=int, default=20, help="Number of largest files to list (default: 20)")
 
     duckdb_cmd = sub.add_parser("duckdb", help="DuckDB build + query commands for canonical NDJSON")
     duckdb_sub = duckdb_cmd.add_subparsers(dest="duckdb_command", required=True)
@@ -131,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export" and args.export_command == "ndjson":
         export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
+        return 0
+    if args.command == "export" and args.export_command == "profile":
+        build_export_profile(input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files))
         return 0
 
     if args.command == "duckdb" and args.duckdb_command == "build":

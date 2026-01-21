@@ -1,0 +1,8 @@
+{
+  "resourceType": "Observation",
+  "id": "o1",
+  "status": "final",
+  "subject": {"display": "John Doe"},
+  "effectiveDateTime": "2020-01-01T01:02:03Z"
+}
+

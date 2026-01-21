@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3">
+  <recordTarget>
+    <patientRole>
+      <patient>
+        <name>John Doe</name>
+        <birthTime value="19800102"/>
+      </patient>
+    </patientRole>
+  </recordTarget>
+  <component>
+    <structuredBody>
+      <component>
+        <section>
+          <entry>
+            <observation classCode="OBS" moodCode="EVN">
+              <code code="8867-4" displayName="Heart rate"/>
+              <value xsi:type="PQ" value="72" unit="/min" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>
+            </observation>
+          </entry>
+          <entry>
+            <observation classCode="OBS" moodCode="EVN">
+              <code code="8310-5" displayName="Body temperature"/>
+              <value xsi:type="PQ" value="37.0" unit="Cel" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>
+            </observation>
+          </entry>
+        </section>
+      </component>
+    </structuredBody>
+  </component>
+</ClinicalDocument>
+

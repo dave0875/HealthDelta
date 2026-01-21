@@ -65,6 +65,7 @@ Optional clarifications or constraints.
 - Incremental run registry operations are documented in `docs/runbook_incremental.md` and must be followed for stateful runs.
 - Operator end-to-end command usage is documented in `docs/runbook_operator.md` and is the preferred entrypoint for operators.
 - Doctor’s note summary output is documented in `docs/runbook_note.md` and must be followed for share-safe copy/paste summaries.
+- Export directory profiling is documented in `docs/runbook_profile.md` and is the required first step before running ingest/pipeline on a new unpacked export directory.
 
 ## ADRs
 - Doctor’s Note architecture (reusable component + operator integration): `docs/adr/ADR_3_doctors_note_architecture.md`
