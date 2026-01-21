@@ -22,5 +22,4 @@ Local verification
 - `python3 -m unittest discover -s tests -p 'test_*.py'` (pass; DuckDB test skips without local duckdb installed)
 
 CI evidence
-- CI run (green): TBD (populate after push + CI completion)
-
+- CI run (green): https://github.com/dave0875/HealthDelta/actions/runs/21191887191
