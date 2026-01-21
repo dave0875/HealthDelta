@@ -167,6 +167,41 @@ def register_run(
     save_registry(state_dir, runs)
 
 
+def _sanitize_artifact_pointer(v: object) -> object:
+    if isinstance(v, str):
+        p = Path(v)
+        if p.is_absolute():
+            return p.name
+    return v
+
+
+def update_run_artifacts(state_dir: str, run_id: str, patch: dict[str, object]) -> None:
+    runs = load_registry(state_dir)
+    entry = runs.get(run_id)
+    if not isinstance(entry, dict):
+        raise KeyError(f"run_id not found in registry: {run_id}")
+
+    artifacts = entry.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+
+    changed = False
+    for k, v in patch.items():
+        if not isinstance(k, str) or not k:
+            continue
+        v = _sanitize_artifact_pointer(v)
+        if artifacts.get(k) != v:
+            artifacts[k] = v
+            changed = True
+
+    if not changed:
+        return
+
+    entry = {**entry, "artifacts": artifacts}
+    runs[run_id] = entry
+    save_registry(state_dir, runs)
+
+
 def artifact_pointers_for_run(*, state_dir: str, run_id: str, mode: str) -> dict[str, object]:
     base = _base_dir_for_state(resolve_state_paths(state_dir).state_dir)
     # Store relative paths under the base dir (avoids absolute path leakage).
@@ -263,4 +298,3 @@ def register_existing_run_dir(*, run_dir: Path, state_dir: str, note: str | None
     )
     write_last_run_id(state_dir, run_id)
     return run_id
-

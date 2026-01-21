@@ -8,6 +8,7 @@ from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
+from healthdelta.operator import run_all as run_all_operator
 from healthdelta.state import register_existing_run_dir
 
 
@@ -50,6 +51,14 @@ def main(argv: list[str] | None = None) -> int:
     run_register.add_argument("--run", required=True, help="Path to an existing run directory (e.g., data/staging/<run_id>)")
     run_register.add_argument("--state", default="data/state", help="State directory (default: data/state)")
     run_register.add_argument("--note", default=None, help="Optional note to store for the run")
+
+    run_all = run_sub.add_parser("all", help="One-shot operator command (pipeline -> ndjson -> duckdb -> reports)")
+    run_all.add_argument("--input", required=True, help="Path to export.zip or unpacked export directory")
+    run_all.add_argument("--out", default="data", help="Base output directory (default: data)")
+    run_all.add_argument("--state", default=None, help="State directory (default: <base_out>/state)")
+    run_all.add_argument("--since", default="last", help="Parent run selector: 'last' (default) or an explicit run_id")
+    run_all.add_argument("--mode", default="share", choices=["local", "share"], help="Run mode (default: share)")
+    run_all.add_argument("--note", default=None, help="Optional run note (stored in run registry)")
 
     export = sub.add_parser("export", help="Export canonical, share-safe datasets")
     export_sub = export.add_subparsers(dest="export_command", required=True)
@@ -133,5 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run" and args.run_command == "register":
         register_existing_run_dir(run_dir=Path(args.run), state_dir=args.state, note=args.note)
         return 0
+
+    if args.command == "run" and args.run_command == "all":
+        return run_all_operator(
+            input_path=args.input,
+            base_out=args.out,
+            state_dir=args.state,
+            since=args.since,
+            mode=args.mode,
+            note=args.note,
+        )
 
     raise AssertionError(f"Unhandled command: {args.command}")

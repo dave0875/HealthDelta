@@ -146,7 +146,12 @@ def _resolve_context(*, input_dir: Path, mode: str) -> ExportContext:
             export_cda_rel = candidate
 
     base_dir: Path | None = None
-    if run_root.parent.name in {"staging", "deid"}:
+    # Supported layouts:
+    # - Legacy: <base>/(staging|deid)/<run_id>
+    # - Operator (Issue #12): <base>/<run_id>/(staging|deid)
+    if run_root.name in {"staging", "deid"}:
+        base_dir = run_root.parent
+    elif run_root.parent.name in {"staging", "deid"}:
         base_dir = run_root.parent.parent
 
     identity_dir: Path | None = None

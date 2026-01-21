@@ -62,6 +62,7 @@ Optional clarifications or constraints.
 - DuckDB loader/query operations are documented in `docs/runbook_duckdb.md` and must be followed for local analytics work.
 - Reporting operations are documented in `docs/runbook_reports.md` and must be followed for share-safe summary artifacts.
 - Incremental run registry operations are documented in `docs/runbook_incremental.md` and must be followed for stateful runs.
+- Operator end-to-end command usage is documented in `docs/runbook_operator.md` and is the preferred entrypoint for operators.
 
 ## Codex Governance (Binding Project Law)
 
