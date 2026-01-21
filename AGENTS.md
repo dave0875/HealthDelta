@@ -61,6 +61,7 @@ Optional clarifications or constraints.
 - Pipeline orchestration is documented in `docs/runbook_pipeline.md` and must be followed for orchestrated runs.
 - NDJSON export operations are documented in `docs/runbook_ndjson.md` and must be followed for canonical stream export work.
 - NDJSON validation is documented in `docs/runbook_ndjson_validate.md` and must be followed to verify canonical stream outputs and guard against share-safety regressions.
+- Share-safe bundling is documented in `docs/runbook_share_bundle.md` and must be followed to package collaboration artifacts without staging/PII.
 - DuckDB loader/query operations are documented in `docs/runbook_duckdb.md` and must be followed for local analytics work.
 - Reporting operations are documented in `docs/runbook_reports.md` and must be followed for share-safe summary artifacts.
 - Incremental run registry operations are documented in `docs/runbook_incremental.md` and must be followed for stateful runs.

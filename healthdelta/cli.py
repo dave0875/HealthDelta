@@ -14,6 +14,7 @@ from healthdelta.operator import run_all as run_all_operator
 from healthdelta.note import build_doctor_note
 from healthdelta.profile import build_export_profile
 from healthdelta.state import register_existing_run_dir
+from healthdelta.share_bundle import build_share_bundle
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -116,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     note_build.add_argument("--out", required=True, help="Output directory for doctor note artifacts")
     note_build.add_argument("--mode", default="share", choices=["local", "share"], help="Note mode (default: share)")
 
+    share = sub.add_parser("share", help="Share-safe packaging helpers (no network)")
+    share_sub = share.add_subparsers(dest="share_command", required=True)
+
+    share_bundle = share_sub.add_parser("bundle", help="Create a deterministic tar.gz containing share-safe artifacts only")
+    share_bundle.add_argument("--run", required=True, help="Path to operator run root: <base_out>/<run_id>")
+    share_bundle.add_argument("--out", required=True, help="Output .tar.gz path")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -193,5 +201,9 @@ def main(argv: list[str] | None = None) -> int:
             note=args.note,
             skip_note=bool(args.skip_note),
         )
+
+    if args.command == "share" and args.share_command == "bundle":
+        build_share_bundle(run_dir=args.run, out_path=args.out)
+        return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")
