@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 
 from healthdelta.ingest import ingest_to_staging
@@ -6,6 +7,7 @@ from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
 from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_validate import validate_ndjson_dir
 from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
 from healthdelta.operator import run_all as run_all_operator
@@ -77,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     export_profile.add_argument("--sample-json", type=int, default=200, help="Deterministic sample size for clinical JSON (0=all)")
     export_profile.add_argument("--top-files", type=int, default=20, help="Number of largest files to list (default: 20)")
 
+    export_validate = export_sub.add_parser("validate", help="Validate canonical NDJSON streams (share-safe, deterministic)")
+    export_validate.add_argument("--input", required=True, help="Directory containing canonical NDJSON streams")
+    export_validate.add_argument("--banned-token", action="append", default=[], help="Fail if token is found (repeatable; test fixtures only)")
+    export_validate.add_argument("--banned-regex", action="append", default=[], help="Fail if regex matches (repeatable; test fixtures only)")
+
     duckdb_cmd = sub.add_parser("duckdb", help="DuckDB build + query commands for canonical NDJSON")
     duckdb_sub = duckdb_cmd.add_subparsers(dest="duckdb_command", required=True)
 
@@ -141,6 +148,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "export" and args.export_command == "profile":
         build_export_profile(input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files))
+        return 0
+    if args.command == "export" and args.export_command == "validate":
+        errors = validate_ndjson_dir(input_dir=args.input, banned_tokens=list(args.banned_token), banned_regexes=list(args.banned_regex))
+        if errors:
+            for e in errors:
+                print(f"ERROR {e.format()}", file=sys.stderr)
+            print(f"errors={len(errors)}", file=sys.stderr)
+            return 1
+        print("ok")
         return 0
 
     if args.command == "duckdb" and args.duckdb_command == "build":
