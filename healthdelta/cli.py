@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.deid import deidentify_run
@@ -7,6 +8,7 @@ from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
+from healthdelta.state import register_existing_run_dir
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,6 +39,17 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_run.add_argument("--mode", default="local", choices=["local", "share"], help="Run mode (default: local)")
     pipeline_run.add_argument("--run-id", default=None, help="Expected run_id (must match computed run_id)")
     pipeline_run.add_argument("--skip-deid", action="store_true", help="Skip deid even in share mode (debugging)")
+    pipeline_run.add_argument("--state", default=None, help="State directory (default: <base_out>/state)")
+    pipeline_run.add_argument("--since", default="last", help="Parent run selector: 'last' (default) or an explicit run_id")
+    pipeline_run.add_argument("--note", default=None, help="Optional run note (stored in run registry)")
+
+    run_cmd = sub.add_parser("run", help="Run registry commands (stateful)")
+    run_sub = run_cmd.add_subparsers(dest="run_command", required=True)
+
+    run_register = run_sub.add_parser("register", help="Register an existing staging run in the run registry")
+    run_register.add_argument("--run", required=True, help="Path to an existing run directory (e.g., data/staging/<run_id>)")
+    run_register.add_argument("--state", default="data/state", help="State directory (default: data/state)")
+    run_register.add_argument("--note", default=None, help="Optional note to store for the run")
 
     export = sub.add_parser("export", help="Export canonical, share-safe datasets")
     export_sub = export.add_subparsers(dest="export_command", required=True)
@@ -85,12 +98,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "pipeline" and args.pipeline_command == "run":
+        state_dir = args.state or str(Path(args.out) / "state")
         return run_pipeline(
             input_path=args.input,
             base_dir=args.out,
             mode=args.mode,
             expected_run_id=args.run_id,
             skip_deid=args.skip_deid,
+            state_dir=state_dir,
+            since=args.since,
+            note=args.note,
         )
 
     if args.command == "export" and args.export_command == "ndjson":
@@ -111,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "report" and args.report_command == "show":
         show_report(db_path=args.db)
+        return 0
+
+    if args.command == "run" and args.run_command == "register":
+        register_existing_run_dir(run_dir=Path(args.run), state_dir=args.state, note=args.note)
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")

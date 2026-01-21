@@ -12,6 +12,15 @@ from typing import Any
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
+from healthdelta.state import (
+    artifact_pointers_for_run,
+    compute_input_fingerprint,
+    compute_run_id,
+    read_last_run_id,
+    register_run,
+    run_input_fingerprint_sha256,
+    write_last_run_id,
+)
 
 
 def _sha256_file(path: Path) -> str:
@@ -92,6 +101,9 @@ def run_pipeline(
     mode: str = "local",
     expected_run_id: str | None = None,
     skip_deid: bool = False,
+    state_dir: str | None = None,
+    since: str = "last",
+    note: str | None = None,
 ) -> int:
     started_at = _now_utc()
 
@@ -105,10 +117,40 @@ def run_pipeline(
         print("ERROR: --mode must be one of: local, share", file=sys.stderr)
         return 2
 
-    ingest_run_dir = ingest_to_staging(input_path=str(input_p), staging_root=str(staging_root))
-    run_id = ingest_run_dir.name
-    if expected_run_id is not None and expected_run_id != run_id:
-        print(f"ERROR: --run-id {expected_run_id} does not match computed run_id {run_id}", file=sys.stderr)
+    parent_run_id: str | None = None
+    input_fingerprint: dict[str, object] | None = None
+    if state_dir is not None:
+        if since == "last":
+            parent_run_id = read_last_run_id(state_dir)
+        else:
+            parent_run_id = since or None
+
+        input_fingerprint = compute_input_fingerprint(input_p)
+        fp_sha = input_fingerprint.get("sha256") if isinstance(input_fingerprint.get("sha256"), str) else None
+        if fp_sha is None:
+            print("ERROR: failed to compute input_fingerprint.sha256", file=sys.stderr)
+            return 2
+
+        if parent_run_id is not None:
+            parent_fp = run_input_fingerprint_sha256(state_dir, parent_run_id)
+            if parent_fp is not None and parent_fp == fp_sha:
+                if expected_run_id is not None and expected_run_id != parent_run_id:
+                    print(f"ERROR: --run-id {expected_run_id} does not match existing run_id {parent_run_id}", file=sys.stderr)
+                    return 2
+                if read_last_run_id(state_dir) is None:
+                    write_last_run_id(state_dir, parent_run_id)
+                print("no changes detected")
+                print(f"run_id={parent_run_id}")
+                return 0
+
+        run_id = compute_run_id(parent_run_id=parent_run_id, input_fingerprint_sha256=fp_sha)
+    else:
+        run_id = None
+
+    ingest_run_dir = ingest_to_staging(input_path=str(input_p), staging_root=str(staging_root), run_id_override=run_id)
+    run_id_actual = ingest_run_dir.name
+    if expected_run_id is not None and expected_run_id != run_id_actual:
+        print(f"ERROR: --run-id {expected_run_id} does not match computed run_id {run_id_actual}", file=sys.stderr)
         return 2
 
     ingest_manifest_path = ingest_run_dir / "manifest.json"
@@ -120,18 +162,19 @@ def run_pipeline(
     build_identity(staging_run_dir=str(ingest_run_dir), output_dir=str(identity_dir))
 
     deid_executed = False
-    deid_out_dir = deid_root / run_id
+    deid_out_dir = deid_root / run_id_actual
     if mode == "share" and not skip_deid:
         deidentify_run(staging_run_dir=str(ingest_run_dir), identity_dir=str(identity_dir), out_dir=str(deid_out_dir))
         deid_executed = True
 
     run_report_path = ingest_run_dir / "run_report.json"
     report: dict[str, object] = {
-        "run_id": run_id,
+        "run_id": run_id_actual,
         "timestamps": {"started_at": started_at, "finished_at": _now_utc()},
         "mode": mode,
         "skip_deid": bool(skip_deid),
         "input": _redacted_input_summary(input_p),
+        "state": {"enabled": bool(state_dir), "since": since, "parent_run_id": parent_run_id},
         "stages": {
             "ingest": {
                 "executed": True,
@@ -185,10 +228,20 @@ def run_pipeline(
 
     _write_json(run_report_path, report)
 
-    print(f"run_id={run_id}")
+    if state_dir is not None and input_fingerprint is not None:
+        register_run(
+            state_dir=state_dir,
+            run_id=run_id_actual,
+            input_fingerprint=input_fingerprint,
+            parent_run_id=parent_run_id,
+            note=note,
+            artifacts=artifact_pointers_for_run(state_dir=state_dir, run_id=run_id_actual, mode=mode),
+        )
+        write_last_run_id(state_dir, run_id_actual)
+
+    print(f"run_id={run_id_actual}")
     print(f"staging_dir={ingest_run_dir}")
     print(f"run_report={run_report_path}")
     if deid_executed:
         print(f"deid_dir={deid_out_dir}")
     return 0
-

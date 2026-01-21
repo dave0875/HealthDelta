@@ -91,13 +91,14 @@ def _write_json(path: Path, obj: object) -> None:
     path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging") -> Path:
+def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", run_id_override: str | None = None) -> Path:
     resolved = _resolve_input(Path(input_path))
     staging_root_path = Path(staging_root)
     started_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
     if resolved.kind == "zip":
-        run_id = _sha256_zip_bytes(resolved.input_path)
+        computed = _sha256_zip_bytes(resolved.input_path)
+        run_id = run_id_override or computed
         run_dir = staging_root_path / run_id
         source_dir = run_dir / "source"
         unpacked_dir = source_dir / "unpacked"
@@ -152,7 +153,7 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging") ->
                 "finished_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
             },
             "determinism": {
-                "run_id_derivation": "sha256(export.zip bytes)",
+                "run_id_derivation": "sha256(export.zip bytes)" if run_id_override is None else "override (incremental pipeline run_id)",
                 "stable_fields": ["run_id", "files[*].sha256", "files[*].size_bytes", "counts.*"],
                 "time_fields": ["timestamps.*"],
             },
@@ -172,11 +173,12 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging") ->
     if export_xml is None:
         raise AssertionError("resolved.export_xml_path must be set for dir inputs")
 
-    run_id = _compute_run_id_for_directory(
+    computed = _compute_run_id_for_directory(
         input_root=resolved.input_path,
         export_xml=export_xml,
         clinical_json_paths=resolved.clinical_json_paths,
     )
+    run_id = run_id_override or computed
     run_dir = staging_root_path / run_id
     source_dir = run_dir / "source"
     source_dir.mkdir(parents=True, exist_ok=True)
@@ -213,7 +215,9 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging") ->
             "finished_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         },
         "determinism": {
-            "run_id_derivation": "sha256(relpath + sha256(bytes)) over export.xml + clinical jsons",
+            "run_id_derivation": "sha256(relpath + sha256(bytes)) over export.xml + clinical jsons"
+            if run_id_override is None
+            else "override (incremental pipeline run_id)",
             "stable_fields": ["run_id", "files[*].sha256", "files[*].size_bytes", "counts.*"],
             "time_fields": ["timestamps.*"],
         },
