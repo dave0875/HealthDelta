@@ -8,6 +8,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from healthdelta.export_layout import resolve_export_layout
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -38,6 +40,7 @@ class InputResolution:
     kind: str  # "zip" | "dir"
     input_path: Path
     export_xml_path: Path | None
+    export_cda_path: Path | None
     clinical_json_paths: list[Path]
 
 
@@ -45,24 +48,25 @@ def _resolve_input(input_path: Path) -> InputResolution:
     if input_path.is_file():
         if input_path.suffix.lower() != ".zip" or not zipfile.is_zipfile(input_path):
             raise ValueError(f"--input must be a .zip file or a directory: {input_path}")
-        return InputResolution(kind="zip", input_path=input_path, export_xml_path=None, clinical_json_paths=[])
+        return InputResolution(kind="zip", input_path=input_path, export_xml_path=None, export_cda_path=None, clinical_json_paths=[])
 
     if not input_path.is_dir():
         raise ValueError(f"--input must be a .zip file or a directory: {input_path}")
 
-    candidates = [
-        input_path / "export.xml",
-        input_path / "apple_health_export" / "export.xml",
-    ]
-    export_xml = next((p for p in candidates if p.exists()), None)
-    if export_xml is None:
-        raise ValueError(f"Unpacked export directory must contain export.xml: {input_path}")
+    layout = resolve_export_layout(input_path)
+    export_root = input_path if layout.export_root_rel == "." else (input_path / layout.export_root_rel)
+    export_xml = export_root / layout.export_xml_rel
+    export_cda = export_root / layout.export_cda_rel if isinstance(layout.export_cda_rel, str) else None
 
-    clinical_json_paths = sorted([p for p in input_path.rglob("*.json") if p.is_file()])
+    clinical_json_paths: list[Path] = []
+    if isinstance(layout.clinical_dir_rel, str):
+        clinical_root = export_root / layout.clinical_dir_rel
+        clinical_json_paths = sorted([p for p in clinical_root.rglob("*.json") if p.is_file()])
     return InputResolution(
         kind="dir",
         input_path=input_path,
         export_xml_path=export_xml,
+        export_cda_path=export_cda,
         clinical_json_paths=clinical_json_paths,
     )
 
@@ -111,19 +115,26 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
         shutil.copy2(resolved.input_path, staged_zip)
 
         export_xml_rel = None
+        export_cda_rel: str | None = None
         clinical_rels: list[str] = []
         with zipfile.ZipFile(resolved.input_path) as zf:
             for member in sorted(zf.namelist()):
                 if member.endswith("/"):
                     continue
                 lower = member.lower()
-                if lower.endswith("export.xml") or lower.endswith(".json"):
+                if lower.endswith("export.xml") or lower.endswith("export_cda.xml") or lower.endswith(".json"):
+                    if lower.endswith(".json"):
+                        # Restrict to known clinical trees (avoid staging unrelated JSON).
+                        if "/clinical_records/" not in lower and "/clinical-records/" not in lower:
+                            continue
                     out_path = unpacked_dir / member
                     out_path.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(member) as src, out_path.open("wb") as dst:
                         shutil.copyfileobj(src, dst)
                     if lower.endswith("export.xml") and export_xml_rel is None:
                         export_xml_rel = (Path("source") / "unpacked" / member).as_posix()
+                    if lower.endswith("export_cda.xml") and export_cda_rel is None:
+                        export_cda_rel = (Path("source") / "unpacked" / member).as_posix()
                     if lower.endswith(".json"):
                         clinical_rels.append((Path("source") / "unpacked" / member).as_posix())
 
@@ -131,11 +142,12 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
             raise ValueError("export.zip did not contain export.xml")
 
         export_xml_path = run_dir / export_xml_rel
+        export_cda_path = run_dir / export_cda_rel if export_cda_rel is not None else None
         clinical_paths = [run_dir / p for p in clinical_rels]
 
         files = []
-        for p in [staged_zip, export_xml_path, *clinical_paths]:
-            if not p.exists():
+        for p in [staged_zip, export_xml_path, export_cda_path, *clinical_paths]:
+            if not p or not p.exists():
                 continue
             rel = p.relative_to(run_dir).as_posix()
             files.append({"path": rel, "size_bytes": p.stat().st_size, "sha256": _sha256_file(p)})
@@ -162,6 +174,7 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
         layout = {
             "run_id": run_id,
             "export_xml": export_xml_rel,
+            "export_cda_xml": export_cda_rel,
             "clinical_json": clinical_rels,
         }
 
@@ -186,19 +199,29 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
     staged_export_xml = source_dir / "export.xml"
     shutil.copy2(export_xml, staged_export_xml)
 
-    staged_clinical_dir = source_dir / "clinical"
-    staged_clinical_dir.mkdir(parents=True, exist_ok=True)
+    staged_unpacked_dir = source_dir / "unpacked"
+    staged_unpacked_dir.mkdir(parents=True, exist_ok=True)
+
+    staged_export_cda = None
+    if resolved.export_cda_path is not None and resolved.export_cda_path.exists():
+        staged_export_cda = staged_unpacked_dir / "export_cda.xml"
+        shutil.copy2(resolved.export_cda_path, staged_export_cda)
+
+    staged_clinical_root = source_dir / "clinical" / "clinical-records"
+    staged_clinical_root.mkdir(parents=True, exist_ok=True)
 
     clinical_rels: list[str] = []
     for p in resolved.clinical_json_paths:
-        rel = p.relative_to(resolved.input_path).as_posix()
-        out_path = staged_clinical_dir / rel
+        # Canonicalize to stable staging paths regardless of input directory variant.
+        out_path = staged_clinical_root / p.name
         out_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(p, out_path)
         clinical_rels.append((out_path.relative_to(run_dir)).as_posix())
 
     files = []
-    for p in [staged_export_xml, *[run_dir / r for r in clinical_rels]]:
+    for p in [staged_export_xml, staged_export_cda, *[run_dir / r for r in clinical_rels]]:
+        if not p or not p.exists():
+            continue
         rel = p.relative_to(run_dir).as_posix()
         files.append({"path": rel, "size_bytes": p.stat().st_size, "sha256": _sha256_file(p)})
 
@@ -226,6 +249,7 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
     layout = {
         "run_id": run_id,
         "export_xml": staged_export_xml.relative_to(run_dir).as_posix(),
+        "export_cda_xml": staged_export_cda.relative_to(run_dir).as_posix() if staged_export_cda is not None else None,
         "clinical_json": clinical_rels,
     }
 

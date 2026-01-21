@@ -15,6 +15,18 @@ EXPORT_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 CLINICAL_JSON = """{"resourceType":"Bundle","type":"collection"}"""
+CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3">
+  <recordTarget>
+    <patientRole>
+      <patient>
+        <name>John Doe</name>
+        <birthTime value="19800102"/>
+      </patient>
+    </patientRole>
+  </recordTarget>
+</ClinicalDocument>
+"""
 
 
 def _read_json(path: Path) -> dict:
@@ -39,9 +51,12 @@ def _make_unpacked_export(root: Path) -> Path:
     export_dir = root / "export_dir"
     export_dir.mkdir(parents=True, exist_ok=True)
     (export_dir / "export.xml").write_text(EXPORT_XML, encoding="utf-8")
-    clinical_dir = export_dir / "clinical_records"
+    (export_dir / "export_cda.xml").write_text(CDA_XML, encoding="utf-8")
+    clinical_dir = export_dir / "clinical-records"
     clinical_dir.mkdir(parents=True, exist_ok=True)
     (clinical_dir / "record.json").write_text(CLINICAL_JSON, encoding="utf-8")
+    # This extra JSON must not be staged (only clinical-records tree should be staged for dir inputs).
+    (export_dir / "other.json").write_text("""{"name":"John Doe","birthDate":"1980-01-02"}""", encoding="utf-8")
     return export_dir
 
 
@@ -49,10 +64,13 @@ def _make_export_zip(root: Path, unpacked_dir: Path) -> Path:
     zip_path = root / "export.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("apple_health_export/export.xml", (unpacked_dir / "export.xml").read_text(encoding="utf-8"))
+        zf.writestr("apple_health_export/export_cda.xml", (unpacked_dir / "export_cda.xml").read_text(encoding="utf-8"))
         zf.writestr(
             "apple_health_export/clinical_records/record.json",
-            (unpacked_dir / "clinical_records" / "record.json").read_text(encoding="utf-8"),
+            (unpacked_dir / "clinical-records" / "record.json").read_text(encoding="utf-8"),
         )
+        # Should be ignored by zip ingestion filter.
+        zf.writestr("apple_health_export/other.json", """{\"name\":\"John Doe\",\"birthDate\":\"1980-01-02\"}""")
     return zip_path
 
 
@@ -70,8 +88,13 @@ class TestIngest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["xml_record_count_estimate"], 2)
             self.assertEqual(manifest["counts"]["clinical_json_file_count"], 1)
             self.assertTrue((run_dir / layout["export_xml"]).exists())
+            self.assertIsInstance(layout.get("export_cda_xml"), str)
+            self.assertTrue((run_dir / layout["export_cda_xml"]).exists())
             self.assertEqual(len(layout["clinical_json"]), 1)
             self.assertTrue((run_dir / layout["clinical_json"][0]).exists())
+            # Ensure the extra JSON was not staged.
+            self.assertFalse((run_dir / "source" / "clinical" / "other.json").exists())
+            self.assertFalse((run_dir / "source" / "clinical" / "export_dir" / "other.json").exists())
 
             export_zip = _make_export_zip(root, export_dir)
             staging_root_zip = root / "staging_zip"
@@ -82,8 +105,12 @@ class TestIngest(unittest.TestCase):
             self.assertEqual(manifest_zip["counts"]["xml_record_count_estimate"], 2)
             self.assertEqual(manifest_zip["counts"]["clinical_json_file_count"], 1)
             self.assertTrue((run_zip / layout_zip["export_xml"]).exists())
+            self.assertIsInstance(layout_zip.get("export_cda_xml"), str)
+            self.assertTrue((run_zip / layout_zip["export_cda_xml"]).exists())
             self.assertEqual(len(layout_zip["clinical_json"]), 1)
             self.assertTrue((run_zip / layout_zip["clinical_json"][0]).exists())
+            # Ensure the extra JSON was not staged from zip.
+            self.assertFalse((run_zip / "source" / "unpacked" / "apple_health_export" / "other.json").exists())
 
     def test_manifest_determinism_for_fixed_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2, tempfile.TemporaryDirectory() as staging:

@@ -42,7 +42,12 @@ def resolve_export_layout(input_dir: Path) -> ExportLayout:
     export_cda_rel = "export_cda.xml" if (export_root / "export_cda.xml").exists() else None
 
     clinical_dir_rel: str | None = None
-    clinical_candidates = [export_root / "clinical-records", export_root / "clinical" / "clinical-records"]
+    clinical_candidates = [
+        export_root / "clinical-records",
+        export_root / "clinical_records",
+        export_root / "clinical" / "clinical-records",
+        export_root / "clinical" / "clinical_records",
+    ]
     for c in clinical_candidates:
         if c.exists() and c.is_dir():
             clinical_dir_rel = _posix_rel(c.relative_to(export_root))
@@ -54,4 +59,3 @@ def resolve_export_layout(input_dir: Path) -> ExportLayout:
         export_cda_rel=export_cda_rel,
         clinical_dir_rel=clinical_dir_rel,
     )
-
