@@ -25,7 +25,7 @@ Notes:
 - The loader **requires `--replace`** to overwrite an existing database file.
   - If `--db` already exists and `--replace` is not set, the command errors.
 - NDJSON ingestion is performed by DuckDB’s JSON reader for newline-delimited JSON, avoiding full-file loads in Python.
-- Rows are inserted using a deterministic `ORDER BY` during ingestion to promote repeatability.
+- Rows are inserted in NDJSON file order (deterministic given the same input bytes).
 
 ## Expected NDJSON inputs
 
@@ -89,4 +89,3 @@ Additional columns:
 
 - The DuckDB loader does not add PII fields; it only loads explicit columns from the NDJSON inputs.
 - Do not export or query for names, DOB, MRNs, or other patient identifiers; share-safe workflows should use de-identified pipeline outputs before export.
-
