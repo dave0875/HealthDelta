@@ -19,3 +19,7 @@ Work summary
 Local verification
 - `python3 -m unittest discover -s tests -p 'test_*.py' -v` (pass; some DuckDB tests skipped locally due to missing `duckdb` module)
 - `python -m build` in a local venv (pass)
+
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/47
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21250021841
