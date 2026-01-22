@@ -19,5 +19,4 @@ AI-on-AI review
 - Local model: `ollama run llama3.1:8b` (see `docs/reviews/2026-01-22_38.md`)
 
 CI evidence
-- Green CI: (pending)
-
+- Green CI: https://github.com/dave0875/HealthDelta/actions/runs/21235152538 (Linux + macOS with `ios-xcresult` artifact).
