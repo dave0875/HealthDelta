@@ -104,7 +104,26 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
     except Exception as e:  # pragma: no cover
         raise RuntimeError("duckdb Python package is required (install dependency 'duckdb')") from e
 
-    ndjson_root = Path(input_dir)
+    input_root = Path(input_dir)
+    ios_mode = False
+    ios_run_id: str | None = None
+    ios_source_file: str | None = None
+
+    ios_manifest_path = input_root / "manifest.json"
+    ios_ndjson_dir = input_root / "ndjson"
+    if ios_manifest_path.exists() and ios_ndjson_dir.is_dir():
+        observations_hint = ios_ndjson_dir / "observations.ndjson"
+        if observations_hint.exists():
+            ios_mode = True
+            ios_source_file = "ndjson/observations.ndjson"
+            try:
+                obj = json.loads(ios_manifest_path.read_text(encoding="utf-8"))
+                if isinstance(obj, dict) and isinstance(obj.get("run_id"), str) and obj.get("run_id"):
+                    ios_run_id = obj["run_id"]
+            except Exception:
+                ios_run_id = None
+
+    ndjson_root = ios_ndjson_dir if ios_mode else input_root
     db = Path(db_path)
 
     db_existed = db.exists()
@@ -172,7 +191,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
 
         if not observations_path.exists():
             raise FileNotFoundError(f"Missing observations.ndjson: {observations_path}")
-        if not documents_path.exists():
+        if not documents_path.exists() and not ios_mode:
             raise FileNotFoundError(f"Missing documents.ndjson: {documents_path}")
 
         _require_columns(con, "observations", ["record_key"])
@@ -192,6 +211,8 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 event_key = record_key
 
             value = obj.get("value")
+            if value is None and isinstance(obj.get("value_num"), (int, float)):
+                value = obj.get("value_num")
             value_str = str(value) if value is not None else None
             value_num = None
             if isinstance(value, (int, float)):
@@ -213,12 +234,13 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     record_key,
                     obj.get("canonical_person_id"),
                     obj.get("source"),
-                    obj.get("source_file"),
-                    _parse_event_time(obj.get("event_time")),
-                    obj.get("run_id"),
+                    obj.get("source_file") or ios_source_file,
+                    _parse_event_time(obj.get("event_time") or obj.get("start_time")),
+                    obj.get("run_id") or ios_run_id,
                     event_key,
                     obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
-                    obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None,
+                    (obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None)
+                    or (obj.get("sample_type") if isinstance(obj.get("sample_type"), str) else None),
                     obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                     obj.get("code") if isinstance(obj.get("code"), str) else None,
                     value_str,
@@ -231,39 +253,40 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 ],
             )
 
-        for obj in _iter_ndjson(documents_path):
-            record_key = obj.get("record_key")
-            if not isinstance(record_key, str) or not record_key:
-                record_key = obj.get("event_key")
-            if not isinstance(record_key, str) or not record_key:
-                record_key = _sha256_text(_stable_json(obj) or "")
+        if documents_path.exists():
+            for obj in _iter_ndjson(documents_path):
+                record_key = obj.get("record_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = obj.get("event_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = _sha256_text(_stable_json(obj) or "")
 
-            event_key = obj.get("event_key")
-            if not isinstance(event_key, str) or not event_key:
-                event_key = record_key
+                event_key = obj.get("event_key")
+                if not isinstance(event_key, str) or not event_key:
+                    event_key = record_key
 
-            con.execute(
-                """
-                INSERT INTO documents
-                SELECT ?,?,?,?,?,?,?,?,?,?,?,?
-                WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
-                """,
-                [
-                    obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
-                    record_key,
-                    obj.get("canonical_person_id"),
-                    obj.get("source"),
-                    obj.get("source_file"),
-                    _parse_event_time(obj.get("event_time")),
-                    obj.get("run_id"),
-                    event_key,
-                    obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
-                    obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
-                    obj.get("status") if isinstance(obj.get("status"), str) else None,
-                    _stable_json(obj.get("type_coding")),
-                    record_key,
-                ],
-            )
+                con.execute(
+                    """
+                    INSERT INTO documents
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                    WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
+                    """,
+                    [
+                        obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                        record_key,
+                        obj.get("canonical_person_id"),
+                        obj.get("source"),
+                        obj.get("source_file") or ("ndjson/documents.ndjson" if ios_mode else None),
+                        _parse_event_time(obj.get("event_time")),
+                        obj.get("run_id") or ios_run_id,
+                        event_key,
+                        obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                        obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                        obj.get("status") if isinstance(obj.get("status"), str) else None,
+                        _stable_json(obj.get("type_coding")),
+                        record_key,
+                    ],
+                )
 
         if medications_path.exists():
             con.execute(

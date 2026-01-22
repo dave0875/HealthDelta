@@ -41,6 +41,24 @@ Each NDJSON line is expected to include:
 - `canonical_person_id`, `source`, `source_file`, `event_time`, `run_id`, `record_key`, `schema_version`
 - `event_key` may be present for backward compatibility; `record_key` is the canonical dedupe key.
 
+## iOS export inputs (subset mapping)
+
+`healthdelta duckdb build` also accepts an iOS export/staging run directory when `--input` contains:
+- `manifest.json`
+- `ndjson/observations.ndjson`
+
+In this mode, HealthDelta loads from the `ndjson/` subdirectory and applies a subset mapping into the existing `observations` table:
+- `canonical_person_id` → `observations.canonical_person_id`
+- `source` → `observations.source`
+- `sample_type` → `observations.hk_type`
+- `start_time` → `observations.event_time`
+- `record_key` → `observations.record_key` (dedupe key)
+- `value_num` / `unit` → `observations.value_num` / `observations.unit`
+- `run_id` is taken from iOS `manifest.json` `run_id` (applied to all rows)
+- `source_file` is set to `ndjson/observations.ndjson` (relative to the iOS export root)
+
+Other streams (documents/medications/conditions) are optional for iOS inputs and may load as empty tables until iOS emits them.
+
 ## Schema
 
 All tables include at minimum:
