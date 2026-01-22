@@ -75,6 +75,13 @@ class TestShareBundle(unittest.TestCase):
             )
             self.assertEqual(r2.returncode, 0, msg=f"stdout={r2.stdout}\nstderr={r2.stderr}")
 
+            v1 = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "share", "verify", "--bundle", str(out1)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(v1.returncode, 0, msg=f"stdout={v1.stdout}\nstderr={v1.stderr}")
+
             b1 = out1.read_bytes()
             b2 = out2.read_bytes()
             self.assertEqual(b1, b2)
@@ -91,6 +98,7 @@ class TestShareBundle(unittest.TestCase):
                 self.assertIn(f"{run_id}/note/doctor_note.txt", names)
                 self.assertIn(f"{run_id}/deid/source/export.xml", names)
                 self.assertIn(f"{run_id}/registry/run_entry.json", names)
+                self.assertIn(f"{run_id}/registry/bundle_manifest.csv", names)
 
                 self.assertFalse(any("/staging/" in n or n.startswith(f"{run_id}/staging") for n in names))
                 self.assertFalse(any("/identity/" in n or n.startswith(f"{run_id}/identity") for n in names))
@@ -101,7 +109,22 @@ class TestShareBundle(unittest.TestCase):
                 self.assertEqual(reg_obj.get("run_id"), run_id)
                 self.assertNotIn("notes", reg_obj)
 
+    def test_share_verify_rejects_disallowed_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bundle = root / "bad.tar.gz"
+            run_id = "run999"
+
+            with tarfile.open(bundle, mode="w:gz") as tf:
+                ti = tarfile.TarInfo(name=f"{run_id}/staging/secret.txt")
+                payload = b"NOPE\n"
+                ti.size = len(payload)
+                tf.addfile(ti, io.BytesIO(payload))
+
+            v = subprocess.run([sys.executable, "-m", "healthdelta", "share", "verify", "--bundle", str(bundle)], capture_output=True, text=True)
+            self.assertNotEqual(v.returncode, 0)
+
+
 
 if __name__ == "__main__":
     unittest.main()
-

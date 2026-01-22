@@ -6,6 +6,10 @@ Purpose: package share-safe artifacts into a single deterministic archive for co
 
 `healthdelta share bundle --run <base_out>/<run_id> --out <path>.tar.gz`
 
+Verify:
+
+`healthdelta share verify --bundle <path>.tar.gz`
+
 ## What is included
 
 Only these subtrees under `<base_out>/<run_id>/` (when present):
@@ -17,6 +21,9 @@ Only these subtrees under `<base_out>/<run_id>/` (when present):
 
 Plus a share-safe run registry snippet:
 - `<run_id>/registry/run_entry.json` (derived from `<base_out>/state/runs.json` when present)
+
+Plus a deterministic integrity manifest:
+- `<run_id>/registry/bundle_manifest.csv` with `path,size,sha256` for all archived regular files (excluding the manifest itself)
 
 ## What is excluded
 
@@ -31,3 +38,9 @@ The archive is built to be byte-stable for unchanged inputs (as feasible):
 - normalized tar metadata (mtime/uid/gid)
 - normalized gzip header timestamp
 
+## Verification
+
+`healthdelta share verify` validates:
+- archive member paths are allowlist-only under a single `<run_id>/` prefix (no `staging/`, no `identity/`)
+- `registry/run_entry.json` is present and valid JSON
+- every archived regular file matches `bundle_manifest.csv` (path/size/sha256)

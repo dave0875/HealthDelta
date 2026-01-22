@@ -14,7 +14,7 @@ from healthdelta.operator import run_all as run_all_operator
 from healthdelta.note import build_doctor_note
 from healthdelta.profile import build_export_profile
 from healthdelta.state import register_existing_run_dir
-from healthdelta.share_bundle import build_share_bundle
+from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,6 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     share_bundle.add_argument("--run", required=True, help="Path to operator run root: <base_out>/<run_id>")
     share_bundle.add_argument("--out", required=True, help="Output .tar.gz path")
 
+    share_verify = share_sub.add_parser("verify", help="Verify a share bundle (allowlist + manifest hashes)")
+    share_verify.add_argument("--bundle", required=True, help="Path to a .tar.gz share bundle")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -204,6 +207,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "share" and args.share_command == "bundle":
         build_share_bundle(run_dir=args.run, out_path=args.out)
+        return 0
+
+    if args.command == "share" and args.share_command == "verify":
+        errors = verify_share_bundle(bundle_path=args.bundle)
+        if errors:
+            for e in errors:
+                print(f"ERROR {e}", file=sys.stderr)
+            print(f"errors={len(errors)}", file=sys.stderr)
+            return 1
+        print("ok")
         return 0
 
     raise AssertionError(f"Unhandled command: {args.command}")
