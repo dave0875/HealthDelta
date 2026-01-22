@@ -16,3 +16,7 @@ Work summary
 
 Local verification
 - N/A (requires ORIN self-hosted runner)
+
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/61
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21251127046
