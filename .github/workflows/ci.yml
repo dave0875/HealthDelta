@@ -22,8 +22,34 @@ jobs:
       - name: Run non-iOS tests (headless)
         run: |
           set -euo pipefail
-          python3 --version
-          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          mkdir -p artifacts/linux
+          python3 --version | tee artifacts/linux/python_version.txt
+
+          set +e
+          python3 -m unittest discover -s tests -p 'test_*.py' -v | tee artifacts/linux/unittest.log
+          unittest_exit="${PIPESTATUS[0]}"
+          set -e
+
+          echo "UNITTEST_EXIT=$unittest_exit" >> "$GITHUB_ENV"
+
+      - name: Upload Linux unittest artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-unittest
+          path: |
+            artifacts/linux/python_version.txt
+            artifacts/linux/unittest.log
+          if-no-files-found: error
+
+      - name: Fail if unittest failed
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${UNITTEST_EXIT:-0}" != "0" ]; then
+            echo "unittest failed with exit code ${UNITTEST_EXIT}"
+            exit "${UNITTEST_EXIT}"
+          fi
 
   ios-xcode-tests:
     name: macOS (Xcode simulator tests)
