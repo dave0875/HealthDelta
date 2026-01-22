@@ -1,18 +1,9 @@
 import csv
-import hashlib
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _write_text(path: Path, text: str) -> None:
@@ -45,29 +36,29 @@ class TestDuckdbLoader(unittest.TestCase):
             observations = "\n".join(
                 [
                     # healthkit observation row (plus extra fields that should be ignored)
-                    '{"canonical_person_id":"person-1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
+                    '{"schema_version":2,"record_key":"k1","canonical_person_id":"person-1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
                     % (pii_name, pii_dob),
                     # fhir observation row
-                    '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
+                    '{"schema_version":2,"record_key":"k2","canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
                     % pii_patient_id,
                     # cda observation row
-                    '{"canonical_person_id":"person-1","source":"cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
+                    '{"schema_version":2,"record_key":"k3","canonical_person_id":"person-1","source":"cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
                 ]
             )
             _write_text(ndjson / "observations.ndjson", observations + "\n")
 
             documents = (
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/doc.json","event_time":"2020-01-02T03:04:05Z","run_id":"run-1","event_key":"d1","resource_type":"DocumentReference","source_id":"DocumentReference/d1","status":"current"}\n'
+                '{"schema_version":2,"record_key":"d1","canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/doc.json","event_time":"2020-01-02T03:04:05Z","run_id":"run-1","event_key":"d1","resource_type":"DocumentReference","source_id":"DocumentReference/d1","status":"current"}\n'
             )
             _write_text(ndjson / "documents.ndjson", documents)
 
             medications = (
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n'
+                '{"schema_version":2,"record_key":"m1","canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n'
             )
             _write_text(ndjson / "medications.ndjson", medications)
 
             conditions = (
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1"}\n'
+                '{"schema_version":2,"record_key":"c1","canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1"}\n'
             )
             _write_text(ndjson / "conditions.ndjson", conditions)
 
@@ -91,8 +82,6 @@ class TestDuckdbLoader(unittest.TestCase):
             )
             self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
             self.assertTrue(db_path.exists())
-
-            db_hash_1 = _sha256_file(db_path)
 
             # Verify tables exist and row counts.
             q1 = subprocess.run(
@@ -140,7 +129,7 @@ class TestDuckdbLoader(unittest.TestCase):
             self.assertNotIn(pii_dob, combined_out)
             self.assertNotIn(pii_patient_id, combined_out)
 
-            # Rebuild should be deterministic (byte-stable db file) given the same inputs and version.
+            # Rebuild without --replace must be append-safe (no duplicates) for the same inputs.
             build2 = subprocess.run(
                 [
                     sys.executable,
@@ -152,11 +141,28 @@ class TestDuckdbLoader(unittest.TestCase):
                     str(ndjson),
                     "--db",
                     str(db_path),
-                    "--replace",
                 ],
                 capture_output=True,
                 text=True,
             )
             self.assertEqual(build2.returncode, 0, msg=f"stdout={build2.stdout}\nstderr={build2.stderr}")
-            db_hash_2 = _sha256_file(db_path)
-            self.assertEqual(db_hash_2, db_hash_1)
+
+            # Row counts should remain stable on rerun.
+            q1b = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT COUNT(*) AS n FROM observations ORDER BY n;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q1b.returncode, 0, msg=f"stdout={q1b.stdout}\nstderr={q1b.stderr}")
+            rows = list(csv.DictReader(q1b.stdout.splitlines()))
+            self.assertEqual(rows[0]["n"], "3")

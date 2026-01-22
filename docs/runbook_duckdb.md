@@ -22,10 +22,12 @@ Notes:
 
 ## Loader behavior
 
-- The loader **requires `--replace`** to overwrite an existing database file.
-  - If `--db` already exists and `--replace` is not set, the command errors.
-- NDJSON ingestion is performed by DuckDB’s JSON reader for newline-delimited JSON, avoiding full-file loads in Python.
-- Rows are inserted in NDJSON file order (deterministic given the same input bytes).
+- If `--db` does not exist, the loader creates it and loads the NDJSON streams.
+- If `--db` exists:
+  - with `--replace`: the DB file is recreated from scratch.
+  - without `--replace`: the loader performs **append-safe ingestion** and skips rows whose `record_key` already exists.
+- NDJSON ingestion is performed line-by-line in Python (streaming-safe; no full-file reads in memory).
+- Rows are processed in NDJSON file order (deterministic given the same input bytes).
 
 ## Expected NDJSON inputs
 
@@ -36,11 +38,14 @@ Notes:
 - `conditions.ndjson` (optional)
 
 Each NDJSON line is expected to include:
-- `canonical_person_id`, `source`, `source_file`, `event_time`, `run_id`, `event_key`
+- `canonical_person_id`, `source`, `source_file`, `event_time`, `run_id`, `record_key`, `schema_version`
+- `event_key` may be present for backward compatibility; `record_key` is the canonical dedupe key.
 
 ## Schema
 
 All tables include at minimum:
+- `schema_version` (INTEGER)
+- `record_key` (VARCHAR)
 - `canonical_person_id` (VARCHAR)
 - `source` (VARCHAR)
 - `source_file` (VARCHAR)

@@ -70,6 +70,34 @@ def _iter_ndjson(path: Path) -> Iterable[dict]:
                 yield obj
 
 
+def _table_columns(con, table: str) -> list[str]:
+    rows = con.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema='main' AND table_name=?
+        ORDER BY ordinal_position;
+        """,
+        [table],
+    ).fetchall()
+    return [c for (c,) in rows if isinstance(c, str)]
+
+
+def _require_columns(con, table: str, required: list[str]) -> None:
+    cols = set(_table_columns(con, table))
+    missing = [c for c in required if c not in cols]
+    if missing:
+        raise RuntimeError(f"DB schema for table '{table}' is missing columns {missing}; rerun with --replace")
+
+
+def _create_unique_index_if_possible(con, *, name: str, table: str, column: str) -> None:
+    try:
+        con.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table}({column});")
+    except Exception:
+        # Index creation isn't strictly required for correctness; schema checks + NOT EXISTS inserts still dedupe.
+        pass
+
+
 def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None:
     try:
         import duckdb
@@ -79,9 +107,8 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
     ndjson_root = Path(input_dir)
     db = Path(db_path)
 
-    if db.exists():
-        if not replace:
-            raise FileExistsError(f"DB already exists (use --replace): {db}")
+    db_existed = db.exists()
+    if db_existed and replace:
         db.unlink()
 
     db.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +121,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
 
         con.execute(
             """
-            CREATE TABLE observations (
+            CREATE TABLE IF NOT EXISTS observations (
+              schema_version INTEGER,
+              record_key VARCHAR,
               canonical_person_id VARCHAR,
               source VARCHAR,
               source_file VARCHAR,
@@ -117,7 +146,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
 
         con.execute(
             """
-            CREATE TABLE documents (
+            CREATE TABLE IF NOT EXISTS documents (
+              schema_version INTEGER,
+              record_key VARCHAR,
               canonical_person_id VARCHAR,
               source VARCHAR,
               source_file VARCHAR,
@@ -144,10 +175,21 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
         if not documents_path.exists():
             raise FileNotFoundError(f"Missing documents.ndjson: {documents_path}")
 
+        _require_columns(con, "observations", ["record_key"])
+        _require_columns(con, "documents", ["record_key"])
+        _create_unique_index_if_possible(con, name="observations_record_key_uq", table="observations", column="record_key")
+        _create_unique_index_if_possible(con, name="documents_record_key_uq", table="documents", column="record_key")
+
         for obj in _iter_ndjson(observations_path):
+            record_key = obj.get("record_key")
+            if not isinstance(record_key, str) or not record_key:
+                record_key = obj.get("event_key")
+            if not isinstance(record_key, str) or not record_key:
+                record_key = _sha256_text(_stable_json(obj) or "")
+
             event_key = obj.get("event_key")
             if not isinstance(event_key, str) or not event_key:
-                event_key = _sha256_text(_stable_json(obj) or "")
+                event_key = record_key
 
             value = obj.get("value")
             value_str = str(value) if value is not None else None
@@ -161,8 +203,14 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     value_num = None
 
             con.execute(
-                "INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
+                """
+                INSERT INTO observations
+                SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
+                """,
                 [
+                    obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                    record_key,
                     obj.get("canonical_person_id"),
                     obj.get("source"),
                     obj.get("source_file"),
@@ -179,17 +227,30 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     _stable_json(obj.get("code_coding")),
                     _stable_json(obj.get("type_coding")),
                     obj.get("status") if isinstance(obj.get("status"), str) else None,
+                    record_key,
                 ],
             )
 
         for obj in _iter_ndjson(documents_path):
+            record_key = obj.get("record_key")
+            if not isinstance(record_key, str) or not record_key:
+                record_key = obj.get("event_key")
+            if not isinstance(record_key, str) or not record_key:
+                record_key = _sha256_text(_stable_json(obj) or "")
+
             event_key = obj.get("event_key")
             if not isinstance(event_key, str) or not event_key:
-                event_key = _sha256_text(_stable_json(obj) or "")
+                event_key = record_key
 
             con.execute(
-                "INSERT INTO documents VALUES (?,?,?,?,?,?,?,?,?,?);",
+                """
+                INSERT INTO documents
+                SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
+                """,
                 [
+                    obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                    record_key,
                     obj.get("canonical_person_id"),
                     obj.get("source"),
                     obj.get("source_file"),
@@ -200,13 +261,16 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                     obj.get("status") if isinstance(obj.get("status"), str) else None,
                     _stable_json(obj.get("type_coding")),
+                    record_key,
                 ],
             )
 
         if medications_path.exists():
             con.execute(
                 """
-                CREATE TABLE medications (
+                CREATE TABLE IF NOT EXISTS medications (
+                  schema_version INTEGER,
+                  record_key VARCHAR,
                   canonical_person_id VARCHAR,
                   source VARCHAR,
                   source_file VARCHAR,
@@ -219,14 +283,28 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 );
                 """
             )
+            _require_columns(con, "medications", ["record_key"])
+            _create_unique_index_if_possible(con, name="medications_record_key_uq", table="medications", column="record_key")
             for obj in _iter_ndjson(medications_path):
+                record_key = obj.get("record_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = obj.get("event_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = _sha256_text(_stable_json(obj) or "")
+
                 event_key = obj.get("event_key")
                 if not isinstance(event_key, str) or not event_key:
-                    event_key = _sha256_text(_stable_json(obj) or "")
+                    event_key = record_key
 
                 con.execute(
-                    "INSERT INTO medications VALUES (?,?,?,?,?,?,?,?,?);",
+                    """
+                    INSERT INTO medications
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?
+                    WHERE NOT EXISTS (SELECT 1 FROM medications WHERE record_key=?);
+                    """,
                     [
+                        obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                        record_key,
                         obj.get("canonical_person_id"),
                         obj.get("source"),
                         obj.get("source_file"),
@@ -236,13 +314,16 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
                         obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                         obj.get("status") if isinstance(obj.get("status"), str) else None,
+                        record_key,
                     ],
                 )
 
         if conditions_path.exists():
             con.execute(
                 """
-                CREATE TABLE conditions (
+                CREATE TABLE IF NOT EXISTS conditions (
+                  schema_version INTEGER,
+                  record_key VARCHAR,
                   canonical_person_id VARCHAR,
                   source VARCHAR,
                   source_file VARCHAR,
@@ -256,14 +337,28 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 );
                 """
             )
+            _require_columns(con, "conditions", ["record_key"])
+            _create_unique_index_if_possible(con, name="conditions_record_key_uq", table="conditions", column="record_key")
             for obj in _iter_ndjson(conditions_path):
+                record_key = obj.get("record_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = obj.get("event_key")
+                if not isinstance(record_key, str) or not record_key:
+                    record_key = _sha256_text(_stable_json(obj) or "")
+
                 event_key = obj.get("event_key")
                 if not isinstance(event_key, str) or not event_key:
-                    event_key = _sha256_text(_stable_json(obj) or "")
+                    event_key = record_key
 
                 con.execute(
-                    "INSERT INTO conditions VALUES (?,?,?,?,?,?,?,?,?,?);",
+                    """
+                    INSERT INTO conditions
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                    WHERE NOT EXISTS (SELECT 1 FROM conditions WHERE record_key=?);
+                    """,
                     [
+                        obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                        record_key,
                         obj.get("canonical_person_id"),
                         obj.get("source"),
                         obj.get("source_file"),
@@ -274,6 +369,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                         obj.get("code") if isinstance(obj.get("code"), str) else None,
                         _stable_json(obj.get("code_coding")),
+                        record_key,
                     ],
                 )
 
