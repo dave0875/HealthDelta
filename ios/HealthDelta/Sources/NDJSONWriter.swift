@@ -19,7 +19,22 @@ final class NDJSONWriter {
 
     func appendLines(_ objects: [Any], to url: URL) throws {
         let fm = FileManager.default
-        fm.createFile(atPath: url.path, contents: nil)
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        // Best-effort atomic file creation on first write.
+        if !fm.fileExists(atPath: url.path) {
+            do {
+                var data = Data()
+                data.reserveCapacity(objects.count * 128)
+                for obj in objects {
+                    data.append(try encodeLine(obj))
+                }
+                try data.write(to: url, options: [.atomic])
+                return
+            } catch {
+                throw WriteError.io(error)
+            }
+        }
 
         do {
             let handle = try FileHandle(forWritingTo: url)
@@ -34,4 +49,3 @@ final class NDJSONWriter {
         }
     }
 }
-

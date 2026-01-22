@@ -28,7 +28,8 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
 
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true)
         let anchorsDir = tmp.appendingPathComponent("anchors", isDirectory: true)
-        let outURL = tmp.appendingPathComponent("out.ndjson", isDirectory: false)
+        let outBase = tmp.appendingPathComponent("HealthDelta", isDirectory: true)
+        let outURL = IOSExportLayout(baseDirectoryURL: outBase).observationsNDJSONURL(runID: "run_1")
 
         let exporter = IncrementalNDJSONExporter(
             anchorStore: AnchorStore(directoryURL: anchorsDir),
@@ -62,7 +63,8 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
 
             let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true)
             let anchorsDir = tmp.appendingPathComponent("anchors", isDirectory: true)
-            let outURL = tmp.appendingPathComponent("out.ndjson", isDirectory: false)
+            let outBase = tmp.appendingPathComponent("HealthDelta", isDirectory: true)
+            let outURL = IOSExportLayout(baseDirectoryURL: outBase).observationsNDJSONURL(runID: "run_1")
 
             let exporter = IncrementalNDJSONExporter(
                 anchorStore: AnchorStore(directoryURL: anchorsDir),
