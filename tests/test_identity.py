@@ -35,7 +35,7 @@ class TestNameParsing(unittest.TestCase):
 
 
 class TestIdentityBuild(unittest.TestCase):
-    def test_build_links_name_variants_and_preserves_external_ids(self) -> None:
+    def test_build_creates_unverified_person_link_when_unambiguous(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             run_dir = root / "staging" / "run123"
@@ -49,24 +49,8 @@ class TestIdentityBuild(unittest.TestCase):
                         "resource": {
                             "resourceType": "Patient",
                             "id": "p1",
-                            "name": [{"text": "Doe, John"}],
-                            "identifier": [{"system": "sysA", "value": "111"}],
-                        }
-                    },
-                    {
-                        "resource": {
-                            "resourceType": "Patient",
-                            "id": "p2",
                             "name": [{"text": "John Doe"}],
-                            "identifier": [{"system": "sysB", "value": "222"}],
-                        }
-                    },
-                    {
-                        "resource": {
-                            "resourceType": "Patient",
-                            "id": "p3",
-                            "name": [{"text": "Jane Doe"}],
-                            "identifier": [{"system": "sysC", "value": "333"}],
+                            "identifier": [{"system": "sysA", "value": "111"}],
                         }
                     },
                 ],
@@ -90,23 +74,77 @@ class TestIdentityBuild(unittest.TestCase):
 
             people = json.loads((root / "data" / "identity" / "people.json").read_text(encoding="utf-8"))
             aliases = json.loads((root / "data" / "identity" / "aliases.json").read_text(encoding="utf-8"))
+            links = json.loads((root / "data" / "identity" / "person_links.json").read_text(encoding="utf-8"))
 
-            # Expect 2 people: John Doe and Jane Doe
+            # Expect 1 person: John Doe
+            self.assertEqual(len(people["people"]), 1)
+
+            # Expect 1 alias observed
+            self.assertEqual(len(aliases["aliases"]), 1)
+
+            # Expect PersonLink(s) created and unverified.
+            self.assertEqual(links.get("schema_version"), 1)
+            link_list = links.get("links")
+            self.assertIsInstance(link_list, list)
+            self.assertGreaterEqual(len(link_list), 1)
+            self.assertTrue(all(l.get("verification_state") == "unverified" for l in link_list if isinstance(l, dict)))
+
+    def test_build_creates_distinct_people_when_name_is_ambiguous_within_run(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_dir = root / "staging" / "runA"
+            clinical_rel = "source/unpacked/clinical/patient.json"
+            (run_dir / "source" / "unpacked" / "clinical").mkdir(parents=True, exist_ok=True)
+
+            # Two different patients with the same normalized name in the same run => ambiguity => no auto-merge.
+            patient_bundle = {
+                "resourceType": "Bundle",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "p1",
+                            "name": [{"text": "John Doe"}],
+                            "identifier": [{"system": "sysA", "value": "111"}],
+                        }
+                    },
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "p2",
+                            "name": [{"text": "Doe, John"}],
+                            "identifier": [{"system": "sysB", "value": "222"}],
+                        }
+                    },
+                ],
+            }
+            _write_json(run_dir / clinical_rel, patient_bundle)
+            layout = {"run_id": "runA", "export_xml": "source/unpacked/export.xml", "clinical_json": [clinical_rel]}
+            _write_json(run_dir / "layout.json", layout)
+
+            old_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(root)
+                from healthdelta.identity import build_identity
+
+                build_identity(staging_run_dir=str(run_dir))
+            finally:
+                os.chdir(old_cwd)
+
+            people = json.loads((root / "data" / "identity" / "people.json").read_text(encoding="utf-8"))
+            links = json.loads((root / "data" / "identity" / "person_links.json").read_text(encoding="utf-8"))
+
             self.assertEqual(len(people["people"]), 2)
+            person_keys = sorted([p["person_key"] for p in people["people"]])
+            self.assertEqual(len(set(person_keys)), 2)
 
-            # Expect 3 aliases observed
-            self.assertEqual(len(aliases["aliases"]), 3)
-
-            # Verify the two John variants map to the same person_key
-            john_aliases = [a for a in aliases["aliases"] if a["first_norm"] == "john" and a["last_norm"] == "doe"]
-            self.assertEqual(len(john_aliases), 2)
-            self.assertEqual(john_aliases[0]["person_key"], john_aliases[1]["person_key"])
-
-            # Verify external ids are preserved and distinct
-            ext_sets = [tuple((e["system"], e["value"]) for e in a["source"]["external_ids"]) for a in john_aliases]
-            self.assertNotEqual(ext_sets[0], ext_sets[1])
+            link_list = links.get("links")
+            self.assertIsInstance(link_list, list)
+            link_person_keys = sorted([l["person_key"] for l in link_list if isinstance(l, dict) and isinstance(l.get("person_key"), str)])
+            self.assertEqual(len(set(link_person_keys)), 2)
 
 
 if __name__ == "__main__":
     unittest.main()
-

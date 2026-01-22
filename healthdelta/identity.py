@@ -7,6 +7,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,26 @@ def _walk_fhir_resources(obj: object) -> list[dict]:
     return resources
 
 
+def _sha256_text(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def _system_fingerprint(system: str) -> str:
+    return _sha256_text(system.strip())
+
+
+def _source_patient_id_fingerprint(system: str, value: str) -> str:
+    return _sha256_text(f"{system.strip()}:{value.strip()}")
+
+
+@dataclass(frozen=True)
+class _PatientHit:
+    rel: str
+    idx: int
+    parsed: ParsedName
+    external_ids: list[dict]
+
+
 def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -> None:
     run_dir = Path(staging_run_dir)
     layout_path = run_dir / "layout.json"
@@ -152,9 +173,11 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
     identity_dir = Path(output_dir)
     people_path = identity_dir / "people.json"
     aliases_path = identity_dir / "aliases.json"
+    links_path = identity_dir / "person_links.json"
 
     people: list[dict] = []
     aliases: list[dict] = []
+    links: list[dict] = []
     if people_path.exists():
         obj = _read_json(people_path)
         if isinstance(obj, dict) and isinstance(obj.get("people"), list):
@@ -163,8 +186,12 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
         obj = _read_json(aliases_path)
         if isinstance(obj, dict) and isinstance(obj.get("aliases"), list):
             aliases = obj["aliases"]
+    if links_path.exists():
+        obj = _read_json(links_path)
+        if isinstance(obj, dict) and isinstance(obj.get("links"), list):
+            links = obj["links"]
 
-    key_to_person: dict[tuple[str, str], str] = {}
+    name_to_people: dict[tuple[str, str], list[str]] = {}
     for person in people:
         if not isinstance(person, dict):
             continue
@@ -172,15 +199,33 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
         last_norm = person.get("last_norm")
         person_key = person.get("person_key")
         if isinstance(first_norm, str) and isinstance(last_norm, str) and isinstance(person_key, str):
-            key_to_person[(first_norm, last_norm)] = person_key
+            name_to_people.setdefault((first_norm, last_norm), [])
+            if person_key not in name_to_people[(first_norm, last_norm)]:
+                name_to_people[(first_norm, last_norm)].append(person_key)
 
     alias_keys_existing = set()
     for alias in aliases:
         if isinstance(alias, dict) and isinstance(alias.get("alias_key"), str):
             alias_keys_existing.add(alias["alias_key"])
 
+    link_key_to_person: dict[tuple[str, str], str] = {}
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        sys_fp = link.get("system_fingerprint")
+        src_pid = link.get("source_patient_id")
+        person_key = link.get("person_key")
+        state = link.get("verification_state")
+        if not (isinstance(sys_fp, str) and isinstance(src_pid, str) and isinstance(person_key, str)):
+            continue
+        if state not in {"verified", "unverified", "user_confirmed"}:
+            continue
+        link_key_to_person[(sys_fp, src_pid)] = person_key
+
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
+    # First pass: collect all Patient resources and count name collisions within this run.
+    hits: list[_PatientHit] = []
     for rel in clinical_paths:
         if not isinstance(rel, str):
             continue
@@ -193,7 +238,7 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
             continue
 
         resources = _walk_fhir_resources(content)
-        for res in resources:
+        for idx, res in enumerate(resources):
             if res.get("resourceType") != "Patient":
                 continue
             name = _extract_patient_name(res)
@@ -204,41 +249,113 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
             except ValueError:
                 continue
 
-            match_key = (parsed.first_norm, parsed.last_norm)
-            person_key = key_to_person.get(match_key)
-            if person_key is None:
-                person_key = str(uuid.uuid4())
-                key_to_person[match_key] = person_key
-                people.append(
-                    {
-                        "person_key": person_key,
-                        "first_norm": parsed.first_norm,
-                        "last_norm": parsed.last_norm,
-                        "created_at": now,
-                    }
-                )
-
             external_ids = _extract_external_ids(res)
-            alias_payload = {
+            hits.append(_PatientHit(rel=rel, idx=idx, parsed=parsed, external_ids=external_ids))
+
+    name_counts: dict[tuple[str, str], int] = {}
+    for h in hits:
+        k = (h.parsed.first_norm, h.parsed.last_norm)
+        name_counts[k] = name_counts.get(k, 0) + 1
+
+    def _create_person(*, parsed: ParsedName) -> str:
+        person_key = str(uuid.uuid4())
+        people.append(
+            {
                 "person_key": person_key,
-                "first_raw": parsed.first,
-                "last_raw": parsed.last,
                 "first_norm": parsed.first_norm,
                 "last_norm": parsed.last_norm,
-                "name_raw": parsed.raw,
-                "source": {
-                    "run_id": run_id,
-                    "file": rel,
-                    "external_ids": external_ids,
-                },
+                "created_at": now,
             }
-            alias_key = _stable_alias_key(alias_payload)
-            if alias_key in alias_keys_existing:
+        )
+        name_to_people.setdefault((parsed.first_norm, parsed.last_norm), [])
+        name_to_people[(parsed.first_norm, parsed.last_norm)].append(person_key)
+        return person_key
+
+    def _add_links(*, person_key: str, external_ids: list[dict], verification_state: str) -> None:
+        if verification_state not in {"verified", "unverified", "user_confirmed"}:
+            raise ValueError(f"Invalid verification_state: {verification_state}")
+        for ext in external_ids:
+            if not isinstance(ext, dict):
                 continue
-            alias_keys_existing.add(alias_key)
-            aliases.append({**alias_payload, "alias_key": alias_key, "observed_at": now})
+            system = ext.get("system")
+            value = ext.get("value")
+            if not (isinstance(system, str) and isinstance(value, str) and system.strip() and value.strip()):
+                continue
+
+            sys_fp = _system_fingerprint(system)
+            src_pid = _source_patient_id_fingerprint(system, value)
+            key = (sys_fp, src_pid)
+            existing = link_key_to_person.get(key)
+            if existing is not None:
+                if existing != person_key:
+                    raise RuntimeError(f"Conflicting PersonLink for {key}: {existing} vs {person_key}")
+                continue
+            link_key_to_person[key] = person_key
+            links.append(
+                {
+                    "system_fingerprint": sys_fp,
+                    "source_patient_id": src_pid,
+                    "person_key": person_key,
+                    "verification_state": verification_state,
+                }
+            )
+
+    # Second pass: assign person_key and append aliases + links.
+    for h in sorted(hits, key=lambda x: (x.rel, x.idx)):
+        match_key = (h.parsed.first_norm, h.parsed.last_norm)
+
+        linked_person_keys = set()
+        for ext in h.external_ids:
+            if not isinstance(ext, dict):
+                continue
+            system = ext.get("system")
+            value = ext.get("value")
+            if not (isinstance(system, str) and isinstance(value, str) and system.strip() and value.strip()):
+                continue
+            key = (_system_fingerprint(system), _source_patient_id_fingerprint(system, value))
+            pk = link_key_to_person.get(key)
+            if isinstance(pk, str) and pk:
+                linked_person_keys.add(pk)
+
+        if len(linked_person_keys) > 1:
+            raise RuntimeError(f"Patient has external IDs linked to multiple people: {sorted(linked_person_keys)}")
+
+        person_key: str | None = next(iter(linked_person_keys)) if linked_person_keys else None
+        link_state_for_new = "unverified"
+
+        if person_key is None:
+            candidates = name_to_people.get(match_key, [])
+            if name_counts.get(match_key, 0) == 1 and len(candidates) == 1:
+                # Unambiguous name match: link to existing person, but keep unverified until confirmed.
+                person_key = candidates[0]
+            else:
+                # Ambiguous within the run or multiple candidates exist: do not auto-merge.
+                person_key = _create_person(parsed=h.parsed)
+
+            _add_links(person_key=person_key, external_ids=h.external_ids, verification_state=link_state_for_new)
+
+        alias_payload: dict[str, Any] = {
+            "person_key": person_key,
+            "first_raw": h.parsed.first,
+            "last_raw": h.parsed.last,
+            "first_norm": h.parsed.first_norm,
+            "last_norm": h.parsed.last_norm,
+            "name_raw": h.parsed.raw,
+            "source": {
+                "run_id": run_id,
+                "file": h.rel,
+                "external_ids": h.external_ids,
+            },
+        }
+        alias_key = _stable_alias_key(alias_payload)
+        if alias_key in alias_keys_existing:
+            continue
+        alias_keys_existing.add(alias_key)
+        aliases.append({**alias_payload, "alias_key": alias_key, "observed_at": now})
 
     people_out = {
+        "schema_version": 1,
+        "run_id": run_id,
         "people": sorted(people, key=lambda p: (p.get("last_norm", ""), p.get("first_norm", ""), p.get("person_key", ""))),
         "notes": {
             "matching_rule": "same person iff first_norm AND last_norm match",
@@ -246,12 +363,24 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
         },
     }
     aliases_out = {
+        "schema_version": 1,
+        "run_id": run_id,
         "aliases": sorted(aliases, key=lambda a: (a.get("last_norm", ""), a.get("first_norm", ""), a.get("alias_key", ""))),
         "notes": {
             "append_only": True,
             "dedupe_rule": "alias_key = sha256(stable alias payload)",
         },
     }
+    links_out = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "links": sorted(links, key=lambda l: (l.get("system_fingerprint", ""), l.get("source_patient_id", ""), l.get("person_key", ""))),
+        "notes": {
+            "identifiers": "system_fingerprint and source_patient_id are sha256 fingerprints; raw external IDs are not stored here",
+            "verification_state": ["verified", "unverified", "user_confirmed"],
+        },
+    }
 
     _write_json(people_path, people_out)
     _write_json(aliases_path, aliases_out)
+    _write_json(links_path, links_out)
