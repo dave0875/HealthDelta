@@ -5,6 +5,8 @@ import XCTest
 @testable import HealthDelta
 
 final class IncrementalNDJSONExporterTests: XCTestCase {
+    private let _fixedCanonicalPersonID = "123e4567-e89b-42d3-a456-426614174000"
+
     private func _makeSample(type: HKQuantityType) -> HKQuantitySample {
         HKQuantitySample(
             type: type,
@@ -30,7 +32,8 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
 
         let exporter = IncrementalNDJSONExporter(
             anchorStore: AnchorStore(directoryURL: anchorsDir),
-            queryClient: FakeAnchoredQueryClient(script: script)
+            queryClient: FakeAnchoredQueryClient(script: script),
+            canonicalPersonIDProvider: { self._fixedCanonicalPersonID }
         )
 
         let wrote1 = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
@@ -38,6 +41,7 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
         let bytes1 = try Data(contentsOf: outURL)
         XCTAssertTrue(bytes1.count > 0)
         XCTAssertEqual(bytes1.last, 0x0A)
+        try _assertAllRowsHaveCanonicalPersonID(bytes1)
 
         let wrote2 = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
         XCTAssertFalse(wrote2)
@@ -60,15 +64,38 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
             let anchorsDir = tmp.appendingPathComponent("anchors", isDirectory: true)
             let outURL = tmp.appendingPathComponent("out.ndjson", isDirectory: false)
 
-            let exporter = IncrementalNDJSONExporter(anchorStore: AnchorStore(directoryURL: anchorsDir), queryClient: FakeAnchoredQueryClient(script: script))
+            let exporter = IncrementalNDJSONExporter(
+                anchorStore: AnchorStore(directoryURL: anchorsDir),
+                queryClient: FakeAnchoredQueryClient(script: script),
+                canonicalPersonIDProvider: { self._fixedCanonicalPersonID }
+            )
             _ = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
             _ = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
-            return try Data(contentsOf: outURL)
+            let bytes = try Data(contentsOf: outURL)
+            try _assertAllRowsHaveCanonicalPersonID(bytes)
+            return bytes
         }
 
         let a = try await runOnceInFreshDir()
         let b = try await runOnceInFreshDir()
         XCTAssertEqual(a, b)
     }
-}
 
+    private func _assertAllRowsHaveCanonicalPersonID(_ bytes: Data) throws {
+        guard let s = String(data: bytes, encoding: .utf8) else {
+            XCTFail("invalid UTF-8")
+            return
+        }
+        let lines = s.split(separator: "\n")
+        XCTAssertFalse(lines.isEmpty)
+
+        for line in lines {
+            let obj = try JSONSerialization.jsonObject(with: Data(line.utf8), options: [])
+            guard let dict = obj as? [String: Any] else {
+                XCTFail("not a JSON object")
+                continue
+            }
+            XCTAssertEqual(dict["canonical_person_id"] as? String, _fixedCanonicalPersonID)
+        }
+    }
+}

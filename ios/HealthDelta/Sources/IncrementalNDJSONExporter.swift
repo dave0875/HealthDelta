@@ -6,10 +6,17 @@ final class IncrementalNDJSONExporter {
     private let anchorStore: AnchorStore
     private let queryClient: AnchoredQuerying
     private let writer: NDJSONWriter
+    private let canonicalPersonIDProvider: () throws -> String
 
-    init(anchorStore: AnchorStore, queryClient: AnchoredQuerying, writer: NDJSONWriter = NDJSONWriter()) {
+    init(
+        anchorStore: AnchorStore,
+        queryClient: AnchoredQuerying,
+        canonicalPersonIDProvider: @escaping () throws -> String = { try CanonicalPersonIDStore.defaultInAppSandbox().getOrCreate() },
+        writer: NDJSONWriter = NDJSONWriter()
+    ) {
         self.anchorStore = anchorStore
         self.queryClient = queryClient
+        self.canonicalPersonIDProvider = canonicalPersonIDProvider
         self.writer = writer
     }
 
@@ -31,7 +38,8 @@ final class IncrementalNDJSONExporter {
             return false
         }
 
-        let rows = result.addedSamples.map { sampleToRow(sample: $0) }
+        let canonicalPersonID = try canonicalPersonIDProvider()
+        let rows = result.addedSamples.map { sampleToRow(sample: $0, canonicalPersonID: canonicalPersonID) }
         let sorted = rows.sorted { a, b in
             (a["record_key"] as? String ?? "") < (b["record_key"] as? String ?? "")
         }
@@ -39,13 +47,14 @@ final class IncrementalNDJSONExporter {
         return true
     }
 
-    private func sampleToRow(sample: HKSample) -> [String: Any] {
+    private func sampleToRow(sample: HKSample, canonicalPersonID: String) -> [String: Any] {
         let typeId = sample.sampleType.identifier
         let start = iso8601(sample.startDate)
         let end = iso8601(sample.endDate)
 
         var row: [String: Any] = [
             "schema_version": 1,
+            "canonical_person_id": canonicalPersonID,
             "source": "healthkit",
             "sample_type": typeId,
             "start_time": start,
@@ -81,4 +90,3 @@ final class IncrementalNDJSONExporter {
         return f.string(from: d)
     }
 }
-
