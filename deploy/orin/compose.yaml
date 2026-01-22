@@ -1,0 +1,10 @@
+services:
+  backend:
+    image: ghcr.io/dave0875/healthdelta-backend:${HEALTHDELTA_BACKEND_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+

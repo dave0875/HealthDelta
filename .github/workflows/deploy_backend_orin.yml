@@ -1,0 +1,56 @@
+name: Deploy Backend (ORIN)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to deploy (vX.Y.Z)
+        required: true
+        type: string
+
+concurrency:
+  group: orin-backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ORIN deploy + verify
+    runs-on: [self-hosted, linux, orin]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GHCR (pull)
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Derive deploy variables
+        id: v
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          ver="${tag#v}"
+          sha="$(git rev-list -n 1 "$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy + verify (compose)
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.v.outputs.tag }}" VERSION="${{ steps.v.outputs.ver }}" GIT_SHA="${{ steps.v.outputs.sha }}" \
+            DEPLOY_DIR="/opt/healthdelta" SERVICE_NAME="backend" BASE_URL="http://127.0.0.1:8080" \
+            bash scripts/cd/orin_deploy_backend.sh
+
