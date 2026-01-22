@@ -34,5 +34,19 @@ Note: CLI packaging version is tag-derived; do not manually edit a fixed `versio
 - Current authoritative proof for iOS is the macOS self-hosted CI runner (`ios-xcresult` artifact).
 - Planned: distribution builds will set `MARKETING_VERSION` from the git tag and `CURRENT_PROJECT_VERSION` from the CI run number (helper: `scripts/cd/derive_ios_versions.py`).
 
+## Backend service (current state)
+- Minimal backend HTTP service exists for CD verification: `healthdelta serve` / `python -m healthdelta.backend_server`
+- Endpoints:
+  - `GET /healthz` → `{"ok": true}`
+  - `GET /version` → includes `version` + `git_sha` (share-safe)
+- Local dev (Docker):
+  - Build: `docker build -t healthdelta-backend:dev .`
+  - Run: `docker run --rm -p 8080:8080 healthdelta-backend:dev`
+  - Verify: `curl -fsS http://127.0.0.1:8080/healthz` and `curl -fsS http://127.0.0.1:8080/version`
+- Local dev (Compose): `docker compose -f compose.backend.dev.yaml up --build`
+- Version injection for containers:
+  - Build args: `HEALTHDELTA_VERSION`, `HEALTHDELTA_GIT_SHA`
+  - Runtime env vars: `HEALTHDELTA_VERSION`, `HEALTHDELTA_GIT_SHA`
+
 ## References
 - Production targets ADR: `docs/adr/ADR_5_continuous_deployment_targets.md`

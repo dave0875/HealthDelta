@@ -1,0 +1,16 @@
+.git
+.github
+.codex
+.venv
+__pycache__
+*.pyc
+data
+dist
+healthdelta.egg-info
+ios
+mac
+docs
+tests
+TIME.csv
+README.md
+AGENTS.md
