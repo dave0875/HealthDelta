@@ -15,11 +15,15 @@ from healthdelta.note import build_doctor_note
 from healthdelta.profile import build_export_profile
 from healthdelta.state import register_existing_run_dir
 from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
+from healthdelta.version import get_build_info
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="healthdelta")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    version_cmd = sub.add_parser("version", help="Print share-safe build/version information")
+    version_cmd.add_argument("--json", action="store_true", help="Emit JSON (default: key=value lines)")
 
     ingest = sub.add_parser("ingest", help="Stage Apple Health export input deterministically")
     ingest.add_argument("variant", nargs="?", choices=["ios"], help="Ingest variant (default: apple health export)")
@@ -135,7 +139,22 @@ def main(argv: list[str] | None = None) -> int:
     share_verify = share_sub.add_parser("verify", help="Verify a share bundle (allowlist + manifest hashes)")
     share_verify.add_argument("--bundle", required=True, help="Path to a .tar.gz share bundle")
 
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        return int(e.code) if isinstance(e.code, int) else 2
+
+    if args.command == "version":
+        info = get_build_info()
+        if args.json:
+            import json
+
+            print(json.dumps(info, sort_keys=True))
+        else:
+            print(f"healthdelta_version={info.get('version')}")
+            sha = info.get("git_sha") or ""
+            print(f"git_sha={sha}")
+        return 0
 
     if args.command == "ingest":
         if args.variant == "ios":

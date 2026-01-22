@@ -44,12 +44,9 @@ def _now_utc() -> str:
 
 
 def _healthdelta_version() -> str:
-    try:
-        from importlib.metadata import version
+    from healthdelta.version import get_version
 
-        return version("healthdelta")
-    except Exception:
-        return "0.0.0+local"
+    return get_version()
 
 
 def _redacted_input_summary(input_path: Path) -> dict:
