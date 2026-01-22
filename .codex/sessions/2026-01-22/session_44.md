@@ -14,3 +14,6 @@ Work summary
 Local verification
 - N/A (documentation-only change).
 
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/45
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21249703585
