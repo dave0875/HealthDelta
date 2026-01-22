@@ -16,6 +16,7 @@ from healthdelta.profile import build_export_profile
 from healthdelta.state import register_existing_run_dir
 from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
 from healthdelta.version import get_build_info
+from healthdelta.backend_server import serve as serve_backend
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
 
     version_cmd = sub.add_parser("version", help="Print share-safe build/version information")
     version_cmd.add_argument("--json", action="store_true", help="Emit JSON (default: key=value lines)")
+
+    serve_cmd = sub.add_parser("serve", help="Run a minimal backend HTTP server (share-safe)")
+    serve_cmd.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    serve_cmd.add_argument("--port", type=int, default=8080, help="Bind port (default: 8080)")
 
     ingest = sub.add_parser("ingest", help="Stage Apple Health export input deterministically")
     ingest.add_argument("variant", nargs="?", choices=["ios"], help="Ingest variant (default: apple health export)")
@@ -154,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"healthdelta_version={info.get('version')}")
             sha = info.get("git_sha") or ""
             print(f"git_sha={sha}")
+        return 0
+
+    if args.command == "serve":
+        serve_backend(host=str(args.host), port=int(args.port))
         return 0
 
     if args.command == "ingest":
