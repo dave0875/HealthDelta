@@ -11,3 +11,10 @@ Work summary
 
 Local verification
 - N/A (workflow-driven change)
+
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/57
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21250796827
+
+Release proof
+- Green: https://github.com/dave0875/HealthDelta/actions/runs/21250858987 (`v0.0.2`)

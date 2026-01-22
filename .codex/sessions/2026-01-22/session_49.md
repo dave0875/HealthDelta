@@ -13,3 +13,11 @@ Work summary
 
 Local verification
 - N/A (tag-triggered workflow verification)
+
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/55
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21250578953
+
+Release proof
+- Failed (expected during investigation): https://github.com/dave0875/HealthDelta/actions/runs/21250636581 (`v0.0.1`)
+- Green (backend image publish + verification): https://github.com/dave0875/HealthDelta/actions/runs/21250858987 (`v0.0.2`)
