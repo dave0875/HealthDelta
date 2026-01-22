@@ -47,6 +47,23 @@ final class IncrementalNDJSONExporter {
         return true
     }
 
+    @discardableResult
+    func runOnce(
+        runID: String,
+        layout: IOSExportLayout,
+        key: String,
+        type: HKSampleType,
+        predicate: NSPredicate? = nil,
+        limit: Int = HKObjectQueryNoLimit
+    ) async throws -> Bool {
+        try layout.ensureDirectories(runID: runID)
+        let outputURL = layout.observationsNDJSONURL(runID: runID)
+
+        let changed = try await runOnce(key: key, type: type, predicate: predicate, limit: limit, outputURL: outputURL)
+        try IOSExportManifestWriter(layout: layout).writeManifestIfChanged(runID: runID)
+        return changed
+    }
+
     private func sampleToRow(sample: HKSample, canonicalPersonID: String) -> [String: Any] {
         let typeId = sample.sampleType.identifier
         let start = iso8601(sample.startDate)

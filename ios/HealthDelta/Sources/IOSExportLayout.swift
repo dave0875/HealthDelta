@@ -27,8 +27,40 @@ struct IOSExportLayout {
         ndjsonDirectory(runID: runID).appendingPathComponent("observations.ndjson", isDirectory: false)
     }
 
+    func manifestURL(runID: String) -> URL {
+        runDirectory(runID: runID).appendingPathComponent("manifest.json", isDirectory: false)
+    }
+
+    func ndjsonFilesForManifest(runID: String) throws -> [String] {
+        // Relative paths under the run directory (stable ordering).
+        let paths = [
+            "ndjson/observations.ndjson",
+        ]
+
+        let base = runDirectory(runID: runID)
+        let existing = paths.filter { rel in
+            FileManager.default.fileExists(atPath: base.appendingPathComponent(rel, isDirectory: false).path)
+        }
+        return existing.sorted()
+    }
+
+    func countNDJSONRows(url: URL) throws -> Int {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return 0
+        }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var count = 0
+        while true {
+            let chunk = try handle.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty { break }
+            count += chunk.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) }
+        }
+        return count
+    }
+
     func ensureDirectories(runID: String) throws {
         try FileManager.default.createDirectory(at: ndjsonDirectory(runID: runID), withIntermediateDirectories: true)
     }
 }
-
