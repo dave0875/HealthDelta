@@ -7,6 +7,8 @@ Build a canonical person registry and observed alias/provenance records from sta
 From the repo root:
 
 - `healthdelta identity build --input data/staging/<run_id>`
+- `healthdelta identity review [--identity data/identity]`
+- `healthdelta identity confirm --link <link_id> [--identity data/identity]`
 
 ## Inputs
 The `--input` path must be a staging run directory produced by `healthdelta ingest` (Issue #4), and must include `layout.json`.
@@ -43,6 +45,20 @@ Observed external IDs and source references are appended to `aliases.json` with 
 - `source_patient_id`: `sha256(<system>:<value>)`
 - `person_key`: canonical person UUID
 - `verification_state`: `verified` | `unverified` | `user_confirmed`
+
+### Review / confirm workflow (CLI)
+
+List unverified links (share-safe output; no names/DOBs):
+
+```bash
+healthdelta identity review
+```
+
+Each line begins with a `link_id` (sha256 of `<system_fingerprint>:<source_patient_id>`). Confirm a link:
+
+```bash
+healthdelta identity confirm --link <link_id>
+```
 
 Link creation rules (MVP):
 - If the external ID fingerprint is already linked, reuse that `person_key`.

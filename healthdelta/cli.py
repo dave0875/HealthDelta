@@ -4,7 +4,7 @@ from pathlib import Path
 
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.deid import deidentify_run
-from healthdelta.identity import build_identity
+from healthdelta.identity import build_identity, confirm_identity_link, review_identity_links
 from healthdelta.duckdb_tools import build_duckdb, query_duckdb
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.ndjson_validate import validate_ndjson_dir
@@ -30,6 +30,13 @@ def main(argv: list[str] | None = None) -> int:
 
     identity_build = identity_sub.add_parser("build", help="Build canonical people + aliases from a staging run")
     identity_build.add_argument("--input", required=True, help="Path to data/staging/<run_id>")
+
+    identity_review = identity_sub.add_parser("review", help="List unverified PersonLinks (share-safe)")
+    identity_review.add_argument("--identity", default="data/identity", help="Identity directory (default: data/identity)")
+
+    identity_confirm = identity_sub.add_parser("confirm", help="Mark a PersonLink as user_confirmed")
+    identity_confirm.add_argument("--identity", default="data/identity", help="Identity directory (default: data/identity)")
+    identity_confirm.add_argument("--link", required=True, help="Link id (from `healthdelta identity review`)")
 
     deid = sub.add_parser("deid", help="De-identify a staging run into a share-safe dataset")
     deid.add_argument("--input", required=True, help="Path to data/staging/<run_id>")
@@ -135,6 +142,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "identity" and args.identity_command == "build":
         build_identity(staging_run_dir=args.input)
+        return 0
+    if args.command == "identity" and args.identity_command == "review":
+        lines = review_identity_links(identity_dir=args.identity)
+        for ln in lines:
+            print(ln)
+        return 0
+    if args.command == "identity" and args.identity_command == "confirm":
+        ok = confirm_identity_link(identity_dir=args.identity, link_id=args.link)
+        if not ok:
+            print("ERROR link not found", file=sys.stderr)
+            return 1
+        print("ok")
         return 0
 
     if args.command == "deid":

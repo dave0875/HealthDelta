@@ -147,12 +147,100 @@ def _source_patient_id_fingerprint(system: str, value: str) -> str:
     return _sha256_text(f"{system.strip()}:{value.strip()}")
 
 
+def _person_link_id(system_fingerprint: str, source_patient_id: str) -> str:
+    return _sha256_text(f"{system_fingerprint}:{source_patient_id}")
+
+
 @dataclass(frozen=True)
 class _PatientHit:
     rel: str
     idx: int
     parsed: ParsedName
     external_ids: list[dict]
+
+
+def _load_person_links(identity_dir: Path) -> dict:
+    path = identity_dir / "person_links.json"
+    if not path.exists():
+        return {"schema_version": 1, "run_id": None, "links": []}
+    obj = _read_json(path)
+    if isinstance(obj, dict) and isinstance(obj.get("links"), list):
+        return obj
+    raise ValueError(f"Invalid person_links.json: {path}")
+
+
+def review_identity_links(*, identity_dir: str = "data/identity") -> list[str]:
+    """
+    Returns deterministic, share-safe lines for unverified links.
+    Output lines intentionally avoid names/DOBs and include only fingerprints + person_key.
+    """
+    root = Path(identity_dir)
+    obj = _load_person_links(root)
+    links = obj.get("links")
+    if not isinstance(links, list):
+        return []
+
+    rows: list[tuple[str, str]] = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        if link.get("verification_state") != "unverified":
+            continue
+        sys_fp = link.get("system_fingerprint")
+        src_pid = link.get("source_patient_id")
+        person_key = link.get("person_key")
+        if not (isinstance(sys_fp, str) and isinstance(src_pid, str) and isinstance(person_key, str)):
+            continue
+        link_id = _person_link_id(sys_fp, src_pid)
+        rows.append((link_id, person_key))
+
+    return [f"{link_id} person_key={person_key}" for link_id, person_key in sorted(rows, key=lambda r: r[0])]
+
+
+def confirm_identity_link(*, identity_dir: str = "data/identity", link_id: str) -> bool:
+    """
+    Marks the identified link as user_confirmed.
+    Returns True if the link exists (even if already confirmed), False if not found.
+    """
+    root = Path(identity_dir)
+    obj = _load_person_links(root)
+    links = obj.get("links")
+    if not isinstance(links, list):
+        raise ValueError("person_links.json missing links")
+
+    found = False
+    updated_any = False
+    updated_links: list[dict] = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        sys_fp = link.get("system_fingerprint")
+        src_pid = link.get("source_patient_id")
+        if not (isinstance(sys_fp, str) and isinstance(src_pid, str)):
+            continue
+        lid = _person_link_id(sys_fp, src_pid)
+        if lid != link_id:
+            updated_links.append(link)
+            continue
+
+        found = True
+        if link.get("verification_state") != "user_confirmed":
+            link = {**link, "verification_state": "user_confirmed"}
+            updated_any = True
+        updated_links.append(link)
+
+    if not found:
+        return False
+
+    if updated_any:
+        # Preserve existing metadata, but normalize the links ordering deterministically.
+        obj_out = dict(obj)
+        obj_out["links"] = sorted(
+            updated_links,
+            key=lambda l: (l.get("system_fingerprint", ""), l.get("source_patient_id", ""), l.get("person_key", "")),
+        )
+        _write_json(root / "person_links.json", obj_out)
+    return True
 
 
 def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -> None:
