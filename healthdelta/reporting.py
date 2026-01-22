@@ -104,13 +104,15 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
         tables_summary: dict[str, dict[str, object]] = {}
         coverage_by_source_rows: list[tuple[str, str, int]] = []
 
+        source_bucket = "CASE WHEN source_file LIKE 'ndjson/%' THEN 'ios' ELSE source END"
+
         for table in streams:
             total_rows = int(_scalar(con, f"SELECT COUNT(*) FROM {table};") or 0)
             distinct_people = int(_scalar(con, f"SELECT COUNT(DISTINCT canonical_person_id) FROM {table};") or 0)
             min_et = _scalar(con, f"SELECT MIN(event_time) FROM {table} WHERE event_time IS NOT NULL;")
             max_et = _scalar(con, f"SELECT MAX(event_time) FROM {table} WHERE event_time IS NOT NULL;")
 
-            by_source = _rows(con, f"SELECT source, COUNT(*) AS n FROM {table} GROUP BY source ORDER BY source;")
+            by_source = _rows(con, f"SELECT {source_bucket} AS source, COUNT(*) AS n FROM {table} GROUP BY 1 ORDER BY 1;")
             by_source_map: dict[str, int] = {}
             for source, n in by_source:
                 if isinstance(source, str):
@@ -301,11 +303,11 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             for day, source, n in _rows(
                 con,
                 f"""
-                SELECT CAST(date_trunc('day', event_time) AS DATE) AS day, source, COUNT(*) AS n
+                SELECT CAST(date_trunc('day', event_time) AS DATE) AS day, {source_bucket} AS source, COUNT(*) AS n
                 FROM {table}
                 WHERE event_time IS NOT NULL
-                GROUP BY day, source
-                ORDER BY day, source;
+                GROUP BY 1, 2
+                ORDER BY 1, 2;
                 """,
             ):
                 if not isinstance(source, str):
@@ -414,4 +416,3 @@ def show_report(*, db_path: str) -> None:
             print(f"{t}.distinct_people={people}")
     finally:
         con.close()
-
