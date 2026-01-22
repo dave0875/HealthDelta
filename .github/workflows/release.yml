@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,6 +29,18 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build
           python -m build
+
+      - name: Verify dist version matches tag (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REF#refs/tags/v}"
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          actual="$(python -c 'from importlib.metadata import version; print(version("healthdelta"))')"
+          echo "expected=$expected"
+          echo "actual=$actual"
+          test "$actual" = "$expected"
 
       - name: Upload CLI dist artifact
         uses: actions/upload-artifact@v4
