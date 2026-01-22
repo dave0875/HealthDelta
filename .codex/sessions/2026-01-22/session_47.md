@@ -21,3 +21,7 @@ Local verification
 - `python3 -m unittest discover -s tests -p 'test_*.py' -v` (pass; some DuckDB tests skipped locally due to missing `duckdb` module)
 - `docker build -t healthdelta-backend:dev .` (pass)
 - `curl -fsS http://127.0.0.1:<port>/healthz` and `/version` against a local container (pass)
+
+CI evidence
+- PR: https://github.com/dave0875/HealthDelta/pull/51
+- CI run: https://github.com/dave0875/HealthDelta/actions/runs/21250341108
