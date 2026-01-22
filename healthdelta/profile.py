@@ -310,6 +310,21 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
     md_lines.append(f"- clinical JSON files: {fhir_meta['total_files']} (sampled {fhir_meta['sampled_files']})")
     md_lines.append("")
 
+    md_lines.append("## Next Steps")
+    md_lines.append("- Preferred one-command operator path (share-safe default):")
+    md_lines.append("  - `healthdelta run all --input <export_dir> --out data --mode share`")
+    if export_xml.exists():
+        md_lines.append("- Pipeline-only (ingest -> identity -> optional deid):")
+        md_lines.append("  - share-safe: `healthdelta pipeline run --input <export_dir> --out data --mode share`")
+        md_lines.append("  - local-only: `healthdelta pipeline run --input <export_dir> --out data --mode local`")
+    else:
+        md_lines.append("- `export.xml` is missing; validate you selected the correct export root (Apple Health exports must include `export.xml`).")
+    if export_cda.exists():
+        md_lines.append("- ClinicalDocument detected (`export_cda.xml` present): use `--mode share` for de-identified outputs before sharing.")
+    if fhir_meta["total_files"] > 0:
+        md_lines.append("- FHIR clinical JSON detected: use `--mode share` before sharing outputs with others.")
+    md_lines.append("")
+
     md_lines.append("## Top Files")
     if top:
         for f in top[: min(len(top), 10)]:

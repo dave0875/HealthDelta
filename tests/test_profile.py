@@ -62,6 +62,10 @@ class TestExportProfile(unittest.TestCase):
                 self.assertEqual(p.read_bytes(), before[p.name], msg=f"changed on rerun: {p}")
 
             combined = b"".join(before.values()).decode("utf-8", errors="replace")
+            md = (out / "profile.md").read_text(encoding="utf-8")
+            self.assertIn("## Next Steps", md)
+            self.assertIn("`healthdelta run all --input <export_dir> --out data --mode share`", md)
+            self.assertIn("`healthdelta pipeline run --input <export_dir> --out data --mode share`", md)
             for banned in [
                 "John Doe",
                 "1980-01-02",
@@ -142,6 +146,9 @@ class TestExportProfile(unittest.TestCase):
             self.assertNotIn("README.txt", paths)
 
             combined = b"".join(p.read_bytes() for p in out.iterdir() if p.is_file()).decode("utf-8", errors="replace")
+            md = (out / "profile.md").read_text(encoding="utf-8")
+            self.assertIn("## Next Steps", md)
+            self.assertIn("`healthdelta run all --input <export_dir> --out data --mode share`", md)
             for banned in ["John Doe", "1980-01-02", "19800102"]:
                 self.assertNotIn(banned, combined)
 
