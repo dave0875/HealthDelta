@@ -190,14 +190,18 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("19800102", combined)
 
             for row in [*observations, *documents, *meds, *conds]:
+                self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)
                 self.assertIn("source_file", row)
                 self.assertIn("event_time", row)
                 self.assertIn("run_id", row)
+                self.assertIn("record_key", row)
                 self.assertIsInstance(row["canonical_person_id"], str)
                 self.assertIn(row["source"], ["healthkit", "fhir", "cda"])
                 self.assertIsInstance(row["source_file"], str)
+                self.assertIsInstance(row["schema_version"], int)
+                self.assertIsInstance(row["record_key"], str)
 
             before_bytes = {p.name: p.read_bytes() for p in expected_files}
 

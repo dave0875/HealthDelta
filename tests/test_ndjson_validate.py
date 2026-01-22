@@ -19,7 +19,7 @@ class TestNdjsonValidate(unittest.TestCase):
 
             _write(
                 nd / "observations.ndjson",
-                '{"canonical_person_id":"p1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T00:00:00Z","run_id":"r1"}\n',
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T00:00:00Z","run_id":"r1"}\n',
             )
 
             r = subprocess.run(
@@ -38,7 +38,7 @@ class TestNdjsonValidate(unittest.TestCase):
 
             _write(
                 nd / "observations.ndjson",
-                '{"canonical_person_id":"p1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T00:00:00Z"}\n',
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T00:00:00Z"}\n',
             )
 
             r = subprocess.run(
@@ -58,7 +58,7 @@ class TestNdjsonValidate(unittest.TestCase):
 
             _write(
                 nd / "documents.ndjson",
-                '{"canonical_person_id":"p1","source":"fhir","source_file":"John Doe export/clinical-records/doc.json","event_time":"2020-01-02T00:00:00Z","run_id":"r1"}\n',
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"John Doe export/clinical-records/doc.json","event_time":"2020-01-02T00:00:00Z","run_id":"r1"}\n',
             )
 
             r = subprocess.run(
@@ -87,7 +87,7 @@ class TestNdjsonValidate(unittest.TestCase):
 
             _write(
                 nd / "conditions.ndjson",
-                '{"canonical_person_id":"p1","source":"fhir","source_file":"x.json","event_time":"2020-01-01T00:00:00Z","run_id":"r1"}',
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"x.json","event_time":"2020-01-01T00:00:00Z","run_id":"r1"}',
             )
 
             r = subprocess.run(
@@ -101,4 +101,3 @@ class TestNdjsonValidate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

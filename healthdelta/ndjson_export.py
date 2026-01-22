@@ -242,6 +242,7 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
         event_time = start or end
 
         minimal = {
+            "schema_version": 2,
             "canonical_person_id": _canonical_person_id(ctx),
             "source": "healthkit",
             "source_file": _safe_relpath(ctx.export_xml_rel),
@@ -252,6 +253,7 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
             "unit": unit,
         }
         minimal["event_key"] = _sha256_bytes(json.dumps(minimal, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        minimal["record_key"] = minimal["event_key"]
         observations.append(minimal)
         el.clear()
 
@@ -312,6 +314,7 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
         event_time = _fhir_event_time(res)
 
         base = {
+            "schema_version": 2,
             "canonical_person_id": person,
             "source": "fhir",
             "source_file": _safe_relpath(rel),
@@ -343,6 +346,7 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
                 if isinstance(val.get("unit"), str):
                     base["unit"] = val["unit"]
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
             observations.append(base)
         elif rt == "DocumentReference":
             t = res.get("type")
@@ -363,12 +367,14 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
             if isinstance(status, str):
                 base["status"] = status
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
             documents.append(base)
         elif rt == "MedicationRequest":
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
             meds.append(base)
         elif rt == "Condition":
             code = res.get("code")
@@ -386,6 +392,7 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
             conds.append(base)
 
     return observations, documents, meds, conds
@@ -423,6 +430,7 @@ def _export_cda_observations(ctx: ExportContext) -> list[dict]:
                 value_unit = child.attrib.get("unit")
 
         base = {
+            "schema_version": 2,
             "canonical_person_id": _canonical_person_id(ctx),
             "source": "cda",
             "source_file": _safe_relpath(ctx.export_cda_rel),
@@ -433,6 +441,7 @@ def _export_cda_observations(ctx: ExportContext) -> list[dict]:
             "unit": value_unit,
         }
         base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        base["record_key"] = base["event_key"]
         observations.append(base)
         el.clear()
 

@@ -27,6 +27,8 @@ NDJSON is one JSON object per line (newline-terminated).
 ## Common schema (all streams)
 
 Every emitted line includes:
+- `schema_version`: schema version integer.
+- `record_key`: stable, deterministic record key (sha256-based) used for dedupe and downstream loading.
 - `canonical_person_id`: canonical person key (UUID string) when resolvable; otherwise the literal `"unresolved"`.
 - `source`: `"healthkit"` | `"fhir"` | `"cda"`.
 - `source_file`: relative, redacted path within the run directory (never an absolute host path).
@@ -68,6 +70,7 @@ Fields that MUST NOT appear in NDJSON:
 
 The exporter is deterministic for the same input + identity + mode:
 - Per-record `event_key` is derived from a stable JSON payload (sha256) and used to dedupe within a run.
+- `record_key` is the canonical name for the stable per-record key (currently equal to `event_key`).
 - Per-stream ordering is a stable sort by:
   - `event_time`, `canonical_person_id`, `source`, `source_file`, `source_id`, `event_key`
 - Per-line JSON serialization uses:

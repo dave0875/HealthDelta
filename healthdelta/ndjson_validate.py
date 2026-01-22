@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-BASE_REQUIRED_KEYS: tuple[str, ...] = ("canonical_person_id", "source", "source_file", "event_time", "run_id")
+BASE_REQUIRED_KEYS: tuple[str, ...] = ("canonical_person_id", "source", "source_file", "event_time", "run_id", "record_key")
 
 
 @dataclass(frozen=True)
@@ -96,5 +96,9 @@ def validate_ndjson_dir(
                             )
                         )
 
-    return sorted(errors, key=lambda e: (e.rel_path, e.line_no, e.code, e.message))
+                if "schema_version" not in obj:
+                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="missing_required_key", message="missing required key: schema_version"))
+                elif not isinstance(obj.get("schema_version"), int):
+                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="invalid_type", message="key schema_version must be an integer"))
 
+    return sorted(errors, key=lambda e: (e.rel_path, e.line_no, e.code, e.message))
