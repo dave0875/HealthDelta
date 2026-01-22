@@ -25,7 +25,7 @@ def _artifact_paths(*, base_out: Path, run_id: str, include_deid: bool) -> dict[
     run_root = base_out / run_id
     return {
         "staging_dir": f"{run_id}/staging",
-        "identity_dir": f"{run_id}/identity",
+        "identity_dir": "state/identity",
         "deid_dir": f"{run_id}/deid" if include_deid else None,
         "ndjson_dir": f"{run_id}/ndjson",
         "duckdb_db": f"{run_id}/duckdb/run.duckdb",
@@ -103,7 +103,7 @@ def run_all(
 
     run_root = base / run_id
     staging_dir = run_root / "staging"
-    identity_dir = run_root / "identity"
+    identity_dir = state / "identity"
     deid_dir = run_root / "deid"
     ndjson_dir = run_root / "ndjson"
     duckdb_dir = run_root / "duckdb"
@@ -133,7 +133,7 @@ def run_all(
 
     artifacts = {
         "staging_dir": f"{run_id}/staging",
-        "identity_dir": f"{run_id}/identity",
+        "identity_dir": "state/identity",
         "deid_dir": f"{run_id}/deid" if include_deid else None,
         "ndjson_dir": f"{run_id}/ndjson",
         "duckdb_db": f"{run_id}/duckdb/run.duckdb",

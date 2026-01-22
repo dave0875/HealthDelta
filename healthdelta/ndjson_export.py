@@ -159,8 +159,13 @@ def _resolve_context(*, input_dir: Path, mode: str) -> ExportContext:
     patient_id_map: dict[tuple[str, str], str] = {}
 
     if base_dir is not None:
-        candidate_identity = base_dir / "identity"
-        if candidate_identity.exists():
+        candidates = [
+            base_dir / "identity",
+            base_dir / "state" / "identity",
+            base_dir.parent / "state" / "identity",
+        ]
+        candidate_identity = next((p for p in candidates if p.exists()), None)
+        if candidate_identity is not None:
             identity_dir = candidate_identity
             default_person_id, patient_id_map = _load_identity(candidate_identity)
 

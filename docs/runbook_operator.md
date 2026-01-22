@@ -26,7 +26,6 @@ For a created run, outputs are written under:
 ```
 <base_out>/<run_id>/
   staging/
-  identity/
   deid/              (share mode)
   ndjson/
   duckdb/run.duckdb
@@ -35,6 +34,7 @@ For a created run, outputs are written under:
 <base_out>/state/
   runs.json
   LAST_RUN
+  identity/          (local-only canonical identity store; not share-safe)
 ```
 
 ## Share-safe defaults
@@ -46,6 +46,10 @@ In `--mode share`:
 - Doctor’s Note is generated from DuckDB and is share-safe by design; see `docs/runbook_note.md`.
 
 Reminder: `<base_out>/<run_id>/staging` is not share-safe by definition and must not be shared.
+
+Identity note:
+- Canonical identity is stored under `<base_out>/state/identity` so `canonical_person_id` can remain stable across runs.
+- This directory is local-only and must not be shared (it may contain names); share bundles exclude it by design.
 
 ## Incremental / no-op behavior
 

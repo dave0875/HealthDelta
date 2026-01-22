@@ -132,7 +132,6 @@ class TestOperatorAll(unittest.TestCase):
             run_root = base_out / run_id
             expected = {
                 "staging": run_root / "staging",
-                "identity": run_root / "identity",
                 "deid": run_root / "deid",
                 "ndjson": run_root / "ndjson",
                 "duckdb": run_root / "duckdb" / "run.duckdb",
@@ -142,7 +141,6 @@ class TestOperatorAll(unittest.TestCase):
                 "note_md": run_root / "note" / "doctor_note.md",
             }
             self.assertTrue(expected["staging"].is_dir())
-            self.assertTrue(expected["identity"].is_dir())
             self.assertTrue(expected["deid"].is_dir())
             self.assertTrue(expected["ndjson"].is_dir())
             self.assertTrue(expected["duckdb"].is_file())
@@ -150,6 +148,11 @@ class TestOperatorAll(unittest.TestCase):
             self.assertTrue(expected["note"].is_dir())
             self.assertTrue(expected["note_txt"].is_file())
             self.assertTrue(expected["note_md"].is_file())
+
+            # Identity is stored under state for stability across runs.
+            identity_dir = base_out / "state" / "identity"
+            self.assertTrue((identity_dir / "people.json").exists())
+            self.assertTrue((identity_dir / "aliases.json").exists())
 
             ndjson_files = [
                 expected["ndjson"] / "observations.ndjson",
@@ -204,6 +207,7 @@ class TestOperatorAll(unittest.TestCase):
             self.assertEqual(artifacts.get("note_dir"), f"{run_id}/note")
             self.assertEqual(artifacts.get("doctor_note_txt"), f"{run_id}/note/doctor_note.txt")
             self.assertEqual(artifacts.get("doctor_note_md"), f"{run_id}/note/doctor_note.md")
+            self.assertEqual(artifacts.get("identity_dir"), "state/identity")
 
             # Second run: no-op, no new run directory, no file changes.
             run2 = subprocess.run(
@@ -225,6 +229,57 @@ class TestOperatorAll(unittest.TestCase):
             self.assertEqual((expected["reports"] / "summary.md").read_bytes(), summary_md_1)
             self.assertEqual(expected["note_txt"].read_bytes(), note_txt_1)
             self.assertEqual(expected["note_md"].read_bytes(), note_md_1)
+
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_run_all_reuses_identity_across_runs_for_stable_canonical_person_id(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            # Two different exports with the same patient name but different patient IDs.
+            input1 = root / "export1"
+            input2 = root / "export2"
+            input1.mkdir(parents=True, exist_ok=True)
+            input2.mkdir(parents=True, exist_ok=True)
+
+            (input1 / "export.xml").write_text(EXPORT_XML, encoding="utf-8")
+            (input1 / "export_cda.xml").write_text(EXPORT_CDA, encoding="utf-8")
+            (input2 / "export.xml").write_text(EXPORT_XML, encoding="utf-8")
+            (input2 / "export_cda.xml").write_text(EXPORT_CDA, encoding="utf-8")
+
+            c1 = input1 / "clinical-records"
+            c2 = input2 / "clinical-records"
+            c1.mkdir(parents=True, exist_ok=True)
+            c2.mkdir(parents=True, exist_ok=True)
+
+            _write_json(c1 / "patient.json", {"resourceType": "Patient", "id": "p1", "name": [{"text": "Doe, John"}], "birthDate": "1980-01-02"})
+            _write_json(c2 / "patient.json", {"resourceType": "Patient", "id": "p2", "name": [{"text": "Doe, John"}], "birthDate": "1980-01-02"})
+
+            base_out = root / "out"
+
+            run1 = subprocess.run([sys.executable, "-m", "healthdelta", "run", "all", "--input", str(input1), "--out", str(base_out)], capture_output=True, text=True)
+            self.assertEqual(run1.returncode, 0, msg=f"stdout={run1.stdout}\nstderr={run1.stderr}")
+            run_id_1 = _stdout_kv(run1.stdout).get("run_id")
+            self.assertIsInstance(run_id_1, str)
+            self.assertTrue(run_id_1)
+
+            run2 = subprocess.run([sys.executable, "-m", "healthdelta", "run", "all", "--input", str(input2), "--out", str(base_out)], capture_output=True, text=True)
+            self.assertEqual(run2.returncode, 0, msg=f"stdout={run2.stdout}\nstderr={run2.stderr}")
+            run_id_2 = _stdout_kv(run2.stdout).get("run_id")
+            self.assertIsInstance(run_id_2, str)
+            self.assertTrue(run_id_2)
+            self.assertNotEqual(run_id_1, run_id_2)
+
+            obs1 = (base_out / run_id_1 / "ndjson" / "observations.ndjson").read_text(encoding="utf-8").splitlines()
+            obs2 = (base_out / run_id_2 / "ndjson" / "observations.ndjson").read_text(encoding="utf-8").splitlines()
+            o1 = [json.loads(line) for line in obs1 if line.strip()]
+            o2 = [json.loads(line) for line in obs2 if line.strip()]
+
+            ids1 = sorted({row.get("canonical_person_id") for row in o1 if isinstance(row, dict)})
+            ids2 = sorted({row.get("canonical_person_id") for row in o2 if isinstance(row, dict)})
+            self.assertEqual(len(ids1), 1)
+            self.assertEqual(len(ids2), 1)
+            self.assertEqual(ids1, ids2)
+            self.assertNotIn("unresolved", ids1)
 
 
 if __name__ == "__main__":
