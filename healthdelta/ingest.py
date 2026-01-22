@@ -35,6 +35,14 @@ def _count_xml_record_estimate(xml_path: Path) -> int:
     return count
 
 
+def _count_newlines(path: Path) -> int:
+    count = 0
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            count += chunk.count(b"\n")
+    return count
+
+
 @dataclasses.dataclass(frozen=True)
 class InputResolution:
     kind: str  # "zip" | "dir"
@@ -255,4 +263,60 @@ def ingest_to_staging(*, input_path: str, staging_root: str = "data/staging", ru
 
     _write_json(run_dir / "manifest.json", manifest)
     _write_json(run_dir / "layout.json", layout)
+    return run_dir
+
+
+def _compute_run_id_for_ios_export(*, input_dir: Path, required_paths: list[Path]) -> str:
+    h = hashlib.sha256()
+    for p in required_paths:
+        rel = p.relative_to(input_dir).as_posix().encode("utf-8", errors="strict")
+        h.update(rel)
+        h.update(b"\0")
+        h.update(_sha256_file(p).encode("ascii"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def ingest_ios_to_staging(*, input_dir: str, staging_root: str = "data/staging") -> Path:
+    src = Path(input_dir)
+    if not src.is_dir():
+        raise ValueError(f"--input must be a directory: {src}")
+
+    ios_manifest = src / "manifest.json"
+    observations = src / "ndjson" / "observations.ndjson"
+    missing = [p for p in [ios_manifest, observations] if not p.exists()]
+    if missing:
+        raise ValueError(f"iOS export dir missing required file(s): {', '.join(str(p) for p in missing)}")
+
+    run_id = _compute_run_id_for_ios_export(input_dir=src, required_paths=[ios_manifest, observations])
+    run_dir = Path(staging_root) / run_id
+
+    staged_ios_manifest = run_dir / "source" / "ios" / "manifest.json"
+    staged_observations = run_dir / "ndjson" / "observations.ndjson"
+    staged_ios_manifest.parent.mkdir(parents=True, exist_ok=True)
+    staged_observations.parent.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(ios_manifest, staged_ios_manifest)
+    shutil.copy2(observations, staged_observations)
+
+    files = []
+    for p in [staged_ios_manifest, staged_observations]:
+        rel = p.relative_to(run_dir).as_posix()
+        files.append({"path": rel, "size_bytes": p.stat().st_size, "sha256": _sha256_file(p)})
+
+    manifest = {
+        "run_id": run_id,
+        "input": {"path_redacted": True, "kind": "ios", "path_hint": "ios_export_dir"},
+        "files": sorted(files, key=lambda x: x["path"]),
+        "counts": {
+            "ndjson_observations_row_count": _count_newlines(staged_observations),
+        },
+        "determinism": {
+            "run_id_derivation": "sha256(relpath + sha256(bytes)) over iOS manifest + observations.ndjson",
+            "stable_fields": ["run_id", "files[*].sha256", "files[*].size_bytes", "counts.*"],
+            "time_fields": [],
+        },
+    }
+
+    _write_json(run_dir / "manifest.json", manifest)
     return run_dir

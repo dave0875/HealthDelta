@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from healthdelta.ingest import ingest_to_staging
+from healthdelta.ingest import ingest_ios_to_staging, ingest_to_staging
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity, confirm_identity_link, review_identity_links
 from healthdelta.duckdb_tools import build_duckdb, query_duckdb
@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     ingest = sub.add_parser("ingest", help="Stage Apple Health export input deterministically")
+    ingest.add_argument("variant", nargs="?", choices=["ios"], help="Ingest variant (default: apple health export)")
     ingest.add_argument("--input", required=True, help="Path to export.zip or an unpacked export directory")
     ingest.add_argument("--out", default="data/staging", help="Staging root directory (default: data/staging)")
 
@@ -137,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
+        if args.variant == "ios":
+            ingest_ios_to_staging(input_dir=args.input, staging_root=args.out)
+            return 0
         ingest_to_staging(input_path=args.input, staging_root=args.out)
         return 0
 
