@@ -69,10 +69,12 @@ Optional clarifications or constraints.
 - Operator end-to-end command usage is documented in `docs/runbook_operator.md` and is the preferred entrypoint for operators.
 - Doctor’s note summary output is documented in `docs/runbook_note.md` and must be followed for share-safe copy/paste summaries.
 - Export directory profiling is documented in `docs/runbook_profile.md` and is the required first step before running ingest/pipeline on a new unpacked export directory.
+- Continuous deployment / artifact publication is documented in `docs/runbook_cd.md` and must be followed when cutting releases or defining “deployment proof” in issue acceptance criteria.
 
 ## ADRs
 - Doctor’s Note architecture (reusable component + operator integration): `docs/adr/ADR_3_doctors_note_architecture.md`
 - Ingestion paths convergence (Apple export directory/zip vs iOS incremental): `docs/adr/ADR_4_ingestion_paths_convergence.md`
+- Continuous deployment targets and deployment proof: `docs/adr/ADR_5_continuous_deployment_targets.md`
 
 ## Project Plan
 - Living plan/backlog: `docs/plan.md` (share-safe; links to the prioritized next GitHub issues)
@@ -92,3 +94,4 @@ Optional clarifications or constraints.
 - All CI work must produce observable, persisted artifacts (logs + uploaded artifacts/test results).
 - Self-hosted runners are authoritative; cloud runners must not substitute silently.
 - Ambiguity pauses execution until clarified before proceeding.
+- Definition of done: each issue must explicitly name the workflow/job that proves correctness (CI), and when it changes deployable artifacts it must also name the workflow/job/artifact that proves deployment readiness (see `docs/runbook_cd.md`).

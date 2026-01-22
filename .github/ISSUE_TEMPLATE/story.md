@@ -19,6 +19,7 @@ What risk, confusion, or limitation exists without it.
 Acceptance Criteria
 - Given <context>, when <action>, then <observable result>
 - All criteria must be objective and testable.
+- If the story affects deployable artifacts, acceptance criteria must name the workflow/job/artifact that proves deployment readiness (not just CI green).
 
 Out of Scope
 What this story explicitly does NOT attempt to solve.
@@ -26,4 +27,3 @@ What this story explicitly does NOT attempt to solve.
 Notes
 Optional clarifications or constraints.
 ---
-
