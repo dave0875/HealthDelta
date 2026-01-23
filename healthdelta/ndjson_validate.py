@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from healthdelta.progress import progress
+
 
 BASE_REQUIRED_KEYS: tuple[str, ...] = ("canonical_person_id", "source", "source_file", "event_time", "run_id", "record_key")
 
@@ -42,63 +44,88 @@ def validate_ndjson_dir(
 
     errors: list[ValidationError] = []
 
-    for path in files:
-        rel = path.relative_to(root).as_posix()
-        data = path.read_bytes()
-        if data and not data.endswith(b"\n"):
-            errors.append(ValidationError(rel_path=rel, line_no=0, code="missing_trailing_newline", message="file must be newline-terminated"))
+    with progress.phase("validate: ndjson"):
+        task_files = progress.task("validate: files", total=len(files), unit="files")
 
-        with path.open("r", encoding="utf-8") as f:
-            for line_no, raw in enumerate(f, start=1):
-                line = raw.rstrip("\n")
-                if line.endswith("\r"):
-                    line = line[:-1]
-                if not line.strip():
-                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="empty_line", message="blank lines are not allowed"))
-                    continue
+        for path in files:
+            rel = path.relative_to(root).as_posix()
 
-                for token in banned_tokens:
-                    if token in line:
-                        errors.append(
-                            ValidationError(rel_path=rel, line_no=line_no, code="banned_token", message=f"found banned token: {token!r}")
-                        )
-                for pat in banned_res:
-                    if pat.search(line):
-                        errors.append(
-                            ValidationError(rel_path=rel, line_no=line_no, code="banned_pattern", message=f"matched banned pattern: {pat.pattern!r}")
-                        )
+            data = path.read_bytes()
+            if data and not data.endswith(b"\n"):
+                errors.append(ValidationError(rel_path=rel, line_no=0, code="missing_trailing_newline", message="file must be newline-terminated"))
 
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError as e:
-                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="invalid_json", message=str(e)))
-                    continue
-
-                if not isinstance(obj, dict):
-                    errors.append(
-                        ValidationError(rel_path=rel, line_no=line_no, code="not_object", message=f"expected JSON object, got {type(obj).__name__}")
-                    )
-                    continue
-
-                for k in BASE_REQUIRED_KEYS:
-                    if k not in obj:
-                        errors.append(
-                            ValidationError(rel_path=rel, line_no=line_no, code="missing_required_key", message=f"missing required key: {k}")
-                        )
+            task_lines = progress.task("validate: scan lines", unit="lines")
+            batch = 0
+            with path.open("r", encoding="utf-8") as f:
+                for line_no, raw in enumerate(f, start=1):
+                    line = raw.rstrip("\n")
+                    if line.endswith("\r"):
+                        line = line[:-1]
+                    if not line.strip():
+                        errors.append(ValidationError(rel_path=rel, line_no=line_no, code="empty_line", message="blank lines are not allowed"))
+                        batch += 1
+                        if batch >= 5000:
+                            task_lines.advance(batch)
+                            batch = 0
                         continue
-                    if not isinstance(obj[k], str):
-                        errors.append(
-                            ValidationError(
-                                rel_path=rel,
-                                line_no=line_no,
-                                code="invalid_type",
-                                message=f"key {k} must be a string",
+
+                    for token in banned_tokens:
+                        if token in line:
+                            errors.append(ValidationError(rel_path=rel, line_no=line_no, code="banned_token", message=f"found banned token: {token!r}"))
+                    for pat in banned_res:
+                        if pat.search(line):
+                            errors.append(
+                                ValidationError(rel_path=rel, line_no=line_no, code="banned_pattern", message=f"matched banned pattern: {pat.pattern!r}")
                             )
+
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError as e:
+                        errors.append(ValidationError(rel_path=rel, line_no=line_no, code="invalid_json", message=str(e)))
+                        batch += 1
+                        if batch >= 5000:
+                            task_lines.advance(batch)
+                            batch = 0
+                        continue
+
+                    if not isinstance(obj, dict):
+                        errors.append(
+                            ValidationError(rel_path=rel, line_no=line_no, code="not_object", message=f"expected JSON object, got {type(obj).__name__}")
+                        )
+                        batch += 1
+                        if batch >= 5000:
+                            task_lines.advance(batch)
+                            batch = 0
+                        continue
+
+                    for k in BASE_REQUIRED_KEYS:
+                        if k not in obj:
+                            errors.append(
+                                ValidationError(rel_path=rel, line_no=line_no, code="missing_required_key", message=f"missing required key: {k}")
+                            )
+                            continue
+                        if not isinstance(obj[k], str):
+                            errors.append(
+                                ValidationError(rel_path=rel, line_no=line_no, code="invalid_type", message=f"key {k} must be a string")
+                            )
+
+                    if "schema_version" not in obj:
+                        errors.append(
+                            ValidationError(rel_path=rel, line_no=line_no, code="missing_required_key", message="missing required key: schema_version")
+                        )
+                    elif not isinstance(obj.get("schema_version"), int):
+                        errors.append(
+                            ValidationError(rel_path=rel, line_no=line_no, code="invalid_type", message="key schema_version must be an integer")
                         )
 
-                if "schema_version" not in obj:
-                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="missing_required_key", message="missing required key: schema_version"))
-                elif not isinstance(obj.get("schema_version"), int):
-                    errors.append(ValidationError(rel_path=rel, line_no=line_no, code="invalid_type", message="key schema_version must be an integer"))
+                    batch += 1
+                    if batch >= 5000:
+                        task_lines.advance(batch)
+                        batch = 0
+
+            if batch:
+                task_lines.advance(batch)
+
+            task_files.advance(1)
 
     return sorted(errors, key=lambda e: (e.rel_path, e.line_no, e.code, e.message))

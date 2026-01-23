@@ -147,6 +147,39 @@ class TestProgressOutput(unittest.TestCase):
             self.assertIn("phase start name=bundle: verify", text)
             self.assertIn("phase start name=bundle: verify sha256", text)
 
+    def test_export_profile_emits_progress(self) -> None:
+        from healthdelta.cli import main
+
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            export_dir = td_p / "export_dir"
+            export_xml = export_dir / "export.xml"
+            _write_minimal_export_xml(export_xml, record_count=500)
+
+            out_dir = td_p / "out"
+            stderr = _NonTTY()
+            with redirect_stderr(stderr):
+                rc = main(
+                    [
+                        "--progress",
+                        "always",
+                        "--log-progress-every",
+                        "0",
+                        "export",
+                        "profile",
+                        "--input",
+                        str(export_dir),
+                        "--out",
+                        str(out_dir),
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            text = stderr.getvalue()
+            self.assertIn("phase start name=profile: walk files", text)
+            self.assertIn("progress task=profile: scan export.xml", text)
+            self.assertNotIn(str(td_p), text)
+
 
 class TestProgressImportCost(unittest.TestCase):
     def test_progress_module_does_not_import_rich(self) -> None:

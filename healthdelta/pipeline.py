@@ -11,6 +11,7 @@ from typing import Any
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
+from healthdelta.progress import progress
 from healthdelta.state import (
     artifact_pointers_for_run,
     compute_input_fingerprint,
@@ -114,7 +115,8 @@ def run_pipeline(
     else:
         run_id = None
 
-    ingest_run_dir = ingest_to_staging(input_path=str(input_p), staging_root=str(staging_root), run_id_override=run_id)
+    with progress.phase("[1/4] Stage input"):
+        ingest_run_dir = ingest_to_staging(input_path=str(input_p), staging_root=str(staging_root), run_id_override=run_id)
     run_id_actual = ingest_run_dir.name
     if expected_run_id is not None and expected_run_id != run_id_actual:
         print(f"ERROR: --run-id {expected_run_id} does not match computed run_id {run_id_actual}", file=sys.stderr)
@@ -124,12 +126,14 @@ def run_pipeline(
     ingest_layout_path = ingest_run_dir / "layout.json"
     ingest_manifest_sha256 = _sha256_file(ingest_manifest_path) if ingest_manifest_path.exists() else None
 
-    build_identity(staging_run_dir=str(ingest_run_dir), output_dir=str(identity_dir))
+    with progress.phase("[2/4] Build identity"):
+        build_identity(staging_run_dir=str(ingest_run_dir), output_dir=str(identity_dir))
 
     deid_executed = False
     deid_out_dir = deid_root / run_id_actual
     if mode == "share" and not skip_deid:
-        deidentify_run(staging_run_dir=str(ingest_run_dir), identity_dir=str(identity_dir), out_dir=str(deid_out_dir))
+        with progress.phase("[3/4] De-identify"):
+            deidentify_run(staging_run_dir=str(ingest_run_dir), identity_dir=str(identity_dir), out_dir=str(deid_out_dir))
         deid_executed = True
 
     run_report_path = ingest_run_dir / "run_report.json"
@@ -188,7 +192,8 @@ def run_pipeline(
         if isinstance(m, dict) and isinstance(m.get("files"), list):
             report["counts"]["staged_file_count"] = len(m["files"])
 
-    _write_json(run_report_path, report)
+    with progress.phase("[4/4] Write run report"):
+        _write_json(run_report_path, report)
 
     if state_dir is not None and input_fingerprint is not None:
         register_run(
