@@ -25,3 +25,12 @@ HealthDelta CLI commands that may process large datasets emit share-safe progres
 - Disable progress (keep summary only):
   - `healthdelta --progress never ingest --input export.zip --out data/staging`
 
+## Covered commands (current)
+- `healthdelta ingest` (zip/dir; hashing, extraction, copy)
+- `healthdelta export ndjson` (parse/dedupe/write)
+- `healthdelta duckdb build` / `healthdelta duckdb query`
+- `healthdelta report build` / `healthdelta report show`
+- `healthdelta note build`
+- `healthdelta deid`
+- `healthdelta share bundle` / `healthdelta share verify`
+- `healthdelta run all` (overall phases + sub-step progress)

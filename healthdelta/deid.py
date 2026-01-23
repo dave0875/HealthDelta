@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from healthdelta.progress import progress
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -150,21 +152,24 @@ def _deid_fhir_json(obj: Any, people: list[PersonPseudonym]) -> Any:
 
 
 def deidentify_run(*, staging_run_dir: str, identity_dir: str, out_dir: str) -> None:
-    run_dir = Path(staging_run_dir)
-    out_root = Path(out_dir)
-    identity = Path(identity_dir)
+    with progress.phase("deid: init"):
+        run_dir = Path(staging_run_dir)
+        out_root = Path(out_dir)
+        identity = Path(identity_dir)
 
     layout_path = run_dir / "layout.json"
     if not layout_path.exists():
-        raise FileNotFoundError(f"Missing layout.json in staging run dir: {run_dir}")
+        raise FileNotFoundError("Missing layout.json in staging run dir")
 
-    layout = _read_json(layout_path)
-    run_id = layout.get("run_id") if isinstance(layout.get("run_id"), str) else run_dir.name
+    with progress.phase("deid: load layout"):
+        layout = _read_json(layout_path)
+        run_id = layout.get("run_id") if isinstance(layout.get("run_id"), str) else run_dir.name
 
-    people = _load_people(identity)
-    mapping = {p.canonical_person_id: p.label for p in people}
-    _write_json(out_root / "mapping.json", mapping)
-    mapping_path = out_root / "mapping.json"
+    with progress.phase("deid: load people"):
+        people = _load_people(identity)
+        mapping = {p.canonical_person_id: p.label for p in people}
+        _write_json(out_root / "mapping.json", mapping)
+        mapping_path = out_root / "mapping.json"
 
     export_xml_rel = layout.get("export_xml")
     clinical_rels = layout.get("clinical_json")
@@ -189,82 +194,92 @@ def deidentify_run(*, staging_run_dir: str, identity_dir: str, out_dir: str) -> 
         output_files.append(mapping_path)
 
     if isinstance(export_xml_rel, str):
-        src = run_dir / export_xml_rel
-        if src.exists():
-            dst = out_root / export_xml_rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            text = src.read_text(encoding="utf-8", errors="replace")
-            dst.write_text(_deid_export_xml(text, people), encoding="utf-8")
-            output_files.append(dst)
+        with progress.phase("deid: export.xml"):
+            src = run_dir / export_xml_rel
+            if src.exists():
+                dst = out_root / export_xml_rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                text = src.read_text(encoding="utf-8", errors="replace")
+                dst.write_text(_deid_export_xml(text, people), encoding="utf-8")
+                output_files.append(dst)
 
     if has_cda:
-        dst = out_root / export_cda_rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        text = export_cda_path.read_text(encoding="utf-8", errors="replace")
-        dst.write_text(_deid_cda_xml(text, people), encoding="utf-8")
-        output_files.append(dst)
+        with progress.phase("deid: export_cda.xml"):
+            dst = out_root / export_cda_rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            text = export_cda_path.read_text(encoding="utf-8", errors="replace")
+            dst.write_text(_deid_cda_xml(text, people), encoding="utf-8")
+            output_files.append(dst)
 
     out_clinical_rels: list[str] = []
-    for rel in clinical_rels:
-        if not isinstance(rel, str):
-            continue
-        src = run_dir / rel
-        if not src.exists():
-            continue
-        dst = out_root / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            obj = _read_json(src)
-            obj = _deid_fhir_json(obj, people)
-            dst.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        except json.JSONDecodeError:
-            text = src.read_text(encoding="utf-8", errors="replace")
-            dst.write_text(_apply_name_replacements(text, people), encoding="utf-8")
-        output_files.append(dst)
-        out_clinical_rels.append(rel)
+    with progress.phase("deid: clinical files"):
+        task = progress.task("deid: clinical files", total=len(clinical_rels), unit="files")
+        for rel in clinical_rels:
+            if not isinstance(rel, str):
+                task.advance(1)
+                continue
+            src = run_dir / rel
+            if not src.exists():
+                task.advance(1)
+                continue
+            dst = out_root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                obj = _read_json(src)
+                obj = _deid_fhir_json(obj, people)
+                dst.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            except json.JSONDecodeError:
+                text = src.read_text(encoding="utf-8", errors="replace")
+                dst.write_text(_apply_name_replacements(text, people), encoding="utf-8")
+            output_files.append(dst)
+            out_clinical_rels.append(rel)
+            task.advance(1)
 
-    # Copy through any staged paths that aren't explicitly de-id'd? MVP: only the listed assets.
-    manifest = {
-        "run_id": run_id,
-        "source": {
-            "staging_run_dir_redacted": True,
-            "run_id": run_id,
-            "identity_dir_redacted": True,
-            "identity_people_sha256": _sha256_file(identity / "people.json"),
-        },
-        "files": sorted(
-            [
+    with progress.phase("deid: write manifest"):
+        task = progress.task("deid: hash outputs", total=len(output_files), unit="files")
+        files_out: list[dict[str, object]] = []
+        for p in output_files:
+            files_out.append(
                 {
                     "path": p.relative_to(out_root).as_posix(),
                     "size_bytes": p.stat().st_size,
                     "sha256": _sha256_file(p),
                 }
-                for p in output_files
-            ],
-            key=lambda x: x["path"],
-        ),
-        "timestamps": {
-            "started_at": started_at,
-            "finished_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
-        },
-        "determinism": {
-            "stable_fields": ["run_id", "source.identity_people_sha256", "files[*].sha256", "files[*].size_bytes"],
-            "time_fields": ["timestamps.*"],
-        },
-        "notes": {
-            "covered": [
-                "name replacement for known people (First Last, Last, First)",
-                "CDA patientRole/patient/name overwrite",
-                "CDA birthTime value redaction",
-                "FHIR Patient.name minimal rewrite",
-            ],
-            "not_covered_yet": [
-                "full FHIR-wide PII scrubbing",
-                "identifier redaction in every field",
-                "free-text PII outside targeted replacements",
-            ],
-        },
-    }
+            )
+            task.advance(1)
+
+        # Copy through any staged paths that aren't explicitly de-id'd? MVP: only the listed assets.
+        manifest = {
+            "run_id": run_id,
+            "source": {
+                "staging_run_dir_redacted": True,
+                "run_id": run_id,
+                "identity_dir_redacted": True,
+                "identity_people_sha256": _sha256_file(identity / "people.json"),
+            },
+            "files": sorted(files_out, key=lambda x: str(x.get("path") or "")),
+            "timestamps": {
+                "started_at": started_at,
+                "finished_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+            },
+            "determinism": {
+                "stable_fields": ["run_id", "source.identity_people_sha256", "files[*].sha256", "files[*].size_bytes"],
+                "time_fields": ["timestamps.*"],
+            },
+            "notes": {
+                "covered": [
+                    "name replacement for known people (First Last, Last, First)",
+                    "CDA patientRole/patient/name overwrite",
+                    "CDA birthTime value redaction",
+                    "FHIR Patient.name minimal rewrite",
+                ],
+                "not_covered_yet": [
+                    "full FHIR-wide PII scrubbing",
+                    "identifier redaction in every field",
+                    "free-text PII outside targeted replacements",
+                ],
+            },
+        }
 
     out_layout = {
         "run_id": run_id,
@@ -273,5 +288,9 @@ def deidentify_run(*, staging_run_dir: str, identity_dir: str, out_dir: str) -> 
         "clinical_json": out_clinical_rels,
     }
 
-    _write_json(out_root / "manifest.json", manifest)
-    _write_json(out_root / "layout.json", out_layout)
+    with progress.phase("deid: write outputs"):
+        task = progress.task("deid: write outputs", total=2, unit="files")
+        _write_json(out_root / "manifest.json", manifest)
+        task.advance(1)
+        _write_json(out_root / "layout.json", out_layout)
+        task.advance(1)

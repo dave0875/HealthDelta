@@ -101,6 +101,52 @@ class TestProgressOutput(unittest.TestCase):
             self.assertNotIn("phase start name=", text)
             self.assertIn("phase summary name=export:", text)
 
+    def test_share_bundle_emits_progress(self) -> None:
+        from healthdelta.cli import main
+
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            run_dir = td_p / "run-1"
+            (run_dir / "ndjson").mkdir(parents=True, exist_ok=True)
+            (run_dir / "ndjson" / "observations.ndjson").write_text('{"schema_version":1}\n', encoding="utf-8")
+
+            out_path = td_p / "bundle.tar.gz"
+            stderr = _NonTTY()
+            with redirect_stderr(stderr):
+                rc = main(["--progress", "always", "--log-progress-every", "0", "share", "bundle", "--run", str(run_dir), "--out", str(out_path)])
+
+            self.assertEqual(rc, 0)
+            text = stderr.getvalue()
+            self.assertIn("phase start name=bundle: collect members", text)
+            self.assertIn("phase summary name=bundle: write archive", text)
+            self.assertNotIn(str(td_p), text)
+
+    def test_share_verify_emits_progress(self) -> None:
+        from healthdelta.cli import main
+
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            run_dir = td_p / "run-1"
+            (run_dir / "ndjson").mkdir(parents=True, exist_ok=True)
+            (run_dir / "ndjson" / "observations.ndjson").write_text('{"schema_version":1}\n', encoding="utf-8")
+
+            out_path = td_p / "bundle.tar.gz"
+            stderr_bundle = _NonTTY()
+            with redirect_stderr(stderr_bundle):
+                rc_bundle = main(["--progress", "never", "share", "bundle", "--run", str(run_dir), "--out", str(out_path)])
+            self.assertEqual(rc_bundle, 0)
+
+            stderr = _NonTTY()
+            with redirect_stderr(stderr):
+                rc_verify = main(
+                    ["--progress", "always", "--log-progress-every", "0", "share", "verify", "--bundle", str(out_path)]
+                )
+
+            self.assertEqual(rc_verify, 0)
+            text = stderr.getvalue()
+            self.assertIn("phase start name=bundle: verify", text)
+            self.assertIn("phase start name=bundle: verify sha256", text)
+
 
 class TestProgressImportCost(unittest.TestCase):
     def test_progress_module_does_not_import_rich(self) -> None:

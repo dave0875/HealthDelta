@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
+from healthdelta.progress import progress
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -91,70 +93,81 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
 
     db = Path(db_path)
     if not db.exists():
-        raise FileNotFoundError(f"Missing DB: {db}")
+        raise FileNotFoundError(f"Missing DB file: {db.name}")
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    con = _connect_read_only(db)
+    with progress.phase("report: connect"):
+        con = _connect_read_only(db)
     try:
-        present = _tables_present(con)
-        streams = [t for t in ["conditions", "documents", "medications", "observations"] if t in present]
+        with progress.phase("report: scan tables"):
+            present = _tables_present(con)
+            streams = [t for t in ["conditions", "documents", "medications", "observations"] if t in present]
 
         tables_summary: dict[str, dict[str, object]] = {}
         coverage_by_source_rows: list[tuple[str, str, int]] = []
 
         source_bucket = "CASE WHEN source_file LIKE 'ndjson/%' THEN 'ios' ELSE source END"
 
-        for table in streams:
-            total_rows = int(_scalar(con, f"SELECT COUNT(*) FROM {table};") or 0)
-            distinct_people = int(_scalar(con, f"SELECT COUNT(DISTINCT canonical_person_id) FROM {table};") or 0)
-            min_et = _scalar(con, f"SELECT MIN(event_time) FROM {table} WHERE event_time IS NOT NULL;")
-            max_et = _scalar(con, f"SELECT MAX(event_time) FROM {table} WHERE event_time IS NOT NULL;")
+        with progress.phase("report: summarize tables"):
+            task = progress.task("report: summarize tables", total=len(streams), unit="tables")
+            for table in streams:
+                total_rows = int(_scalar(con, f"SELECT COUNT(*) FROM {table};") or 0)
+                distinct_people = int(_scalar(con, f"SELECT COUNT(DISTINCT canonical_person_id) FROM {table};") or 0)
+                min_et = _scalar(con, f"SELECT MIN(event_time) FROM {table} WHERE event_time IS NOT NULL;")
+                max_et = _scalar(con, f"SELECT MAX(event_time) FROM {table} WHERE event_time IS NOT NULL;")
 
-            by_source = _rows(con, f"SELECT {source_bucket} AS source, COUNT(*) AS n FROM {table} GROUP BY 1 ORDER BY 1;")
-            by_source_map: dict[str, int] = {}
-            for source, n in by_source:
-                if isinstance(source, str):
-                    by_source_map[source] = int(n)
-                    coverage_by_source_rows.append((table, source, int(n)))
+                by_source = _rows(con, f"SELECT {source_bucket} AS source, COUNT(*) AS n FROM {table} GROUP BY 1 ORDER BY 1;")
+                by_source_map: dict[str, int] = {}
+                for source, n in by_source:
+                    if isinstance(source, str):
+                        by_source_map[source] = int(n)
+                        coverage_by_source_rows.append((table, source, int(n)))
 
-            tables_summary[table] = {
-                "total_rows": total_rows,
-                "distinct_canonical_person_id": distinct_people,
-                "min_event_time": _fmt_ts(min_et),
-                "max_event_time": _fmt_ts(max_et),
-                "rows_by_source": {k: by_source_map[k] for k in sorted(by_source_map)},
-            }
+                tables_summary[table] = {
+                    "total_rows": total_rows,
+                    "distinct_canonical_person_id": distinct_people,
+                    "min_event_time": _fmt_ts(min_et),
+                    "max_event_time": _fmt_ts(max_et),
+                    "rows_by_source": {k: by_source_map[k] for k in sorted(by_source_map)},
+                }
+                task.advance(1)
 
         # Per-person coverage across all available tables
-        if not streams:
-            people: list[str] = []
-        else:
-            union = " UNION ".join([f"SELECT DISTINCT canonical_person_id FROM {t}" for t in streams])
-            people = [p for (p,) in _rows(con, f"{union} ORDER BY canonical_person_id;") if isinstance(p, str)]
+        with progress.phase("report: per-person coverage"):
+            if not streams:
+                people: list[str] = []
+            else:
+                union = " UNION ".join([f"SELECT DISTINCT canonical_person_id FROM {t}" for t in streams])
+                people = [p for (p,) in _rows(con, f"{union} ORDER BY canonical_person_id;") if isinstance(p, str)]
 
-        rows_by_table: dict[str, dict[str, int]] = {t: {} for t in streams}
-        for t in streams:
-            for person_id, n in _rows(con, f"SELECT canonical_person_id, COUNT(*) FROM {t} GROUP BY canonical_person_id ORDER BY canonical_person_id;"):
-                if isinstance(person_id, str):
-                    rows_by_table[t][person_id] = int(n)
+            rows_by_table: dict[str, dict[str, int]] = {t: {} for t in streams}
+            task_rows = progress.task("report: count rows by table", total=len(streams), unit="tables")
+            for t in streams:
+                for person_id, n in _rows(
+                    con,
+                    f"SELECT canonical_person_id, COUNT(*) FROM {t} GROUP BY canonical_person_id ORDER BY canonical_person_id;",
+                ):
+                    if isinstance(person_id, str):
+                        rows_by_table[t][person_id] = int(n)
+                task_rows.advance(1)
 
-        # Min/max event_time across all tables per person
-        if streams:
-            union_events = " UNION ALL ".join([f"SELECT canonical_person_id, event_time FROM {t}" for t in streams])
-            per_person_times = _rows(
-                con,
-                f"""
-                SELECT canonical_person_id, MIN(event_time) AS min_et, MAX(event_time) AS max_et
-                FROM ({union_events})
-                WHERE event_time IS NOT NULL
-                GROUP BY canonical_person_id
-                ORDER BY canonical_person_id;
-                """,
-            )
-        else:
-            per_person_times = []
+            # Min/max event_time across all tables per person
+            if streams:
+                union_events = " UNION ALL ".join([f"SELECT canonical_person_id, event_time FROM {t}" for t in streams])
+                per_person_times = _rows(
+                    con,
+                    f"""
+                    SELECT canonical_person_id, MIN(event_time) AS min_et, MAX(event_time) AS max_et
+                    FROM ({union_events})
+                    WHERE event_time IS NOT NULL
+                    GROUP BY canonical_person_id
+                    ORDER BY canonical_person_id;
+                    """,
+                )
+            else:
+                per_person_times = []
 
         times_map: dict[str, tuple[object | None, object | None]] = {}
         for person_id, min_et, max_et in per_person_times:
@@ -242,86 +255,104 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             if pid in types_by_person:
                 types_by_person[pid].append((type_key, n))
 
-        per_person: list[dict[str, object]] = []
-        for person_id in people:
-            by_table = {t: rows_by_table.get(t, {}).get(person_id, 0) for t in streams}
-            min_et, max_et = times_map.get(person_id, (None, None))
+        with progress.phase("report: assemble per-person summary"):
+            per_person: list[dict[str, object]] = []
+            task_people = progress.task("report: assemble per-person", total=len(people), unit="people")
+            batch = 0
+            for person_id in people:
+                by_table = {t: rows_by_table.get(t, {}).get(person_id, 0) for t in streams}
+                min_et, max_et = times_map.get(person_id, (None, None))
 
-            type_list = types_by_person.get(person_id, [])
-            # Deterministic: already ordered by query (n desc, type asc) per table; merge then stable sort.
-            type_list_sorted = sorted(type_list, key=lambda x: (-x[1], x[0]))
-            top_types = [{"record_type": t, "rows": n} for t, n in type_list_sorted[:top_n]]
+                type_list = types_by_person.get(person_id, [])
+                # Deterministic: already ordered by query (n desc, type asc) per table; merge then stable sort.
+                type_list_sorted = sorted(type_list, key=lambda x: (-x[1], x[0]))
+                top_types = [{"record_type": t, "rows": n} for t, n in type_list_sorted[:top_n]]
 
-            per_person.append(
-                {
-                    "canonical_person_id": person_id,
-                    "rows_by_table": {k: int(by_table[k]) for k in sorted(by_table)},
-                    "min_event_time": _fmt_ts(min_et),
-                    "max_event_time": _fmt_ts(max_et),
-                    "top_record_types": top_types,
-                }
+                per_person.append(
+                    {
+                        "canonical_person_id": person_id,
+                        "rows_by_table": {k: int(by_table[k]) for k in sorted(by_table)},
+                        "min_event_time": _fmt_ts(min_et),
+                        "max_event_time": _fmt_ts(max_et),
+                        "top_record_types": top_types,
+                    }
+                )
+
+                batch += 1
+                if batch >= 100:
+                    task_people.advance(batch)
+                    batch = 0
+            if batch:
+                task_people.advance(batch)
+
+        with progress.phase("report: write artifacts"):
+            task_write = progress.task("report: write artifacts", total=4, unit="files")
+
+            # CSV: coverage_by_person.csv
+            header = [
+                "canonical_person_id",
+                "observations_rows",
+                "documents_rows",
+                "medications_rows",
+                "conditions_rows",
+                "min_event_time",
+                "max_event_time",
+            ]
+            per_person_rows = []
+            for p in per_person:
+                rows_map = p.get("rows_by_table") if isinstance(p.get("rows_by_table"), dict) else {}
+                per_person_rows.append(
+                    [
+                        p["canonical_person_id"],
+                        int(rows_map.get("observations", 0)),
+                        int(rows_map.get("documents", 0)),
+                        int(rows_map.get("medications", 0)),
+                        int(rows_map.get("conditions", 0)),
+                        p.get("min_event_time") or "",
+                        p.get("max_event_time") or "",
+                    ]
+                )
+            per_person_rows.sort(key=lambda r: str(r[0]))
+            _write_csv(out / "coverage_by_person.csv", header=header, rows=per_person_rows)
+            task_write.advance(1)
+
+            # CSV: coverage_by_source.csv
+            coverage_by_source_rows.sort(key=lambda r: (r[0], r[1]))
+            _write_csv(
+                out / "coverage_by_source.csv",
+                header=["stream", "source", "rows"],
+                rows=[[stream, source, n] for stream, source, n in coverage_by_source_rows],
             )
+            task_write.advance(1)
 
-        # CSV: coverage_by_person.csv
-        header = [
-            "canonical_person_id",
-            "observations_rows",
-            "documents_rows",
-            "medications_rows",
-            "conditions_rows",
-            "min_event_time",
-            "max_event_time",
-        ]
-        per_person_rows = []
-        for p in per_person:
-            rows_map = p.get("rows_by_table") if isinstance(p.get("rows_by_table"), dict) else {}
-            per_person_rows.append(
-                [
-                    p["canonical_person_id"],
-                    int(rows_map.get("observations", 0)),
-                    int(rows_map.get("documents", 0)),
-                    int(rows_map.get("medications", 0)),
-                    int(rows_map.get("conditions", 0)),
-                    p.get("min_event_time") or "",
-                    p.get("max_event_time") or "",
-                ]
+            # CSV: timeline_daily_counts.csv
+            timeline_rows: list[tuple[str, str, str, int]] = []
+            task_timeline = progress.task("report: timeline query", total=len(streams), unit="tables")
+            for table in streams:
+                for day, source, n in _rows(
+                    con,
+                    f"""
+                    SELECT CAST(date_trunc('day', event_time) AS DATE) AS day, {source_bucket} AS source, COUNT(*) AS n
+                    FROM {table}
+                    WHERE event_time IS NOT NULL
+                    GROUP BY 1, 2
+                    ORDER BY 1, 2;
+                    """,
+                ):
+                    if not isinstance(source, str):
+                        continue
+                    day_s = _fmt_ts(day)
+                    if day_s is None:
+                        continue
+                    timeline_rows.append((day_s, table, source, int(n)))
+                task_timeline.advance(1)
+            timeline_rows.sort(key=lambda r: (r[0], r[1], r[2]))
+            _write_csv(
+                out / "timeline_daily_counts.csv",
+                header=["day", "stream", "source", "rows"],
+                rows=[[day, stream, source, n] for day, stream, source, n in timeline_rows],
             )
-        per_person_rows.sort(key=lambda r: str(r[0]))
-        _write_csv(out / "coverage_by_person.csv", header=header, rows=per_person_rows)
-
-        # CSV: coverage_by_source.csv
-        coverage_by_source_rows.sort(key=lambda r: (r[0], r[1]))
-        _write_csv(
-            out / "coverage_by_source.csv",
-            header=["stream", "source", "rows"],
-            rows=[[stream, source, n] for stream, source, n in coverage_by_source_rows],
-        )
-
-        # CSV: timeline_daily_counts.csv
-        timeline_rows: list[tuple[str, str, str, int]] = []
-        for table in streams:
-            for day, source, n in _rows(
-                con,
-                f"""
-                SELECT CAST(date_trunc('day', event_time) AS DATE) AS day, {source_bucket} AS source, COUNT(*) AS n
-                FROM {table}
-                WHERE event_time IS NOT NULL
-                GROUP BY 1, 2
-                ORDER BY 1, 2;
-                """,
-            ):
-                if not isinstance(source, str):
-                    continue
-                day_s = _fmt_ts(day)
-                if day_s is None:
-                    continue
-                timeline_rows.append((day_s, table, source, int(n)))
-        timeline_rows.sort(key=lambda r: (r[0], r[1], r[2]))
-        _write_csv(
-            out / "timeline_daily_counts.csv",
-            header=["day", "stream", "source", "rows"],
-            rows=[[day, stream, source, n] for day, stream, source, n in timeline_rows],
-        )
+            task_write.advance(1)
 
         summary = {
             "schema_version": 1,
@@ -340,6 +371,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
 
         _write_json(out / "summary.json", summary)
         _write_text_atomic(out / "summary.md", _render_markdown(summary))
+        task_write.advance(1)
     finally:
         con.close()
 
@@ -403,7 +435,8 @@ def _render_markdown(summary: dict[str, object]) -> str:
 
 def show_report(*, db_path: str) -> None:
     db = Path(db_path)
-    con = _connect_read_only(db)
+    with progress.phase("report: show (connect)"):
+        con = _connect_read_only(db)
     try:
         present = _tables_present(con)
         streams = [t for t in ["observations", "documents", "medications", "conditions"] if t in present]

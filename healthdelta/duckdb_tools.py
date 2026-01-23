@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import Iterable
 
+from healthdelta.progress import progress
+
 
 def _format_cell(v: object) -> str:
     if v is None:
@@ -104,157 +106,111 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
     except Exception as e:  # pragma: no cover
         raise RuntimeError("duckdb Python package is required (install dependency 'duckdb')") from e
 
-    input_root = Path(input_dir)
-    ios_mode = False
-    ios_run_id: str | None = None
-    ios_source_file: str | None = None
+    with progress.phase("duckdb: detect input layout"):
+        input_root = Path(input_dir)
+        ios_mode = False
+        ios_run_id: str | None = None
+        ios_source_file: str | None = None
 
-    ios_manifest_path = input_root / "manifest.json"
-    ios_ndjson_dir = input_root / "ndjson"
-    if ios_manifest_path.exists() and ios_ndjson_dir.is_dir():
-        observations_hint = ios_ndjson_dir / "observations.ndjson"
-        if observations_hint.exists():
-            ios_mode = True
-            ios_source_file = "ndjson/observations.ndjson"
-            try:
-                obj = json.loads(ios_manifest_path.read_text(encoding="utf-8"))
-                if isinstance(obj, dict) and isinstance(obj.get("run_id"), str) and obj.get("run_id"):
-                    ios_run_id = obj["run_id"]
-            except Exception:
-                ios_run_id = None
+        ios_manifest_path = input_root / "manifest.json"
+        ios_ndjson_dir = input_root / "ndjson"
+        if ios_manifest_path.exists() and ios_ndjson_dir.is_dir():
+            observations_hint = ios_ndjson_dir / "observations.ndjson"
+            if observations_hint.exists():
+                ios_mode = True
+                ios_source_file = "ndjson/observations.ndjson"
+                try:
+                    obj = json.loads(ios_manifest_path.read_text(encoding="utf-8"))
+                    if isinstance(obj, dict) and isinstance(obj.get("run_id"), str) and obj.get("run_id"):
+                        ios_run_id = obj["run_id"]
+                except Exception:
+                    ios_run_id = None
 
-    ndjson_root = ios_ndjson_dir if ios_mode else input_root
-    db = Path(db_path)
+        ndjson_root = ios_ndjson_dir if ios_mode else input_root
+        db = Path(db_path)
 
-    db_existed = db.exists()
-    if db_existed and replace:
-        db.unlink()
+        db_existed = db.exists()
+        if db_existed and replace:
+            db.unlink()
 
-    db.parent.mkdir(parents=True, exist_ok=True)
+        db.parent.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect(database=str(db))
+    with progress.phase("duckdb: connect"):
+        con = duckdb.connect(database=str(db))
     try:
-        con.execute("PRAGMA threads=1;")
-        con.execute("PRAGMA enable_progress_bar=false;")
-        con.execute("BEGIN;")
+        with progress.phase("duckdb: init transaction"):
+            con.execute("PRAGMA threads=1;")
+            con.execute("PRAGMA enable_progress_bar=false;")
+            con.execute("BEGIN;")
 
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS observations (
-              schema_version INTEGER,
-              record_key VARCHAR,
-              canonical_person_id VARCHAR,
-              source VARCHAR,
-              source_file VARCHAR,
-              event_time TIMESTAMP,
-              run_id VARCHAR,
-              event_key VARCHAR,
-              source_id VARCHAR,
-              hk_type VARCHAR,
-              resource_type VARCHAR,
-              code VARCHAR,
-              value VARCHAR,
-              value_num DOUBLE,
-              unit VARCHAR,
-              code_coding_json VARCHAR,
-              type_coding_json VARCHAR,
-              status VARCHAR
-            );
-            """
-        )
+        with progress.phase("duckdb: ensure schema"):
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS observations (
+                  schema_version INTEGER,
+                  record_key VARCHAR,
+                  canonical_person_id VARCHAR,
+                  source VARCHAR,
+                  source_file VARCHAR,
+                  event_time TIMESTAMP,
+                  run_id VARCHAR,
+                  event_key VARCHAR,
+                  source_id VARCHAR,
+                  hk_type VARCHAR,
+                  resource_type VARCHAR,
+                  code VARCHAR,
+                  value VARCHAR,
+                  value_num DOUBLE,
+                  unit VARCHAR,
+                  code_coding_json VARCHAR,
+                  type_coding_json VARCHAR,
+                  status VARCHAR
+                );
+                """
+            )
 
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS documents (
-              schema_version INTEGER,
-              record_key VARCHAR,
-              canonical_person_id VARCHAR,
-              source VARCHAR,
-              source_file VARCHAR,
-              event_time TIMESTAMP,
-              run_id VARCHAR,
-              event_key VARCHAR,
-              source_id VARCHAR,
-              resource_type VARCHAR,
-              status VARCHAR,
-              type_coding_json VARCHAR
-            );
-            """
-        )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS documents (
+                  schema_version INTEGER,
+                  record_key VARCHAR,
+                  canonical_person_id VARCHAR,
+                  source VARCHAR,
+                  source_file VARCHAR,
+                  event_time TIMESTAMP,
+                  run_id VARCHAR,
+                  event_key VARCHAR,
+                  source_id VARCHAR,
+                  resource_type VARCHAR,
+                  status VARCHAR,
+                  type_coding_json VARCHAR
+                );
+                """
+            )
 
         # Optional streams: created only if the stream exists.
-
         observations_path = ndjson_root / "observations.ndjson"
         documents_path = ndjson_root / "documents.ndjson"
         medications_path = ndjson_root / "medications.ndjson"
         conditions_path = ndjson_root / "conditions.ndjson"
 
         if not observations_path.exists():
-            raise FileNotFoundError(f"Missing observations.ndjson: {observations_path}")
+            raise FileNotFoundError("Missing required NDJSON stream: observations.ndjson")
         if not documents_path.exists() and not ios_mode:
-            raise FileNotFoundError(f"Missing documents.ndjson: {documents_path}")
+            raise FileNotFoundError("Missing required NDJSON stream: documents.ndjson")
 
-        _require_columns(con, "observations", ["record_key"])
-        _require_columns(con, "documents", ["record_key"])
-        _create_unique_index_if_possible(con, name="observations_record_key_uq", table="observations", column="record_key")
-        _create_unique_index_if_possible(con, name="documents_record_key_uq", table="documents", column="record_key")
-
-        for obj in _iter_ndjson(observations_path):
-            record_key = obj.get("record_key")
-            if not isinstance(record_key, str) or not record_key:
-                record_key = obj.get("event_key")
-            if not isinstance(record_key, str) or not record_key:
-                record_key = _sha256_text(_stable_json(obj) or "")
-
-            event_key = obj.get("event_key")
-            if not isinstance(event_key, str) or not event_key:
-                event_key = record_key
-
-            value = obj.get("value")
-            if value is None and isinstance(obj.get("value_num"), (int, float)):
-                value = obj.get("value_num")
-            value_str = str(value) if value is not None else None
-            value_num = None
-            if isinstance(value, (int, float)):
-                value_num = float(value)
-            elif isinstance(value, str):
-                try:
-                    value_num = float(value)
-                except ValueError:
-                    value_num = None
-
-            con.execute(
-                """
-                INSERT INTO observations
-                SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-                WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
-                """,
-                [
-                    obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
-                    record_key,
-                    obj.get("canonical_person_id"),
-                    obj.get("source"),
-                    obj.get("source_file") or ios_source_file,
-                    _parse_event_time(obj.get("event_time") or obj.get("start_time")),
-                    obj.get("run_id") or ios_run_id,
-                    event_key,
-                    obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
-                    (obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None)
-                    or (obj.get("sample_type") if isinstance(obj.get("sample_type"), str) else None),
-                    obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
-                    obj.get("code") if isinstance(obj.get("code"), str) else None,
-                    value_str,
-                    value_num,
-                    obj.get("unit") if isinstance(obj.get("unit"), str) else None,
-                    _stable_json(obj.get("code_coding")),
-                    _stable_json(obj.get("type_coding")),
-                    obj.get("status") if isinstance(obj.get("status"), str) else None,
-                    record_key,
-                ],
+        with progress.phase("duckdb: schema checks"):
+            _require_columns(con, "observations", ["record_key"])
+            _require_columns(con, "documents", ["record_key"])
+            _create_unique_index_if_possible(
+                con, name="observations_record_key_uq", table="observations", column="record_key"
             )
+            _create_unique_index_if_possible(con, name="documents_record_key_uq", table="documents", column="record_key")
 
-        if documents_path.exists():
-            for obj in _iter_ndjson(documents_path):
+        with progress.phase("duckdb: load observations"):
+            task = progress.task("duckdb: load observations", unit="rows")
+            batch = 0
+            for obj in _iter_ndjson(observations_path):
                 record_key = obj.get("record_key")
                 if not isinstance(record_key, str) or not record_key:
                     record_key = obj.get("event_key")
@@ -265,139 +221,240 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 if not isinstance(event_key, str) or not event_key:
                     event_key = record_key
 
+                value = obj.get("value")
+                if value is None and isinstance(obj.get("value_num"), (int, float)):
+                    value = obj.get("value_num")
+                value_str = str(value) if value is not None else None
+                value_num = None
+                if isinstance(value, (int, float)):
+                    value_num = float(value)
+                elif isinstance(value, str):
+                    try:
+                        value_num = float(value)
+                    except ValueError:
+                        value_num = None
+
                 con.execute(
                     """
-                    INSERT INTO documents
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?
-                    WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
+                    INSERT INTO observations
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
                     """,
                     [
                         obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
                         record_key,
                         obj.get("canonical_person_id"),
                         obj.get("source"),
-                        obj.get("source_file") or ("ndjson/documents.ndjson" if ios_mode else None),
-                        _parse_event_time(obj.get("event_time")),
+                        obj.get("source_file") or ios_source_file,
+                        _parse_event_time(obj.get("event_time") or obj.get("start_time")),
                         obj.get("run_id") or ios_run_id,
                         event_key,
                         obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
-                        obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
-                        obj.get("status") if isinstance(obj.get("status"), str) else None,
-                        _stable_json(obj.get("type_coding")),
-                        record_key,
-                    ],
-                )
-
-        if medications_path.exists():
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS medications (
-                  schema_version INTEGER,
-                  record_key VARCHAR,
-                  canonical_person_id VARCHAR,
-                  source VARCHAR,
-                  source_file VARCHAR,
-                  event_time TIMESTAMP,
-                  run_id VARCHAR,
-                  event_key VARCHAR,
-                  source_id VARCHAR,
-                  resource_type VARCHAR,
-                  status VARCHAR
-                );
-                """
-            )
-            _require_columns(con, "medications", ["record_key"])
-            _create_unique_index_if_possible(con, name="medications_record_key_uq", table="medications", column="record_key")
-            for obj in _iter_ndjson(medications_path):
-                record_key = obj.get("record_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = obj.get("event_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = _sha256_text(_stable_json(obj) or "")
-
-                event_key = obj.get("event_key")
-                if not isinstance(event_key, str) or not event_key:
-                    event_key = record_key
-
-                con.execute(
-                    """
-                    INSERT INTO medications
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?
-                    WHERE NOT EXISTS (SELECT 1 FROM medications WHERE record_key=?);
-                    """,
-                    [
-                        obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
-                        record_key,
-                        obj.get("canonical_person_id"),
-                        obj.get("source"),
-                        obj.get("source_file"),
-                        _parse_event_time(obj.get("event_time")),
-                        obj.get("run_id"),
-                        event_key,
-                        obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
-                        obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
-                        obj.get("status") if isinstance(obj.get("status"), str) else None,
-                        record_key,
-                    ],
-                )
-
-        if conditions_path.exists():
-            con.execute(
-                """
-                CREATE TABLE IF NOT EXISTS conditions (
-                  schema_version INTEGER,
-                  record_key VARCHAR,
-                  canonical_person_id VARCHAR,
-                  source VARCHAR,
-                  source_file VARCHAR,
-                  event_time TIMESTAMP,
-                  run_id VARCHAR,
-                  event_key VARCHAR,
-                  source_id VARCHAR,
-                  resource_type VARCHAR,
-                  code VARCHAR,
-                  code_coding_json VARCHAR
-                );
-                """
-            )
-            _require_columns(con, "conditions", ["record_key"])
-            _create_unique_index_if_possible(con, name="conditions_record_key_uq", table="conditions", column="record_key")
-            for obj in _iter_ndjson(conditions_path):
-                record_key = obj.get("record_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = obj.get("event_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = _sha256_text(_stable_json(obj) or "")
-
-                event_key = obj.get("event_key")
-                if not isinstance(event_key, str) or not event_key:
-                    event_key = record_key
-
-                con.execute(
-                    """
-                    INSERT INTO conditions
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?
-                    WHERE NOT EXISTS (SELECT 1 FROM conditions WHERE record_key=?);
-                    """,
-                    [
-                        obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
-                        record_key,
-                        obj.get("canonical_person_id"),
-                        obj.get("source"),
-                        obj.get("source_file"),
-                        _parse_event_time(obj.get("event_time")),
-                        obj.get("run_id"),
-                        event_key,
-                        obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                        (obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None)
+                        or (obj.get("sample_type") if isinstance(obj.get("sample_type"), str) else None),
                         obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                         obj.get("code") if isinstance(obj.get("code"), str) else None,
+                        value_str,
+                        value_num,
+                        obj.get("unit") if isinstance(obj.get("unit"), str) else None,
                         _stable_json(obj.get("code_coding")),
+                        _stable_json(obj.get("type_coding")),
+                        obj.get("status") if isinstance(obj.get("status"), str) else None,
                         record_key,
                     ],
                 )
 
-        con.execute("COMMIT;")
-        con.execute("CHECKPOINT;")
+                batch += 1
+                if batch >= 1000:
+                    task.advance(batch)
+                    batch = 0
+            if batch:
+                task.advance(batch)
+
+        if documents_path.exists():
+            with progress.phase("duckdb: load documents"):
+                task = progress.task("duckdb: load documents", unit="rows")
+                batch = 0
+                for obj in _iter_ndjson(documents_path):
+                    record_key = obj.get("record_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = obj.get("event_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = _sha256_text(_stable_json(obj) or "")
+
+                    event_key = obj.get("event_key")
+                    if not isinstance(event_key, str) or not event_key:
+                        event_key = record_key
+
+                    con.execute(
+                        """
+                        INSERT INTO documents
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                        WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
+                        """,
+                        [
+                            obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                            record_key,
+                            obj.get("canonical_person_id"),
+                            obj.get("source"),
+                            obj.get("source_file") or ("ndjson/documents.ndjson" if ios_mode else None),
+                            _parse_event_time(obj.get("event_time")),
+                            obj.get("run_id") or ios_run_id,
+                            event_key,
+                            obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                            obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                            obj.get("status") if isinstance(obj.get("status"), str) else None,
+                            _stable_json(obj.get("type_coding")),
+                            record_key,
+                        ],
+                    )
+
+                    batch += 1
+                    if batch >= 1000:
+                        task.advance(batch)
+                        batch = 0
+                if batch:
+                    task.advance(batch)
+
+        if medications_path.exists():
+            with progress.phase("duckdb: ensure schema (medications)"):
+                con.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS medications (
+                      schema_version INTEGER,
+                      record_key VARCHAR,
+                      canonical_person_id VARCHAR,
+                      source VARCHAR,
+                      source_file VARCHAR,
+                      event_time TIMESTAMP,
+                      run_id VARCHAR,
+                      event_key VARCHAR,
+                      source_id VARCHAR,
+                      resource_type VARCHAR,
+                      status VARCHAR
+                    );
+                    """
+                )
+                _require_columns(con, "medications", ["record_key"])
+                _create_unique_index_if_possible(
+                    con, name="medications_record_key_uq", table="medications", column="record_key"
+                )
+
+            with progress.phase("duckdb: load medications"):
+                task = progress.task("duckdb: load medications", unit="rows")
+                batch = 0
+                for obj in _iter_ndjson(medications_path):
+                    record_key = obj.get("record_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = obj.get("event_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = _sha256_text(_stable_json(obj) or "")
+
+                    event_key = obj.get("event_key")
+                    if not isinstance(event_key, str) or not event_key:
+                        event_key = record_key
+
+                    con.execute(
+                        """
+                        INSERT INTO medications
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?
+                        WHERE NOT EXISTS (SELECT 1 FROM medications WHERE record_key=?);
+                        """,
+                        [
+                            obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                            record_key,
+                            obj.get("canonical_person_id"),
+                            obj.get("source"),
+                            obj.get("source_file"),
+                            _parse_event_time(obj.get("event_time")),
+                            obj.get("run_id"),
+                            event_key,
+                            obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                            obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                            obj.get("status") if isinstance(obj.get("status"), str) else None,
+                            record_key,
+                        ],
+                    )
+
+                    batch += 1
+                    if batch >= 1000:
+                        task.advance(batch)
+                        batch = 0
+                if batch:
+                    task.advance(batch)
+
+        if conditions_path.exists():
+            with progress.phase("duckdb: ensure schema (conditions)"):
+                con.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS conditions (
+                      schema_version INTEGER,
+                      record_key VARCHAR,
+                      canonical_person_id VARCHAR,
+                      source VARCHAR,
+                      source_file VARCHAR,
+                      event_time TIMESTAMP,
+                      run_id VARCHAR,
+                      event_key VARCHAR,
+                      source_id VARCHAR,
+                      resource_type VARCHAR,
+                      code VARCHAR,
+                      code_coding_json VARCHAR
+                    );
+                    """
+                )
+                _require_columns(con, "conditions", ["record_key"])
+                _create_unique_index_if_possible(
+                    con, name="conditions_record_key_uq", table="conditions", column="record_key"
+                )
+
+            with progress.phase("duckdb: load conditions"):
+                task = progress.task("duckdb: load conditions", unit="rows")
+                batch = 0
+                for obj in _iter_ndjson(conditions_path):
+                    record_key = obj.get("record_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = obj.get("event_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = _sha256_text(_stable_json(obj) or "")
+
+                    event_key = obj.get("event_key")
+                    if not isinstance(event_key, str) or not event_key:
+                        event_key = record_key
+
+                    con.execute(
+                        """
+                        INSERT INTO conditions
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                        WHERE NOT EXISTS (SELECT 1 FROM conditions WHERE record_key=?);
+                        """,
+                        [
+                            obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                            record_key,
+                            obj.get("canonical_person_id"),
+                            obj.get("source"),
+                            obj.get("source_file"),
+                            _parse_event_time(obj.get("event_time")),
+                            obj.get("run_id"),
+                            event_key,
+                            obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                            obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                            obj.get("code") if isinstance(obj.get("code"), str) else None,
+                            _stable_json(obj.get("code_coding")),
+                            record_key,
+                        ],
+                    )
+
+                    batch += 1
+                    if batch >= 1000:
+                        task.advance(batch)
+                        batch = 0
+                if batch:
+                    task.advance(batch)
+
+        with progress.phase("duckdb: commit"):
+            con.execute("COMMIT;")
+            con.execute("CHECKPOINT;")
     finally:
         con.close()
 
@@ -410,15 +467,16 @@ def query_duckdb(*, db_path: str, sql: str, out_path: str | None = None) -> None
 
     db = Path(db_path)
     if not db.exists():
-        raise FileNotFoundError(f"Missing DB: {db}")
+        raise FileNotFoundError(f"Missing DB file: {db.name}")
 
-    con = duckdb.connect(database=str(db), read_only=True)
-    try:
-        con.execute("PRAGMA threads=1;")
-        res = con.execute(sql)
-        columns = [c[0] for c in (res.description or [])]
-        rows = res.fetchall()
-    finally:
-        con.close()
+    with progress.phase("duckdb: query"):
+        con = duckdb.connect(database=str(db), read_only=True)
+        try:
+            con.execute("PRAGMA threads=1;")
+            res = con.execute(sql)
+            columns = [c[0] for c in (res.description or [])]
+            rows = res.fetchall()
+        finally:
+            con.close()
 
     _write_csv(columns=columns, rows=rows, out_path=Path(out_path) if out_path else None)
