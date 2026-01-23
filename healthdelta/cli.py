@@ -221,117 +221,112 @@ def main(argv: list[str] | None = None) -> int:
             print(f"git_sha={sha}")
         return 0
 
-    if args.command == "serve":
-        serve_backend(host=str(args.host), port=int(args.port))
+    rc = 0
+    try:
+        if args.command == "serve":
+            serve_backend(host=str(args.host), port=int(args.port))
+            rc = 0
+        elif args.command == "ingest":
+            if args.variant == "ios":
+                ingest_ios_to_staging(input_dir=args.input, staging_root=args.out)
+                rc = 0
+            else:
+                ingest_to_staging(input_path=args.input, staging_root=args.out)
+                rc = 0
+        elif args.command == "identity" and args.identity_command == "build":
+            build_identity(staging_run_dir=args.input)
+            rc = 0
+        elif args.command == "identity" and args.identity_command == "review":
+            lines = review_identity_links(identity_dir=args.identity)
+            for ln in lines:
+                print(ln)
+            rc = 0
+        elif args.command == "identity" and args.identity_command == "confirm":
+            ok = confirm_identity_link(identity_dir=args.identity, link_id=args.link)
+            if not ok:
+                print("ERROR link not found", file=sys.stderr)
+                rc = 1
+            else:
+                print("ok")
+                rc = 0
+        elif args.command == "deid":
+            deidentify_run(staging_run_dir=args.input, identity_dir=args.identity, out_dir=args.out)
+            rc = 0
+        elif args.command == "pipeline" and args.pipeline_command == "run":
+            state_dir = args.state or str(Path(args.out) / "state")
+            rc = run_pipeline(
+                input_path=args.input,
+                base_dir=args.out,
+                mode=args.mode,
+                expected_run_id=args.run_id,
+                skip_deid=args.skip_deid,
+                state_dir=state_dir,
+                since=args.since,
+                note=args.note,
+            )
+        elif args.command == "export" and args.export_command == "ndjson":
+            export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
+            rc = 0
+        elif args.command == "export" and args.export_command == "profile":
+            build_export_profile(
+                input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files)
+            )
+            rc = 0
+        elif args.command == "export" and args.export_command == "validate":
+            errors = validate_ndjson_dir(
+                input_dir=args.input, banned_tokens=list(args.banned_token), banned_regexes=list(args.banned_regex)
+            )
+            if errors:
+                for e in errors:
+                    print(f"ERROR {e.format()}", file=sys.stderr)
+                print(f"errors={len(errors)}", file=sys.stderr)
+                rc = 1
+            else:
+                print("ok")
+                rc = 0
+        elif args.command == "duckdb" and args.duckdb_command == "build":
+            build_duckdb(input_dir=args.input, db_path=args.db, replace=bool(args.replace))
+            rc = 0
+        elif args.command == "duckdb" and args.duckdb_command == "query":
+            query_duckdb(db_path=args.db, sql=args.sql, out_path=args.out)
+            rc = 0
+        elif args.command == "report" and args.report_command == "build":
+            build_report(db_path=args.db, out_dir=args.out, mode=args.mode)
+            rc = 0
+        elif args.command == "report" and args.report_command == "show":
+            show_report(db_path=args.db)
+            rc = 0
+        elif args.command == "note" and args.note_command == "build":
+            build_doctor_note(db_path=args.db, out_dir=args.out, mode=args.mode)
+            rc = 0
+        elif args.command == "run" and args.run_command == "register":
+            register_existing_run_dir(run_dir=Path(args.run), state_dir=args.state, note=args.note)
+            rc = 0
+        elif args.command == "run" and args.run_command == "all":
+            rc = run_all_operator(
+                input_path=args.input,
+                base_out=args.out,
+                state_dir=args.state,
+                since=args.since,
+                mode=args.mode,
+                note=args.note,
+                skip_note=bool(args.skip_note),
+            )
+        elif args.command == "share" and args.share_command == "bundle":
+            build_share_bundle(run_dir=args.run, out_path=args.out)
+            rc = 0
+        elif args.command == "share" and args.share_command == "verify":
+            errors = verify_share_bundle(bundle_path=args.bundle)
+            if errors:
+                for e in errors:
+                    print(f"ERROR {e}", file=sys.stderr)
+                print(f"errors={len(errors)}", file=sys.stderr)
+                rc = 1
+            else:
+                print("ok")
+                rc = 0
+        else:
+            raise AssertionError(f"Unhandled command: {args.command}")
+    finally:
         progress.print_summary()
-        return 0
-
-    if args.command == "ingest":
-        if args.variant == "ios":
-            ingest_ios_to_staging(input_dir=args.input, staging_root=args.out)
-            progress.print_summary()
-            return 0
-        ingest_to_staging(input_path=args.input, staging_root=args.out)
-        progress.print_summary()
-        return 0
-
-    if args.command == "identity" and args.identity_command == "build":
-        build_identity(staging_run_dir=args.input)
-        return 0
-    if args.command == "identity" and args.identity_command == "review":
-        lines = review_identity_links(identity_dir=args.identity)
-        for ln in lines:
-            print(ln)
-        return 0
-    if args.command == "identity" and args.identity_command == "confirm":
-        ok = confirm_identity_link(identity_dir=args.identity, link_id=args.link)
-        if not ok:
-            print("ERROR link not found", file=sys.stderr)
-            return 1
-        print("ok")
-        return 0
-
-    if args.command == "deid":
-        deidentify_run(staging_run_dir=args.input, identity_dir=args.identity, out_dir=args.out)
-        return 0
-
-    if args.command == "pipeline" and args.pipeline_command == "run":
-        state_dir = args.state or str(Path(args.out) / "state")
-        return run_pipeline(
-            input_path=args.input,
-            base_dir=args.out,
-            mode=args.mode,
-            expected_run_id=args.run_id,
-            skip_deid=args.skip_deid,
-            state_dir=state_dir,
-            since=args.since,
-            note=args.note,
-        )
-
-    if args.command == "export" and args.export_command == "ndjson":
-        export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
-        progress.print_summary()
-        return 0
-    if args.command == "export" and args.export_command == "profile":
-        build_export_profile(input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files))
-        return 0
-    if args.command == "export" and args.export_command == "validate":
-        errors = validate_ndjson_dir(input_dir=args.input, banned_tokens=list(args.banned_token), banned_regexes=list(args.banned_regex))
-        if errors:
-            for e in errors:
-                print(f"ERROR {e.format()}", file=sys.stderr)
-            print(f"errors={len(errors)}", file=sys.stderr)
-            return 1
-        print("ok")
-        return 0
-
-    if args.command == "duckdb" and args.duckdb_command == "build":
-        build_duckdb(input_dir=args.input, db_path=args.db, replace=bool(args.replace))
-        return 0
-
-    if args.command == "duckdb" and args.duckdb_command == "query":
-        query_duckdb(db_path=args.db, sql=args.sql, out_path=args.out)
-        return 0
-
-    if args.command == "report" and args.report_command == "build":
-        build_report(db_path=args.db, out_dir=args.out, mode=args.mode)
-        return 0
-
-    if args.command == "report" and args.report_command == "show":
-        show_report(db_path=args.db)
-        return 0
-
-    if args.command == "note" and args.note_command == "build":
-        build_doctor_note(db_path=args.db, out_dir=args.out, mode=args.mode)
-        return 0
-
-    if args.command == "run" and args.run_command == "register":
-        register_existing_run_dir(run_dir=Path(args.run), state_dir=args.state, note=args.note)
-        return 0
-
-    if args.command == "run" and args.run_command == "all":
-        return run_all_operator(
-            input_path=args.input,
-            base_out=args.out,
-            state_dir=args.state,
-            since=args.since,
-            mode=args.mode,
-            note=args.note,
-            skip_note=bool(args.skip_note),
-        )
-
-    if args.command == "share" and args.share_command == "bundle":
-        build_share_bundle(run_dir=args.run, out_path=args.out)
-        return 0
-
-    if args.command == "share" and args.share_command == "verify":
-        errors = verify_share_bundle(bundle_path=args.bundle)
-        if errors:
-            for e in errors:
-                print(f"ERROR {e}", file=sys.stderr)
-            print(f"errors={len(errors)}", file=sys.stderr)
-            return 1
-        print("ok")
-        return 0
-
-    raise AssertionError(f"Unhandled command: {args.command}")
+    return rc

@@ -19,6 +19,7 @@ from healthdelta.state import (
     update_run_artifacts,
     write_last_run_id,
 )
+from healthdelta.progress import progress
 
 
 def _artifact_paths(*, base_out: Path, run_id: str, include_deid: bool) -> dict[str, str | None]:
@@ -82,7 +83,8 @@ def run_all(
     else:
         parent_run_id = since or None
 
-    input_fingerprint = compute_input_fingerprint(input_p)
+    with progress.phase("operator: compute input fingerprint"):
+        input_fingerprint = compute_input_fingerprint(input_p)
     fp_sha = input_fingerprint.get("sha256") if isinstance(input_fingerprint.get("sha256"), str) else None
     if fp_sha is None:
         raise ValueError("input_fingerprint.sha256 missing")
@@ -119,16 +121,19 @@ def run_all(
     reports_dir.mkdir(parents=True, exist_ok=True)
     note_dir.mkdir(parents=True, exist_ok=True)
 
-    # Stage into a temporary run_id subdir then rename to <run_root>/staging to match operator layout.
-    staged_tmp = ingest_to_staging(input_path=str(input_p), staging_root=str(run_root), run_id_override=run_id)
-    if staging_dir.exists():
-        raise FileExistsError(f"staging dir already exists: {staging_dir}")
-    staged_tmp.replace(staging_dir)
-
-    build_identity(staging_run_dir=str(staging_dir), output_dir=str(identity_dir))
-
     include_deid = mode == "share"
-    if include_deid:
+
+    def step_stage_input() -> None:
+        # Stage into a temporary run_id subdir then rename to <run_root>/staging to match operator layout.
+        staged_tmp = ingest_to_staging(input_path=str(input_p), staging_root=str(run_root), run_id_override=run_id)
+        if staging_dir.exists():
+            raise FileExistsError(f"staging dir already exists: {staging_dir}")
+        staged_tmp.replace(staging_dir)
+
+    def step_identity() -> None:
+        build_identity(staging_run_dir=str(staging_dir), output_dir=str(identity_dir))
+
+    def step_deid() -> None:
         deidentify_run(staging_run_dir=str(staging_dir), identity_dir=str(identity_dir), out_dir=str(deid_dir))
 
     artifacts = {
@@ -153,24 +158,22 @@ def run_all(
     )
     write_last_run_id(str(state), run_id)
 
-    # NDJSON export
-    if include_deid:
-        export_ndjson(input_dir=str(deid_dir), out_dir=str(ndjson_dir), mode="share")
-    else:
-        export_ndjson(input_dir=str(staging_dir), out_dir=str(ndjson_dir), mode="local")
+    def step_export_ndjson() -> None:
+        if include_deid:
+            export_ndjson(input_dir=str(deid_dir), out_dir=str(ndjson_dir), mode="share")
+        else:
+            export_ndjson(input_dir=str(staging_dir), out_dir=str(ndjson_dir), mode="local")
+        update_run_artifacts(str(state), run_id, {"ndjson_dir": f"{run_id}/ndjson"})
 
-    update_run_artifacts(str(state), run_id, {"ndjson_dir": f"{run_id}/ndjson"})
+    def step_duckdb() -> None:
+        build_duckdb(input_dir=str(ndjson_dir), db_path=str(duckdb_path), replace=True)
+        update_run_artifacts(str(state), run_id, {"duckdb_db": f"{run_id}/duckdb/run.duckdb"})
 
-    # DuckDB build
-    build_duckdb(input_dir=str(ndjson_dir), db_path=str(duckdb_path), replace=True)
-    update_run_artifacts(str(state), run_id, {"duckdb_db": f"{run_id}/duckdb/run.duckdb"})
+    def step_reports() -> None:
+        build_report(db_path=str(duckdb_path), out_dir=str(reports_dir), mode=mode)
+        update_run_artifacts(str(state), run_id, {"reports_dir": f"{run_id}/reports"})
 
-    # Reports build
-    build_report(db_path=str(duckdb_path), out_dir=str(reports_dir), mode=mode)
-    update_run_artifacts(str(state), run_id, {"reports_dir": f"{run_id}/reports"})
-
-    # Doctor's Note build (Issue #13)
-    if not skip_note:
+    def step_note() -> None:
         build_doctor_note(db_path=str(duckdb_path), out_dir=str(note_dir), mode=mode)
         update_run_artifacts(
             str(state),
@@ -181,6 +184,27 @@ def run_all(
                 "doctor_note_md": f"{run_id}/note/doctor_note.md",
             },
         )
+
+    steps: list[tuple[str, callable]] = [
+        ("Stage input", step_stage_input),
+        ("Build identity", step_identity),
+    ]
+    if include_deid:
+        steps.append(("De-identify", step_deid))
+    steps.extend(
+        [
+            ("Export NDJSON", step_export_ndjson),
+            ("Build DuckDB", step_duckdb),
+            ("Generate reports", step_reports),
+        ]
+    )
+    if not skip_note:
+        steps.append(("Generate doctor note", step_note))
+
+    total_steps = len(steps)
+    for i, (name, fn) in enumerate(steps, start=1):
+        with progress.phase(f"[{i}/{total_steps}] {name}"):
+            fn()
 
     _print_summary(run_id=run_id, base_out=base, state_dir=state, artifacts=artifacts, status="created")
     return 0
