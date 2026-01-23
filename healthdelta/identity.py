@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from healthdelta.progress import progress
+
 
 @dataclass(frozen=True)
 class ParsedName:
@@ -244,13 +246,15 @@ def confirm_identity_link(*, identity_dir: str = "data/identity", link_id: str) 
 
 
 def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -> None:
-    run_dir = Path(staging_run_dir)
-    layout_path = run_dir / "layout.json"
-    if not layout_path.exists():
-        raise FileNotFoundError(f"Missing layout.json in staging run dir: {run_dir}")
+    with progress.phase("identity: init"):
+        run_dir = Path(staging_run_dir)
+        layout_path = run_dir / "layout.json"
+        if not layout_path.exists():
+            raise FileNotFoundError("Missing layout.json in staging run dir")
 
-    layout = _read_json(layout_path)
-    run_id = layout.get("run_id") if isinstance(layout.get("run_id"), str) else run_dir.name
+    with progress.phase("identity: load layout"):
+        layout = _read_json(layout_path)
+        run_id = layout.get("run_id") if isinstance(layout.get("run_id"), str) else run_dir.name
 
     clinical_paths = layout.get("clinical_json")
     if clinical_paths is None:
@@ -266,18 +270,19 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
     people: list[dict] = []
     aliases: list[dict] = []
     links: list[dict] = []
-    if people_path.exists():
-        obj = _read_json(people_path)
-        if isinstance(obj, dict) and isinstance(obj.get("people"), list):
-            people = obj["people"]
-    if aliases_path.exists():
-        obj = _read_json(aliases_path)
-        if isinstance(obj, dict) and isinstance(obj.get("aliases"), list):
-            aliases = obj["aliases"]
-    if links_path.exists():
-        obj = _read_json(links_path)
-        if isinstance(obj, dict) and isinstance(obj.get("links"), list):
-            links = obj["links"]
+    with progress.phase("identity: load existing state"):
+        if people_path.exists():
+            obj = _read_json(people_path)
+            if isinstance(obj, dict) and isinstance(obj.get("people"), list):
+                people = obj["people"]
+        if aliases_path.exists():
+            obj = _read_json(aliases_path)
+            if isinstance(obj, dict) and isinstance(obj.get("aliases"), list):
+                aliases = obj["aliases"]
+        if links_path.exists():
+            obj = _read_json(links_path)
+            if isinstance(obj, dict) and isinstance(obj.get("links"), list):
+                links = obj["links"]
 
     name_to_people: dict[tuple[str, str], list[str]] = {}
     for person in people:
@@ -314,31 +319,37 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
 
     # First pass: collect all Patient resources and count name collisions within this run.
     hits: list[_PatientHit] = []
-    for rel in clinical_paths:
-        if not isinstance(rel, str):
-            continue
-        p = run_dir / rel
-        if not p.exists():
-            continue
-        try:
-            content = _read_json(p)
-        except json.JSONDecodeError:
-            continue
-
-        resources = _walk_fhir_resources(content)
-        for idx, res in enumerate(resources):
-            if res.get("resourceType") != "Patient":
+    with progress.phase("identity: scan clinical JSON"):
+        task = progress.task("identity: scan clinical JSON", total=len(clinical_paths), unit="files")
+        for rel in clinical_paths:
+            if not isinstance(rel, str):
+                task.advance(1)
                 continue
-            name = _extract_patient_name(res)
-            if not name:
+            p = run_dir / rel
+            if not p.exists():
+                task.advance(1)
                 continue
             try:
-                parsed = parse_name(name)
-            except ValueError:
+                content = _read_json(p)
+            except json.JSONDecodeError:
+                task.advance(1)
                 continue
 
-            external_ids = _extract_external_ids(res)
-            hits.append(_PatientHit(rel=rel, idx=idx, parsed=parsed, external_ids=external_ids))
+            resources = _walk_fhir_resources(content)
+            for idx, res in enumerate(resources):
+                if res.get("resourceType") != "Patient":
+                    continue
+                name = _extract_patient_name(res)
+                if not name:
+                    continue
+                try:
+                    parsed = parse_name(name)
+                except ValueError:
+                    continue
+
+                external_ids = _extract_external_ids(res)
+                hits.append(_PatientHit(rel=rel, idx=idx, parsed=parsed, external_ids=external_ids))
+            task.advance(1)
 
     name_counts: dict[tuple[str, str], int] = {}
     for h in hits:
@@ -389,57 +400,68 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
             )
 
     # Second pass: assign person_key and append aliases + links.
-    for h in sorted(hits, key=lambda x: (x.rel, x.idx)):
-        match_key = (h.parsed.first_norm, h.parsed.last_norm)
+    with progress.phase("identity: assign people + aliases"):
+        task = progress.task("identity: assign people", total=len(hits), unit="records")
+        batch = 0
+        for h in sorted(hits, key=lambda x: (x.rel, x.idx)):
+            try:
+                match_key = (h.parsed.first_norm, h.parsed.last_norm)
 
-        linked_person_keys = set()
-        for ext in h.external_ids:
-            if not isinstance(ext, dict):
-                continue
-            system = ext.get("system")
-            value = ext.get("value")
-            if not (isinstance(system, str) and isinstance(value, str) and system.strip() and value.strip()):
-                continue
-            key = (_system_fingerprint(system), _source_patient_id_fingerprint(system, value))
-            pk = link_key_to_person.get(key)
-            if isinstance(pk, str) and pk:
-                linked_person_keys.add(pk)
+                linked_person_keys = set()
+                for ext in h.external_ids:
+                    if not isinstance(ext, dict):
+                        continue
+                    system = ext.get("system")
+                    value = ext.get("value")
+                    if not (isinstance(system, str) and isinstance(value, str) and system.strip() and value.strip()):
+                        continue
+                    key = (_system_fingerprint(system), _source_patient_id_fingerprint(system, value))
+                    pk = link_key_to_person.get(key)
+                    if isinstance(pk, str) and pk:
+                        linked_person_keys.add(pk)
 
-        if len(linked_person_keys) > 1:
-            raise RuntimeError(f"Patient has external IDs linked to multiple people: {sorted(linked_person_keys)}")
+                if len(linked_person_keys) > 1:
+                    raise RuntimeError(f"Patient has external IDs linked to multiple people: {sorted(linked_person_keys)}")
 
-        person_key: str | None = next(iter(linked_person_keys)) if linked_person_keys else None
-        link_state_for_new = "unverified"
+                person_key: str | None = next(iter(linked_person_keys)) if linked_person_keys else None
+                link_state_for_new = "unverified"
 
-        if person_key is None:
-            candidates = name_to_people.get(match_key, [])
-            if name_counts.get(match_key, 0) == 1 and len(candidates) == 1:
-                # Unambiguous name match: link to existing person, but keep unverified until confirmed.
-                person_key = candidates[0]
-            else:
-                # Ambiguous within the run or multiple candidates exist: do not auto-merge.
-                person_key = _create_person(parsed=h.parsed)
+                if person_key is None:
+                    candidates = name_to_people.get(match_key, [])
+                    if name_counts.get(match_key, 0) == 1 and len(candidates) == 1:
+                        # Unambiguous name match: link to existing person, but keep unverified until confirmed.
+                        person_key = candidates[0]
+                    else:
+                        # Ambiguous within the run or multiple candidates exist: do not auto-merge.
+                        person_key = _create_person(parsed=h.parsed)
 
-            _add_links(person_key=person_key, external_ids=h.external_ids, verification_state=link_state_for_new)
+                    _add_links(person_key=person_key, external_ids=h.external_ids, verification_state=link_state_for_new)
 
-        alias_payload: dict[str, Any] = {
-            "person_key": person_key,
-            "first_raw": h.parsed.first,
-            "last_raw": h.parsed.last,
-            "first_norm": h.parsed.first_norm,
-            "last_norm": h.parsed.last_norm,
-            "name_raw": h.parsed.raw,
-            "source": {
-                "run_id": run_id,
-                "file": h.rel,
-                "external_ids": h.external_ids,
-            },
-        }
-        alias_key = _stable_alias_key(alias_payload)
-        if alias_key in alias_keys_existing:
-            continue
-        alias_keys_existing.add(alias_key)
-        aliases.append({**alias_payload, "alias_key": alias_key, "observed_at": now})
+                alias_payload: dict[str, Any] = {
+                    "person_key": person_key,
+                    "first_raw": h.parsed.first,
+                    "last_raw": h.parsed.last,
+                    "first_norm": h.parsed.first_norm,
+                    "last_norm": h.parsed.last_norm,
+                    "name_raw": h.parsed.raw,
+                    "source": {
+                        "run_id": run_id,
+                        "file": h.rel,
+                        "external_ids": h.external_ids,
+                    },
+                }
+                alias_key = _stable_alias_key(alias_payload)
+                if alias_key in alias_keys_existing:
+                    continue
+                alias_keys_existing.add(alias_key)
+                aliases.append({**alias_payload, "alias_key": alias_key, "observed_at": now})
+            finally:
+                batch += 1
+                if batch >= 200:
+                    task.advance(batch)
+                    batch = 0
+        if batch:
+            task.advance(batch)
 
     people_out = {
         "schema_version": 1,
@@ -469,6 +491,11 @@ def build_identity(*, staging_run_dir: str, output_dir: str = "data/identity") -
         },
     }
 
-    _write_json(people_path, people_out)
-    _write_json(aliases_path, aliases_out)
-    _write_json(links_path, links_out)
+    with progress.phase("identity: write outputs"):
+        task = progress.task("identity: write outputs", total=3, unit="files")
+        _write_json(people_path, people_out)
+        task.advance(1)
+        _write_json(aliases_path, aliases_out)
+        task.advance(1)
+        _write_json(links_path, links_out)
+        task.advance(1)

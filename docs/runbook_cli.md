@@ -27,7 +27,11 @@ HealthDelta CLI commands that may process large datasets emit share-safe progres
 
 ## Covered commands (current)
 - `healthdelta ingest` (zip/dir; hashing, extraction, copy)
+- `healthdelta identity build` (clinical JSON scan + identity outputs)
+- `healthdelta pipeline run` (high-level phases; sub-steps emit their own progress)
 - `healthdelta export ndjson` (parse/dedupe/write)
+- `healthdelta export profile` (directory scans + file-type profiling)
+- `healthdelta export validate` (per-file validation + scan counters)
 - `healthdelta duckdb build` / `healthdelta duckdb query`
 - `healthdelta report build` / `healthdelta report show`
 - `healthdelta note build`

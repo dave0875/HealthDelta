@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable
 
 from healthdelta.export_layout import resolve_export_layout
+from healthdelta.progress import progress
 
 
 def _write_text_atomic(path: Path, text: str) -> None:
@@ -57,11 +58,19 @@ class FileInfo:
 
 def _walk_files(root: Path) -> list[FileInfo]:
     files: list[FileInfo] = []
+    task = progress.task("profile: scan files", unit="files")
+    batch = 0
     for p in root.rglob("*"):
         if not p.is_file():
             continue
         rel = _safe_relpath(p.relative_to(root))
         files.append(FileInfo(relpath=rel, size_bytes=p.stat().st_size))
+        batch += 1
+        if batch >= 200:
+            task.advance(batch)
+            batch = 0
+    if batch:
+        task.advance(batch)
     files.sort(key=lambda x: x.relpath)
     return files
 
@@ -97,6 +106,7 @@ def _count_healthkit_record_types(export_xml: Path) -> list[tuple[str, int]]:
     counts: Counter[str] = Counter()
     carry = b""
     carry_keep = 8192
+    task = progress.task("profile: scan export.xml", total=export_xml.stat().st_size, unit="bytes")
     with export_xml.open("rb") as f:
         while True:
             chunk = f.read(1024 * 1024)
@@ -111,6 +121,7 @@ def _count_healthkit_record_types(export_xml: Path) -> list[tuple[str, int]]:
                 if t:
                     counts[t] += 1
             carry = data[-carry_keep:] if len(data) > carry_keep else data
+            task.advance(len(chunk))
     # Final pass for remaining carry (safe; no further overlaps).
     for m in _RECORD_TYPE_RE.finditer(carry):
         t = m.group(1).decode("utf-8", errors="replace").strip()
@@ -152,10 +163,12 @@ def _count_clinical_resource_types(clinical_dir: Path, *, sample_json: int) -> t
     sampled = len(json_files)
 
     counts: Counter[str] = Counter()
+    task = progress.task("profile: scan clinical JSON", total=len(json_files), unit="files")
     for p in json_files:
         rt = _extract_fhir_resource_type(p)
         if rt:
             counts[rt] += 1
+        task.advance(1)
 
     items = list(counts.items())
     items.sort(key=lambda kv: (-kv[1], kv[0]))
@@ -176,6 +189,7 @@ def _count_cda_tags(export_cda_xml: Path, *, top_n: int = 50) -> list[tuple[str,
     counts: Counter[str] = Counter()
     carry = b""
     carry_keep = 8192
+    task = progress.task("profile: scan export_cda.xml", total=export_cda_xml.stat().st_size, unit="bytes")
     with export_cda_xml.open("rb") as f:
         while True:
             chunk = f.read(1024 * 1024)
@@ -194,6 +208,7 @@ def _count_cda_tags(export_cda_xml: Path, *, top_n: int = 50) -> list[tuple[str,
                 if tag:
                     counts[tag] += 1
             carry = data[-carry_keep:] if len(data) > carry_keep else data
+            task.advance(len(chunk))
     for m in _CDA_TAG_RE.finditer(carry):
         raw = m.group(1)
         if not raw or raw.startswith((b"/", b"!", b"?")):
@@ -223,29 +238,38 @@ def _stable_profile_id(files: list[FileInfo]) -> str:
 
 
 def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200, top_files: int = 20) -> None:
-    input_root = Path(input_dir)
-    if not input_root.is_dir():
-        raise ValueError("--input must be an unpacked export directory")
+    with progress.phase("profile: init"):
+        input_root = Path(input_dir)
+        if not input_root.is_dir():
+            raise ValueError("--input must be an unpacked export directory")
 
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
 
-    layout = resolve_export_layout(input_root)
-    export_root = input_root if layout.export_root_rel == "." else (input_root / layout.export_root_rel)
+    with progress.phase("profile: resolve layout"):
+        layout = resolve_export_layout(input_root)
+        export_root = input_root if layout.export_root_rel == "." else (input_root / layout.export_root_rel)
 
-    files = _walk_files(export_root)
-    total_bytes = sum(f.size_bytes for f in files)
+    with progress.phase("profile: walk files"):
+        files = _walk_files(export_root)
+        total_bytes = sum(f.size_bytes for f in files)
 
     export_xml = export_root / layout.export_xml_rel
     export_cda = export_root / layout.export_cda_rel if isinstance(layout.export_cda_rel, str) else export_root / "export_cda.xml"
     clinical_dir = export_root / layout.clinical_dir_rel if isinstance(layout.clinical_dir_rel, str) else export_root / "clinical-records"
 
-    hk_counts = _count_healthkit_record_types(export_xml) if export_xml.exists() else []
-    fhir_counts, fhir_meta = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
-    cda_counts = _count_cda_tags(export_cda, top_n=50) if export_cda.exists() else []
+    with progress.phase("profile: scan export.xml"):
+        hk_counts = _count_healthkit_record_types(export_xml) if export_xml.exists() else []
 
-    ext_counts = _counts_by_ext(files)
-    top = _top_files(files, top_files)
+    with progress.phase("profile: scan clinical JSON"):
+        fhir_counts, fhir_meta = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
+
+    with progress.phase("profile: scan export_cda.xml"):
+        cda_counts = _count_cda_tags(export_cda, top_n=50) if export_cda.exists() else []
+
+    with progress.phase("profile: aggregate"):
+        ext_counts = _counts_by_ext(files)
+        top = _top_files(files, top_files)
 
     profile_id = _stable_profile_id(files)
     profile_obj: dict[str, object] = {
@@ -275,29 +299,38 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         },
     }
 
-    # Write outputs (deterministic ordering/formatting).
-    _write_json(out / "profile.json", profile_obj)
+    with progress.phase("profile: write artifacts"):
+        task = progress.task("profile: write artifacts", unit="files")
 
-    _write_csv(
-        out / "files_top.csv",
-        header=["size_bytes", "path"],
-        rows=[[f.size_bytes, f.relpath] for f in top],
-    )
-    _write_csv(
-        out / "counts_by_ext.csv",
-        header=["ext", "count"],
-        rows=[[ext, n] for ext, n in ext_counts],
-    )
-    if hk_counts:
-        _write_csv(out / "healthkit_record_types.csv", header=["type", "count"], rows=[[t, n] for t, n in hk_counts])
-    if fhir_counts:
+        # Write outputs (deterministic ordering/formatting).
+        _write_json(out / "profile.json", profile_obj)
+        task.advance(1)
+
         _write_csv(
-            out / "clinical_resource_types.csv",
-            header=["resourceType", "count"],
-            rows=[[t, n] for t, n in fhir_counts],
+            out / "files_top.csv",
+            header=["size_bytes", "path"],
+            rows=[[f.size_bytes, f.relpath] for f in top],
         )
-    if cda_counts:
-        _write_csv(out / "cda_tag_counts.csv", header=["tag", "count"], rows=[[t, n] for t, n in cda_counts])
+        task.advance(1)
+        _write_csv(
+            out / "counts_by_ext.csv",
+            header=["ext", "count"],
+            rows=[[ext, n] for ext, n in ext_counts],
+        )
+        task.advance(1)
+        if hk_counts:
+            _write_csv(out / "healthkit_record_types.csv", header=["type", "count"], rows=[[t, n] for t, n in hk_counts])
+            task.advance(1)
+        if fhir_counts:
+            _write_csv(
+                out / "clinical_resource_types.csv",
+                header=["resourceType", "count"],
+                rows=[[t, n] for t, n in fhir_counts],
+            )
+            task.advance(1)
+        if cda_counts:
+            _write_csv(out / "cda_tag_counts.csv", header=["tag", "count"], rows=[[t, n] for t, n in cda_counts])
+            task.advance(1)
 
     md_lines: list[str] = []
     md_lines.append("# Export Profile")
@@ -360,4 +393,7 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
     md_lines.append("- Output is share-safe: no names, DOB, identifiers, free-text payload fragments, or timestamps.")
     md_lines.append("- Only schema-level strings (HK `type`, FHIR `resourceType`, CDA tag names) and aggregate counts are emitted.")
 
-    _write_text_atomic(out / "profile.md", "\n".join(md_lines) + "\n")
+    with progress.phase("profile: write markdown"):
+        task_md = progress.task("profile: write markdown", total=1, unit="files")
+        _write_text_atomic(out / "profile.md", "\n".join(md_lines) + "\n")
+        task_md.advance(1)
