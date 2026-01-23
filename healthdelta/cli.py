@@ -17,10 +17,70 @@ from healthdelta.state import register_existing_run_dir
 from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
 from healthdelta.version import get_build_info
 from healthdelta.backend_server import serve as serve_backend
+from healthdelta.progress import progress
+
+
+def _extract_global_progress_flags(argv: list[str]) -> tuple[list[str], str, float, bool]:
+    mode = "auto"
+    log_every_s: float = 5.0
+    quiet = False
+
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--quiet":
+            quiet = True
+            i += 1
+            continue
+        if a == "--progress" and i + 1 < len(argv):
+            mode = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith("--progress="):
+            mode = a.split("=", 1)[1]
+            i += 1
+            continue
+        if a == "--log-progress-every" and i + 1 < len(argv):
+            try:
+                log_every_s = float(argv[i + 1])
+            except ValueError:
+                out.append(a)
+                i += 1
+                continue
+            i += 2
+            continue
+        if a.startswith("--log-progress-every="):
+            try:
+                log_every_s = float(a.split("=", 1)[1])
+            except ValueError:
+                out.append(a)
+                i += 1
+                continue
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+
+    return out, mode, log_every_s, quiet
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(argv) if argv is not None else None
+    if argv is None:
+        argv = sys.argv[1:]
+
+    argv, progress_mode, log_every_s, quiet = _extract_global_progress_flags(argv)
+    try:
+        progress.configure(mode=progress_mode, log_every_s=log_every_s, quiet=quiet)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+
     parser = argparse.ArgumentParser(prog="healthdelta")
+    parser.add_argument("--progress", default="auto", choices=["auto", "always", "never"], help="Progress output mode")
+    parser.add_argument("--log-progress-every", default=5, type=float, help="Line-mode progress cadence in seconds")
+    parser.add_argument("--quiet", action="store_true", help="Reduce progress output verbosity")
     sub = parser.add_subparsers(dest="command", required=True)
 
     version_cmd = sub.add_parser("version", help="Print share-safe build/version information")
@@ -163,13 +223,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "serve":
         serve_backend(host=str(args.host), port=int(args.port))
+        progress.print_summary()
         return 0
 
     if args.command == "ingest":
         if args.variant == "ios":
             ingest_ios_to_staging(input_dir=args.input, staging_root=args.out)
+            progress.print_summary()
             return 0
         ingest_to_staging(input_path=args.input, staging_root=args.out)
+        progress.print_summary()
         return 0
 
     if args.command == "identity" and args.identity_command == "build":
@@ -207,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export" and args.export_command == "ndjson":
         export_ndjson(input_dir=args.input, out_dir=args.out, mode=args.mode)
+        progress.print_summary()
         return 0
     if args.command == "export" and args.export_command == "profile":
         build_export_profile(input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files))
