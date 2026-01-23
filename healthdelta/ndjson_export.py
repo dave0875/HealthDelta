@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree as ET
 
+from healthdelta.progress import progress
+
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -22,8 +24,16 @@ def _write_ndjson(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent)) as tf:
         tmp = Path(tf.name)
+        task = progress.task(f"Write {path.name}", total=len(rows), unit="rows")
+        batch = 0
         for row in rows:
             tf.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+            batch += 1
+            if batch >= 1000:
+                task.advance(batch)
+                batch = 0
+        if batch:
+            task.advance(batch)
     tmp.replace(path)
 
 
@@ -228,6 +238,8 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
         return []
 
     observations: list[dict] = []
+    task = progress.task("Parse export.xml records", total=None, unit="records")
+    batch = 0
     for _, el in ET.iterparse(path, events=("end",)):
         if _localname(el.tag) != "Record":
             continue
@@ -256,7 +268,13 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
         minimal["record_key"] = minimal["event_key"]
         observations.append(minimal)
         el.clear()
+        batch += 1
+        if batch >= 1000:
+            task.advance(batch)
+            batch = 0
 
+    if batch:
+        task.advance(batch)
     return observations
 
 
@@ -299,13 +317,29 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
     meds: list[dict] = []
     conds: list[dict] = []
 
-    for rel, res in _walk_source_fhir_files(ctx):
+    task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
+    for rel in ctx.clinical_json_rels:
+        p = ctx.root_dir / rel
+        if not p.exists():
+            task_files.advance(1)
+            continue
+        try:
+            res = _read_json(p)
+        except json.JSONDecodeError:
+            task_files.advance(1)
+            continue
+        if not isinstance(res, dict):
+            task_files.advance(1)
+            continue
+
         rt = res.get("resourceType")
         if not isinstance(rt, str):
+            task_files.advance(1)
             continue
 
         # Patient resources are used only for identity mapping; do not emit them.
         if rt == "Patient":
+            task_files.advance(1)
             continue
 
         rid = res.get("id") if isinstance(res.get("id"), str) else None
@@ -394,6 +428,7 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             conds.append(base)
+        task_files.advance(1)
 
     return observations, documents, meds, conds
 
@@ -406,6 +441,8 @@ def _export_cda_observations(ctx: ExportContext) -> list[dict]:
         return []
 
     observations: list[dict] = []
+    task = progress.task("Parse export_cda.xml observations", total=None, unit="rows")
+    batch = 0
     for _, el in ET.iterparse(path, events=("end",)):
         if _localname(el.tag) != "observation":
             continue
@@ -444,16 +481,26 @@ def _export_cda_observations(ctx: ExportContext) -> list[dict]:
         base["record_key"] = base["event_key"]
         observations.append(base)
         el.clear()
+        batch += 1
+        if batch >= 500:
+            task.advance(batch)
+            batch = 0
 
+    if batch:
+        task.advance(batch)
     return observations
 
 
 def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
-    ctx = _resolve_context(input_dir=Path(input_dir), mode=mode)
+    with progress.phase("export: resolve context"):
+        ctx = _resolve_context(input_dir=Path(input_dir), mode=mode)
 
-    healthkit_obs = _export_healthkit_observations(ctx)
-    fhir_obs, fhir_docs, fhir_meds, fhir_conds = _export_fhir_streams(ctx)
-    cda_obs = _export_cda_observations(ctx)
+    with progress.phase("export: parse HealthKit"):
+        healthkit_obs = _export_healthkit_observations(ctx)
+    with progress.phase("export: parse FHIR"):
+        fhir_obs, fhir_docs, fhir_meds, fhir_conds = _export_fhir_streams(ctx)
+    with progress.phase("export: parse CDA"):
+        cda_obs = _export_cda_observations(ctx)
 
     observations = [*healthkit_obs, *fhir_obs, *cda_obs]
     documents = [*fhir_docs]
@@ -490,14 +537,16 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     out_root = Path(out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    observations = sort_rows(dedupe(observations))
-    documents = sort_rows(dedupe(documents))
-    meds = sort_rows(dedupe(meds))
-    conds = sort_rows(dedupe(conds))
+    with progress.phase("export: dedupe + sort"):
+        observations = sort_rows(dedupe(observations))
+        documents = sort_rows(dedupe(documents))
+        meds = sort_rows(dedupe(meds))
+        conds = sort_rows(dedupe(conds))
 
-    _write_ndjson(out_root / "observations.ndjson", observations)
-    _write_ndjson(out_root / "documents.ndjson", documents)
-    if meds:
-        _write_ndjson(out_root / "medications.ndjson", meds)
-    if conds:
-        _write_ndjson(out_root / "conditions.ndjson", conds)
+    with progress.phase("export: write ndjson"):
+        _write_ndjson(out_root / "observations.ndjson", observations)
+        _write_ndjson(out_root / "documents.ndjson", documents)
+        if meds:
+            _write_ndjson(out_root / "medications.ndjson", meds)
+        if conds:
+            _write_ndjson(out_root / "conditions.ndjson", conds)
