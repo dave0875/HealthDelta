@@ -6,6 +6,7 @@ Incremental Apple Health + HealthKit + Clinical Records system with strict ident
 - All work is tracked by GitHub issues and implemented incrementally (small vertical slices).
 - `main` stays releasable (trunk-based).
 - TDD for non-trivial logic.
+- Commit messages must include an Issue footer (`Issue: #NN`); CI enforces this.
 - Codex audit artifacts live in `.ai/` (no secrets).
 - Every session is logged in `.ai/time/time.csv`.
 
@@ -15,4 +16,3 @@ Incremental Apple Health + HealthKit + Clinical Records system with strict ident
 - `ios/HealthDelta/`: iOS app (built on macOS)
 - `mac/ingest/`: mac ingestion (DuckDB) tooling
 - `tests/`: test suites (TDD)
-

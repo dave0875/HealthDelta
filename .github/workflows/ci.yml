@@ -11,6 +11,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce Issue footer in commit messages
+        run: |
+          set -euo pipefail
+          python3 scripts/check_issue_footer.py
 
       - name: Install Python dependencies
         run: |
