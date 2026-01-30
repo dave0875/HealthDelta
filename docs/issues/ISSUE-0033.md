@@ -11,7 +11,7 @@ Issues #23–#32 are complete, but `docs/plan.md` still lists them as “Next”
 ## Acceptance Criteria
 - Given Issues #23–#32 are closed, when updating `docs/plan.md`, then they are listed as completed.
 - Given Issues #33–#42 exist, when updating `docs/plan.md`, then each appears with a 1–2 line description and stable ordering.
-- Given project governance, when finishing work, then prompt/session/review artifacts exist and `TIME.csv` is updated.
+- Given project governance, when finishing work, then prompt/session/review artifacts exist and `.ai/time/time.csv` is updated.
 
 ## Non-Goals
 - Implementing any backlog issues (#34+).

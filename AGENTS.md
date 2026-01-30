@@ -41,13 +41,13 @@ Optional clarifications or constraints.
 - Write failing tests first for non-trivial logic (especially identity resolution, parsing, anchors, dedupe).
 
 5) Codex audit trail is mandatory
-- Record substantial prompts in `.codex/prompts/`.
-- Record each session in `.codex/sessions/YYYY-MM-DD/session_<n>.md`.
-- Record architectural decisions as ADRs in `.codex/decisions/`.
-- `.codex/` must never contain secrets.
+- Record substantial prompts in `.ai/prompts/`.
+- Record each session in `.ai/sessions/YYYY-MM-DD/session_<n>.md`.
+- Record architectural decisions as ADRs in `.ai/decisions/`.
+- `.ai/` must never contain secrets.
 - Additional architecture ADRs may be recorded under `docs/adr/` when explicitly required by an issue; these ADRs must be referenced from this file.
 
-6) TIME.csv is mandatory
+6) .ai/time/time.csv is mandatory
 - Every work session appends a row referencing a GitHub issue.
 
 7) GitHub interaction
@@ -82,9 +82,9 @@ Optional clarifications or constraints.
 ## Codex Governance (Binding Project Law)
 
 ### Codex Prompt Discipline
-- Each GitHub Issue `N` has exactly one immutable prompt: `.codex/prompts/issue_N.md`.
-- Once work begins on Issue `N`, `.codex/prompts/issue_N.md` is read-only and must never be edited, regenerated, or replaced.
-- Post-hoc clarifications or execution constraints are recorded only as: `.codex/prompts/issue_N_followup_X.md`, where `X` is in `[1–9]`.
+- Each GitHub Issue `N` has exactly one immutable prompt: `.ai/prompts/issue_N.md`.
+- Once work begins on Issue `N`, `.ai/prompts/issue_N.md` is read-only and must never be edited, regenerated, or replaced.
+- Post-hoc clarifications or execution constraints are recorded only as: `.ai/prompts/issue_N_followup_X.md`, where `X` is in `[1–9]`.
 - Follow-up prompts are append-only and must state explicitly that they do NOT change issue scope or acceptance criteria.
 - Follow-up `9` is a forcing function: open a new GitHub issue instead of creating `issue_N_followup_10.md`.
 - Numeric forks such as `issue_N.1`, `issue_N_part2`, `issue_N_part_2`, etc. are prohibited.

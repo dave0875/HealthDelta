@@ -108,4 +108,4 @@ Next (priority order)
 - No repo mutations without a GitHub issue capturing WHY.
 - Synthetic-only test fixtures; never commit real exports.
 - Never log PII/PHI or absolute paths that may contain names.
-- `.codex/` prompts/sessions/reviews + `TIME.csv` are required for completion.
+- `.ai/` prompts/sessions/reviews + `.ai/time/time.csv` are required for completion.

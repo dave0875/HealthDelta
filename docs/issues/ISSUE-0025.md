@@ -13,7 +13,7 @@ Downstream consumers (DuckDB, notebooks) need a stable per-record identifier and
 - Validator enforces these fields and types.
 - Docs updated to describe fields and derivation.
 - Synthetic tests prove stability across reruns.
-- Audit artifacts: `.codex/prompts/issue_25.md`, session log, review, `TIME.csv`.
+- Audit artifacts: `.ai/prompts/issue_25.md`, session log, review, `.ai/time/time.csv`.
 - CI green required before closing.
 
 ## Non-Goals
