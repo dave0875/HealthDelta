@@ -21,6 +21,11 @@ jobs:
           set -euo pipefail
           python3 scripts/check_issue_footer.py
 
+      - name: Enforce PR Issue metadata
+        run: |
+          set -euo pipefail
+          python3 scripts/check_pr_issue.py
+
       - name: Install Python dependencies
         run: |
           set -euo pipefail

@@ -2,6 +2,7 @@
 """Fail CI if commits lack an Issue footer (Issue: #NN)."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -102,6 +103,10 @@ def _resolve_commit_range() -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Check Issue footers in commit messages.")
+    parser.add_argument("--print-issue", action="store_true", help="Print the single Issue number if one is found.")
+    args = parser.parse_args()
+
     commits = _resolve_commit_range()
     if not commits:
         print("No commits resolved for issue footer check.")
@@ -129,6 +134,11 @@ def main() -> int:
         issues = ", ".join(sorted(issue_numbers))
         print(f"Multiple Issue numbers found in commit set: {issues}")
         return 1
+
+    issue_no = sorted(issue_numbers)[0]
+    if args.print_issue:
+        print(issue_no)
+        return 0
 
     print("Issue footer check passed.")
     return 0
