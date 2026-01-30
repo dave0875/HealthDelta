@@ -62,6 +62,10 @@ class TestReports(unittest.TestCase):
                 ndjson / "conditions.ndjson",
                 '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1","code":"I10"}\n',
             )
+            _write_text(
+                ndjson / "encounters.ndjson",
+                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n',
+            )
 
             db_path = root / "out.duckdb"
             build = subprocess.run(
@@ -121,6 +125,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(summary["tables"]["documents"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["medications"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["conditions"]["total_rows"], 1)
+            self.assertEqual(summary["tables"]["encounters"]["total_rows"], 1)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-01T11:22:33Z")
@@ -131,8 +136,9 @@ class TestReports(unittest.TestCase):
             self.assertEqual(per_person["person-1"]["rows_by_table"]["documents"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["medications"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["conditions"], 1)
+            self.assertEqual(per_person["person-1"]["rows_by_table"]["encounters"], 1)
             self.assertEqual(per_person["person-1"]["min_event_time"], "2020-01-01T01:02:03Z")
-            self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-04T00:00:00Z")
+            self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-05T10:00:00Z")
 
             by_source = _read_csv(out_dir / "coverage_by_source.csv")
             # Stable expectations: stream+source rows
@@ -143,6 +149,7 @@ class TestReports(unittest.TestCase):
                 ("documents", "fhir"): "1",
                 ("medications", "fhir"): "1",
                 ("conditions", "fhir"): "1",
+                ("encounters", "fhir"): "1",
             }
             got = {(r["stream"], r["source"]): r["rows"] for r in by_source}
             for k, v in expected.items():
@@ -155,6 +162,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(day_stream_source.get(("2020-01-01", "observations", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-01", "observations", "cda")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-02", "documents", "fhir")), "1")
+            self.assertEqual(day_stream_source.get(("2020-01-05", "encounters", "fhir")), "1")
 
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_paths)
             self.assertNotIn(pii_name, combined)
@@ -186,4 +194,3 @@ class TestReports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

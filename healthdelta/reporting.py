@@ -103,7 +103,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
     try:
         with progress.phase("report: scan tables"):
             present = _tables_present(con)
-            streams = [t for t in ["conditions", "documents", "medications", "observations"] if t in present]
+            streams = [t for t in ["conditions", "documents", "encounters", "medications", "observations"] if t in present]
 
         tables_summary: dict[str, dict[str, object]] = {}
         coverage_by_source_rows: list[tuple[str, str, int]] = []
@@ -249,6 +249,24 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                     if isinstance(pid, str) and isinstance(rt, str)
                 ]
             )
+        if "encounters" in streams:
+            type_rows.extend(
+                [
+                    (pid, f"encounters:{rt}", int(n))
+                    for pid, rt, n in _rows(
+                        con,
+                        """
+                        SELECT canonical_person_id,
+                               COALESCE(resource_type, 'unknown') AS record_type,
+                               COUNT(*) AS n
+                        FROM encounters
+                        GROUP BY canonical_person_id, record_type
+                        ORDER BY canonical_person_id, n DESC, record_type ASC;
+                        """,
+                    )
+                    if isinstance(pid, str) and isinstance(rt, str)
+                ]
+            )
 
         types_by_person: dict[str, list[tuple[str, int]]] = {p: [] for p in people}
         for pid, type_key, n in type_rows:
@@ -295,6 +313,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 "documents_rows",
                 "medications_rows",
                 "conditions_rows",
+                "encounters_rows",
                 "min_event_time",
                 "max_event_time",
             ]
@@ -308,6 +327,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                         int(rows_map.get("documents", 0)),
                         int(rows_map.get("medications", 0)),
                         int(rows_map.get("conditions", 0)),
+                        int(rows_map.get("encounters", 0)),
                         p.get("min_event_time") or "",
                         p.get("max_event_time") or "",
                     ]
@@ -439,7 +459,7 @@ def show_report(*, db_path: str) -> None:
         con = _connect_read_only(db)
     try:
         present = _tables_present(con)
-        streams = [t for t in ["observations", "documents", "medications", "conditions"] if t in present]
+        streams = [t for t in ["observations", "documents", "medications", "conditions", "encounters"] if t in present]
         print("HealthDelta Report (terminal)")
         print(f"tables={','.join(streams)}")
         for t in streams:
