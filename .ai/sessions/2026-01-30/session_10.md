@@ -8,3 +8,6 @@ Goal
 Notes
 - Added audit artifact checker and CI step.
 - Added unit tests for audit helper functions.
+
+Local verification
+- `TZ=UTC python3 -m unittest discover -s tests -p 'test_*.py' -v`
