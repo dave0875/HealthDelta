@@ -52,6 +52,13 @@ FHIR_ENCOUNTER = {
     "status": "finished",
     "subject": {"reference": "Patient/p1"},
     "period": {"start": "2020-01-05T10:00:00Z", "end": "2020-01-05T12:00:00Z"},
+FHIR_PROC = {
+    "resourceType": "Procedure",
+    "id": "pr1",
+    "status": "completed",
+    "subject": {"reference": "Patient/p1"},
+    "performedPeriod": {"start": "2020-01-06T09:30:00Z", "end": "2020-01-06T10:00:00Z"},
+    "code": {"text": "Procedure A"},
 }
 
 
@@ -121,6 +128,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "med.json", FHIR_MED)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
+            _write_json(clinical_dir / "procedure.json", FHIR_PROC)
 
             base_dir = root / "out"
 
@@ -176,6 +184,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "medications.ndjson",
                 out_local / "conditions.ndjson",
                 out_local / "encounters.ndjson",
+                out_local / "procedures.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -186,6 +195,7 @@ class TestNdjsonExport(unittest.TestCase):
             meds = _read_ndjson(out_local / "medications.ndjson")
             conds = _read_ndjson(out_local / "conditions.ndjson")
             encounters = _read_ndjson(out_local / "encounters.ndjson")
+            procedures = _read_ndjson(out_local / "procedures.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1)
             self.assertEqual(len(observations), 3)
@@ -193,9 +203,13 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(meds), 1)
             self.assertEqual(len(conds), 1)
             self.assertEqual(len(encounters), 1)
+            self.assertEqual(len(procedures), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
+
+            self.assertEqual(procedures[0].get("resource_type"), "Procedure")
+            self.assertEqual(procedures[0].get("event_time"), "2020-01-06T09:30:00Z")
 
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_files)
             self.assertNotIn("John Doe", combined)
@@ -203,7 +217,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

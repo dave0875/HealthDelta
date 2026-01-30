@@ -58,6 +58,7 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-01-30,72,,8,codex,,"Fix Issue footer checker for merge commit parent order"
 2026-01-30,72,,6,codex,,"Handle force-push ranges in Issue footer checker"
 2026-01-30,73,,60,codex,,"Add Encounter NDJSON export + DuckDB loading + reporting coverage; extend tests"
+2026-01-30,74,,60,codex,,"Add Procedure NDJSON export + DuckDB loading + reporting coverage; extend tests"
 2026-02-01,99,,30,codex,,"Handle force-push ranges in Issue footer checker"
 2026-01-30,96,,20,codex,,"Enforce prompt immutability in CI with tests"
 2026-01-30,96,,10,codex,,"Run unit tests for Issue #96 guardrail changes"

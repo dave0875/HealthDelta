@@ -317,15 +317,31 @@ def _fhir_event_time(resource: dict) -> str | None:
             end = period.get("end")
             if isinstance(end, str):
                 return _normalize_time(end)
+        return None
+    if rt == "Procedure":
+        t = resource.get("performedDateTime")
+        if isinstance(t, str):
+            return _normalize_time(t)
+        period = resource.get("performedPeriod")
+        if isinstance(period, dict):
+            start = period.get("start")
+            if isinstance(start, str):
+                return _normalize_time(start)
+            end = period.get("end")
+            if isinstance(end, str):
+                return _normalize_time(end)
     return None
 
 
-def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
+def _export_fhir_streams(
+    ctx: ExportContext,
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
     conds: list[dict] = []
     encounters: list[dict] = []
+    procedures: list[dict] = []
 
     task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
     for rel in ctx.clinical_json_rels:
@@ -453,9 +469,30 @@ def _export_fhir_streams(ctx: ExportContext) -> tuple[list[dict], list[dict], li
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             encounters.append(base)
+        elif rt == "Procedure":
+            status = res.get("status")
+            if isinstance(status, str):
+                base["status"] = status
+            code = res.get("code")
+            if isinstance(code, dict):
+                coding = code.get("coding")
+                if isinstance(coding, list):
+                    codings = []
+                    for c in coding:
+                        if not isinstance(c, dict):
+                            continue
+                        system = c.get("system")
+                        code_val = c.get("code")
+                        if isinstance(system, str) and isinstance(code_val, str) and system.strip() and code_val.strip():
+                            codings.append({"system": system, "code": code_val})
+                    if codings:
+                        base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            procedures.append(base)
         task_files.advance(1)
 
-    return observations, documents, meds, conds, encounters
+    return observations, documents, meds, conds, encounters, procedures
 
 
 def _export_cda_observations(ctx: ExportContext) -> list[dict]:
@@ -523,7 +560,14 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     with progress.phase("export: parse HealthKit"):
         healthkit_obs = _export_healthkit_observations(ctx)
     with progress.phase("export: parse FHIR"):
-        fhir_obs, fhir_docs, fhir_meds, fhir_conds, fhir_encounters = _export_fhir_streams(ctx)
+        (
+            fhir_obs,
+            fhir_docs,
+            fhir_meds,
+            fhir_conds,
+            fhir_encounters,
+            fhir_procedures,
+        ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs = _export_cda_observations(ctx)
 
@@ -532,6 +576,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     meds = [*fhir_meds]
     conds = [*fhir_conds]
     encounters = [*fhir_encounters]
+    procedures = [*fhir_procedures]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -569,6 +614,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         meds = sort_rows(dedupe(meds))
         conds = sort_rows(dedupe(conds))
         encounters = sort_rows(dedupe(encounters))
+        procedures = sort_rows(dedupe(procedures))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -579,3 +625,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "conditions.ndjson", conds)
         if encounters:
             _write_ndjson(out_root / "encounters.ndjson", encounters)
+        if procedures:
+            _write_ndjson(out_root / "procedures.ndjson", procedures)
