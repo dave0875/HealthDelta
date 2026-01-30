@@ -9,3 +9,6 @@ Notes
 - Added PR Issue metadata checker and CI step.
 - Added unit test for PR issue extraction.
 - Extended issue footer checker with --print-issue.
+
+Local verification
+- `TZ=UTC python3 -m unittest discover -s tests -p 'test_*.py' -v`
