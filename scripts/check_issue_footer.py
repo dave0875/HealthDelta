@@ -10,6 +10,7 @@ import sys
 from typing import Iterable
 
 ISSUE_FOOTER_RE = re.compile(r"^Issue:\s*#\d+\s*$", re.MULTILINE)
+ISSUE_NUMBER_RE = re.compile(r"Issue:\s*#(\d+)\s*$", re.MULTILINE)
 
 
 def message_has_issue_footer(message: str) -> bool:
@@ -22,6 +23,10 @@ def commits_missing_issue_footer(messages: Iterable[str]) -> list[str]:
         if not message_has_issue_footer(msg):
             missing.append(msg)
     return missing
+
+
+def extract_issue_numbers(message: str) -> list[str]:
+    return ISSUE_NUMBER_RE.findall(message or "")
 
 
 def _git(*args: str) -> str:
@@ -111,6 +116,18 @@ def main() -> int:
                 summary = msg.splitlines()[0] if msg else "(empty message)"
                 print(f"- {sha[:12]}: {summary}")
         print("Expected footer format: 'Issue: #NN'.")
+        return 1
+
+    issue_numbers: set[str] = set()
+    for msg in messages:
+        issue_numbers.update(extract_issue_numbers(msg))
+
+    if not issue_numbers:
+        print("No Issue footer numbers found in commit set.")
+        return 1
+    if len(issue_numbers) > 1:
+        issues = ", ".join(sorted(issue_numbers))
+        print(f"Multiple Issue numbers found in commit set: {issues}")
         return 1
 
     print("Issue footer check passed.")

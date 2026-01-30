@@ -84,5 +84,17 @@ class TestResolveCommitRange(unittest.TestCase):
         self.assertEqual(commits, ["c3", "c4"])
 
 
+class TestIssueNumberExtraction(unittest.TestCase):
+    def test_extract_issue_numbers_single(self):
+        mod = _load_module()
+        msg = "Add feature\n\nIssue: #72\n"
+        self.assertEqual(mod.extract_issue_numbers(msg), ["72"])
+
+    def test_extract_issue_numbers_multiple(self):
+        mod = _load_module()
+        msg = "Hotfix\n\nIssue: #72\nIssue: #73\n"
+        self.assertEqual(mod.extract_issue_numbers(msg), ["72", "73"])
+
+
 if __name__ == "__main__":
     unittest.main()
