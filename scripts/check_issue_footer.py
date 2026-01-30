@@ -61,11 +61,17 @@ def _resolve_commit_range() -> list[str]:
         base = event.get("before")
         head = event.get("after")
 
-    if head:
-        if base and base != "0" * 40:
-            commits = _git("rev-list", f"{base}..{head}").splitlines()
-            return commits or [head]
-        return _git("rev-list", head).splitlines() or [head]
+    if head and base and base != "0" * 40:
+        commits = _git("rev-list", f"{base}..{head}").splitlines()
+        return commits or [head]
+
+    try:
+        main_ref = _git("rev-parse", "origin/main")
+        merge_base = _git("merge-base", "HEAD", main_ref)
+        commits = _git("rev-list", f"{merge_base}..HEAD").splitlines()
+        return commits or [merge_base]
+    except Exception:
+        pass
 
     return _git("rev-list", "-n", "1", "HEAD").splitlines()
 
