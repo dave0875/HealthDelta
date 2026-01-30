@@ -7,6 +7,7 @@ Incremental Apple Health + HealthKit + Clinical Records system with strict ident
 - `main` stays releasable (trunk-based).
 - TDD for non-trivial logic.
 - Commit messages must include an Issue footer (`Issue: #NN`); CI enforces this.
+- Tests run in UTC (`TZ=UTC`) to keep deterministic timestamps consistent across environments.
 - Codex audit artifacts live in `.ai/` (no secrets).
 - Every session is logged in `.ai/time/time.csv`.
 
