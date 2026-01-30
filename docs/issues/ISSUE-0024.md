@@ -13,7 +13,7 @@ Per-run identity causes person IDs to change across runs even when the same pers
 - NDJSON output remains deterministic and resolves `canonical_person_id` using the shared identity store.
 - Synthetic integration test proves stable IDs across two runs with the same patient and no PII leakage.
 - Update `docs/runbook_operator.md`.
-- Audit artifacts: `.codex/prompts/issue_24.md`, session log, review, `TIME.csv`.
+- Audit artifacts: `.ai/prompts/issue_24.md`, session log, review, `.ai/time/time.csv`.
 - CI green required before closing.
 
 ## Non-Goals

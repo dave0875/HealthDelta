@@ -1,6 +1,6 @@
 .git
 .github
-.codex
+.ai
 .venv
 __pycache__
 *.pyc
@@ -11,6 +11,6 @@ ios
 mac
 docs
 tests
-TIME.csv
+.ai/time/time.csv
 README.md
 AGENTS.md

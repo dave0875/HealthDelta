@@ -13,8 +13,8 @@ Issues #17–#22 are complete. The living plan must be updated to avoid drift an
   - mark Issues #17–#22 as completed
   - add Issues #23–#32 (links + one-line intent)
   - remain share-safe
-- Add immutable prompt: `.codex/prompts/issue_23.md`
-- Add session log + review artifact + `TIME.csv` row
+- Add immutable prompt: `.ai/prompts/issue_23.md`
+- Add session log + review artifact + `.ai/time/time.csv` row
 - CI green (Linux + macOS with `ios-xcresult`) before closing
 
 ## Non-Goals

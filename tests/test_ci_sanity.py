@@ -7,8 +7,8 @@ class TestCISanity(unittest.TestCase):
         required_paths = [
             "AGENTS.md",
             "README.md",
-            "TIME.csv",
-            ".codex/README.md",
+            ".ai/time/time.csv",
+            ".ai/README.md",
             "docs/runbook_xcode.md",
             ".github/workflows/ci.yml",
             ".github/workflows/device_smoke.yml",
