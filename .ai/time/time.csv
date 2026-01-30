@@ -55,3 +55,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-01-30,97,,25,codex,,"Sync local .ai governance baseline to origin/main"
 2026-01-30,72,,40,codex,,"Refresh plan/backlog; add CI commit Issue footer gate with script/tests; document policy in README"
 2026-01-30,72,,10,codex,,"Fix Issue footer checker to use merge-base for branch creation pushes"
+2026-01-30,72,,8,codex,,"Fix Issue footer checker for merge commit parent order"

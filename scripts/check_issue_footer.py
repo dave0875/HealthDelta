@@ -45,7 +45,13 @@ def _load_event() -> dict:
 def _resolve_commit_range() -> list[str]:
     parents = _merge_parents()
     if len(parents) >= 2:
-        base, head = parents[0], parents[1]
+        mb = _git("merge-base", parents[0], parents[1])
+        if mb == parents[0]:
+            base, head = parents[0], parents[1]
+        elif mb == parents[1]:
+            base, head = parents[1], parents[0]
+        else:
+            base, head = mb, "HEAD"
         commits = _git("rev-list", f"{base}..{head}").splitlines()
         return commits or [head]
 
