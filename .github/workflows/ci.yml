@@ -31,6 +31,11 @@ jobs:
           set -euo pipefail
           python3 scripts/check_audit_artifacts.py
 
+      - name: Enforce prompt immutability
+        run: |
+          set -euo pipefail
+          python3 scripts/check_prompt_immutability.py
+
       - name: Install Python dependencies
         run: |
           set -euo pipefail
