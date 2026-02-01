@@ -1,0 +1,32 @@
+name: ORIN Runner Diagnostics
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: orin-runner-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  diagnostics:
+    name: ORIN diagnostics proof
+    runs-on: [self-hosted, linux, orin]
+    steps:
+      - name: Collect ORIN environment diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/orin
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "uname=$(uname -a)"
+            echo "arch=$(arch)"
+            echo "docker_version=$(docker --version)"
+            echo "docker_compose_version=$(docker compose version)"
+          } | tee artifacts/orin/env.txt
+
+      - name: Upload ORIN diagnostics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orin-runner-env
+          path: artifacts/orin/env.txt
+          if-no-files-found: error

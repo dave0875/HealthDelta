@@ -8,6 +8,12 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Runner: ORIN self-hosted GitHub Actions runner (LAN-local)
 - Deploy dir: `/opt/healthdelta`
 
+## Runner diagnostics proof workflow
+- Workflow: `.github/workflows/orin_runner_diagnostics.yml`
+- Trigger: manual dispatch
+- Purpose: prove runner scheduling + capture host environment evidence without deploying.
+- Expected artifact: `orin-runner-env` containing `env.txt` (uname/arch/docker/docker compose versions).
+
 ## ORIN prerequisites
 1) GitHub Actions self-hosted runner installed on ORIN
    - Labels must include: `self-hosted`, `linux`, `orin` (matches workflow `runs-on`)
@@ -49,4 +55,3 @@ The deploy workflow verifies:
 ## Credentials / secrets
 - The workflow uses `GITHUB_TOKEN` for `docker login ghcr.io` with `packages: read` permission.
 - If GHCR pulls fail on ORIN, use a fine-grained PAT with `read:packages` via a new secret and update the workflow accordingly (do not commit tokens).
-
