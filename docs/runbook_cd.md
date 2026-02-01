@@ -8,6 +8,9 @@ This runbook defines how HealthDelta produces share-safe build artifacts and wha
 - Workflow: `.github/workflows/ci.yml`
 - Proof:
   - Linux job passes (non-iOS tests).
+  - Linux uploads deterministic evidence artifacts:
+    - `linux-unittest` (`python_version.txt`, `unittest.log`)
+    - `ndjson_validate.log` smoke validation output
   - macOS job passes and uploads `ios-xcresult`.
 
 ### Release (artifact publication)

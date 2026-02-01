@@ -56,6 +56,17 @@ jobs:
 
           echo "UNITTEST_EXIT=$unittest_exit" >> "$GITHUB_ENV"
 
+      - name: Run NDJSON validation smoke (artifact evidence)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux
+          tmpdir="$(mktemp -d)"
+          cat > "$tmpdir/observations.ndjson" <<'EOF'
+          {"schema_version":2,"record_key":"rk1","canonical_person_id":"person-1","source":"fhir","source_system":"ss_smoke000001","source_file":"source/clinical/obs.json","event_time":"2020-01-01T00:00:00Z","run_id":"run-smoke"}
+          EOF
+          python3 -m healthdelta export validate --input "$tmpdir" > artifacts/linux/ndjson_validate.log 2>&1
+          rm -rf "$tmpdir"
+
       - name: Upload Linux unittest artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,6 +75,7 @@ jobs:
           path: |
             artifacts/linux/python_version.txt
             artifacts/linux/unittest.log
+            artifacts/linux/ndjson_validate.log
           if-no-files-found: error
 
       - name: Fail if unittest failed
