@@ -20,6 +20,10 @@ def _sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
+def _source_system_tag(raw: str) -> str:
+    return "ss_" + _sha256_bytes(raw.encode("utf-8"))[:12]
+
+
 def _write_ndjson(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent)) as tf:
@@ -278,6 +282,19 @@ def _resolve_fhir_person_id(ctx: ExportContext, resource: dict) -> str:
     return _canonical_person_id(ctx)
 
 
+def _derive_fhir_source_system(resource: dict) -> str:
+    meta = resource.get("meta")
+    if isinstance(meta, dict):
+        src = meta.get("source")
+        if isinstance(src, str) and src.strip():
+            return _source_system_tag(f"meta.source:{src.strip()}")
+    pairs = _extract_fhir_reference_identifier_pairs(resource)
+    for system, _ in pairs:
+        if isinstance(system, str) and system.strip():
+            return _source_system_tag(f"identifier.system:{system.strip()}")
+    return _source_system_tag("fhir:default")
+
+
 def _extract_fhir_reference_id(ref: str, resource_type: str) -> str | None:
     if not isinstance(ref, str) or not ref.strip():
         return None
@@ -331,6 +348,7 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
             "schema_version": 2,
             "canonical_person_id": _canonical_person_id(ctx),
             "source": "healthkit",
+            "source_system": _source_system_tag("healthkit:export.xml"),
             "source_file": _safe_relpath(ctx.export_xml_rel),
             "event_time": event_time,
             "run_id": ctx.run_id,
@@ -498,6 +516,7 @@ def _export_fhir_streams(
             "schema_version": 2,
             "canonical_person_id": person,
             "source": "fhir",
+            "source_system": _derive_fhir_source_system(res),
             "source_file": _safe_relpath(rel),
             "event_time": event_time,
             "run_id": ctx.run_id,
@@ -769,6 +788,7 @@ def _export_cda_streams(ctx: ExportContext) -> tuple[list[dict], list[dict]]:
                 "schema_version": 2,
                 "canonical_person_id": _canonical_person_id(ctx),
                 "source": "cda",
+                "source_system": _source_system_tag("cda:export_cda.xml"),
                 "source_file": _safe_relpath(ctx.export_cda_rel),
                 "event_time": section_time,
                 "run_id": ctx.run_id,
@@ -792,6 +812,7 @@ def _export_cda_streams(ctx: ExportContext) -> tuple[list[dict], list[dict]]:
                 "schema_version": 2,
                 "canonical_person_id": _canonical_person_id(ctx),
                 "source": "cda",
+                "source_system": _source_system_tag("cda:export_cda.xml"),
                 "source_file": _safe_relpath(ctx.export_cda_rel),
                 "event_time": effective_time,
                 "run_id": ctx.run_id,
@@ -823,6 +844,7 @@ def _export_cda_streams(ctx: ExportContext) -> tuple[list[dict], list[dict]]:
                 "schema_version": 2,
                 "canonical_person_id": _canonical_person_id(ctx),
                 "source": "cda",
+                "source_system": _source_system_tag("cda:export_cda.xml"),
                 "source_file": _safe_relpath(ctx.export_cda_rel),
                 "event_time": event_time,
                 "run_id": ctx.run_id,

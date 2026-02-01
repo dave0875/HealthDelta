@@ -92,6 +92,13 @@ def _require_columns(con, table: str, required: list[str]) -> None:
         raise RuntimeError(f"DB schema for table '{table}' is missing columns {missing}; rerun with --replace")
 
 
+def _add_column_if_missing(con, table: str, column: str, col_type: str) -> None:
+    cols = set(_table_columns(con, table))
+    if column in cols:
+        return
+    con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type};")
+
+
 def _create_unique_index_if_possible(con, *, name: str, table: str, column: str) -> None:
     try:
         con.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table}({column});")
@@ -151,6 +158,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                   record_key VARCHAR,
                   canonical_person_id VARCHAR,
                   source VARCHAR,
+                  source_system VARCHAR,
                   source_file VARCHAR,
                   event_time TIMESTAMP,
                   run_id VARCHAR,
@@ -176,6 +184,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                   record_key VARCHAR,
                   canonical_person_id VARCHAR,
                   source VARCHAR,
+                  source_system VARCHAR,
                   source_file VARCHAR,
                   event_time TIMESTAMP,
                   run_id VARCHAR,
@@ -205,6 +214,8 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
         with progress.phase("duckdb: schema checks"):
             _require_columns(con, "observations", ["record_key"])
             _require_columns(con, "documents", ["record_key"])
+            _add_column_if_missing(con, "observations", "source_system", "VARCHAR")
+            _add_column_if_missing(con, "documents", "source_system", "VARCHAR")
             _create_unique_index_if_possible(
                 con, name="observations_record_key_uq", table="observations", column="record_key"
             )
@@ -240,7 +251,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 con.execute(
                     """
                     INSERT INTO observations
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                     WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
                     """,
                     [
@@ -248,6 +259,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         record_key,
                         obj.get("canonical_person_id"),
                         obj.get("source"),
+                        obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                         obj.get("source_file") or ios_source_file,
                         _parse_event_time(obj.get("event_time") or obj.get("start_time")),
                         obj.get("run_id") or ios_run_id,
@@ -292,7 +304,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO documents
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM documents WHERE record_key=?);
                         """,
                         [
@@ -300,6 +312,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file") or ("ndjson/documents.ndjson" if ios_mode else None),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id") or ios_run_id,
@@ -328,6 +341,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       record_key VARCHAR,
                       canonical_person_id VARCHAR,
                       source VARCHAR,
+                      source_system VARCHAR,
                       source_file VARCHAR,
                       event_time TIMESTAMP,
                       run_id VARCHAR,
@@ -339,6 +353,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     """
                 )
                 _require_columns(con, "medications", ["record_key"])
+                _add_column_if_missing(con, "medications", "source_system", "VARCHAR")
                 _create_unique_index_if_possible(
                     con, name="medications_record_key_uq", table="medications", column="record_key"
                 )
@@ -360,7 +375,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO medications
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM medications WHERE record_key=?);
                         """,
                         [
@@ -368,6 +383,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file"),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id"),
@@ -395,6 +411,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       record_key VARCHAR,
                       canonical_person_id VARCHAR,
                       source VARCHAR,
+                      source_system VARCHAR,
                       source_file VARCHAR,
                       event_time TIMESTAMP,
                       run_id VARCHAR,
@@ -407,6 +424,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     """
                 )
                 _require_columns(con, "conditions", ["record_key"])
+                _add_column_if_missing(con, "conditions", "source_system", "VARCHAR")
                 _create_unique_index_if_possible(
                     con, name="conditions_record_key_uq", table="conditions", column="record_key"
                 )
@@ -428,7 +446,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO conditions
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM conditions WHERE record_key=?);
                         """,
                         [
@@ -436,6 +454,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file"),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id"),
@@ -464,6 +483,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       record_key VARCHAR,
                       canonical_person_id VARCHAR,
                       source VARCHAR,
+                      source_system VARCHAR,
                       source_file VARCHAR,
                       event_time TIMESTAMP,
                       run_id VARCHAR,
@@ -477,6 +497,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     """
                 )
                 _require_columns(con, "encounters", ["record_key"])
+                _add_column_if_missing(con, "encounters", "source_system", "VARCHAR")
                 _create_unique_index_if_possible(
                     con, name="encounters_record_key_uq", table="encounters", column="record_key"
                 )
@@ -498,7 +519,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO encounters
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM encounters WHERE record_key=?);
                         """,
                         [
@@ -506,6 +527,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file"),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id"),
@@ -535,6 +557,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       record_key VARCHAR,
                       canonical_person_id VARCHAR,
                       source VARCHAR,
+                      source_system VARCHAR,
                       source_file VARCHAR,
                       event_time TIMESTAMP,
                       run_id VARCHAR,
@@ -548,6 +571,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     """
                 )
                 _require_columns(con, "procedures", ["record_key"])
+                _add_column_if_missing(con, "procedures", "source_system", "VARCHAR")
                 _create_unique_index_if_possible(
                     con, name="procedures_record_key_uq", table="procedures", column="record_key"
                 )
@@ -569,7 +593,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO procedures
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM procedures WHERE record_key=?);
                         """,
                         [
@@ -577,6 +601,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file"),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id"),
@@ -606,6 +631,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       record_key VARCHAR,
                       canonical_person_id VARCHAR,
                       source VARCHAR,
+                      source_system VARCHAR,
                       source_file VARCHAR,
                       event_time TIMESTAMP,
                       run_id VARCHAR,
@@ -620,6 +646,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     """
                 )
                 _require_columns(con, "diagnostic_reports", ["record_key"])
+                _add_column_if_missing(con, "diagnostic_reports", "source_system", "VARCHAR")
                 _create_unique_index_if_possible(
                     con, name="diagnostic_reports_record_key_uq", table="diagnostic_reports", column="record_key"
                 )
@@ -641,7 +668,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO diagnostic_reports
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM diagnostic_reports WHERE record_key=?);
                         """,
                         [
@@ -649,6 +676,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             record_key,
                             obj.get("canonical_person_id"),
                             obj.get("source"),
+                            obj.get("source_system") if isinstance(obj.get("source_system"), str) else None,
                             obj.get("source_file"),
                             _parse_event_time(obj.get("event_time")),
                             obj.get("run_id"),

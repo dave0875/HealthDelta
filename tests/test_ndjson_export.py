@@ -380,6 +380,11 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(by_source_id["Observation/o-fallback"]["canonical_person_id"], "person-a")
             self.assertEqual(by_source_id["Observation/o-ambiguous"]["canonical_person_id"], "unresolved")
             self.assertEqual(by_source_id["Immunization/i-subject"]["canonical_person_id"], "person-a")
+            for row in by_source_id.values():
+                self.assertIsInstance(row.get("source_system"), str)
+                self.assertTrue(row.get("source_system", "").startswith("ss_"))
+                self.assertEqual(len(row.get("source_system", "")), 15)
+                self.assertNotIn("urn:mrn", row.get("source_system", ""))
 
     def test_export_ndjson_local_and_share_are_deterministic_and_pii_free(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -524,12 +529,14 @@ class TestNdjsonExport(unittest.TestCase):
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)
+                self.assertIn("source_system", row)
                 self.assertIn("source_file", row)
                 self.assertIn("event_time", row)
                 self.assertIn("run_id", row)
                 self.assertIn("record_key", row)
                 self.assertIsInstance(row["canonical_person_id"], str)
                 self.assertIn(row["source"], ["healthkit", "fhir", "cda"])
+                self.assertTrue(row["source_system"].startswith("ss_"))
                 self.assertIsInstance(row["source_file"], str)
                 self.assertIsInstance(row["schema_version"], int)
                 self.assertIsInstance(row["record_key"], str)

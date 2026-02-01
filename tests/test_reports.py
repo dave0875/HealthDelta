@@ -41,45 +41,45 @@ class TestReports(unittest.TestCase):
                 ndjson / "observations.ndjson",
                 "\n".join(
                     [
-                        '{"canonical_person_id":"person-1","source":"healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
+                        '{"canonical_person_id":"person-1","source":"healthkit","source_system":"ss_healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
                         % (pii_name, pii_dob),
-                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
                         % pii_patient_id,
-                        '{"canonical_person_id":"person-1","source":"cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
-                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/immunization.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i1","resource_type":"Immunization","source_id":"Immunization/i1","status":"completed"}',
+                        '{"canonical_person_id":"person-1","source":"cda","source_system":"ss_cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/immunization.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i1","resource_type":"Immunization","source_id":"Immunization/i1","status":"completed"}',
                     ]
                 )
                 + "\n",
             )
             _write_text(
                 ndjson / "documents.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/doc.json","event_time":"2020-01-02T03:04:05Z","run_id":"run-1","event_key":"d1","resource_type":"DocumentReference","source_id":"DocumentReference/d1","status":"current"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/doc.json","event_time":"2020-01-02T03:04:05Z","run_id":"run-1","event_key":"d1","resource_type":"DocumentReference","source_id":"DocumentReference/d1","status":"current"}\n',
             )
             _write_text(
                 ndjson / "medications.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n',
             )
             _write_text(
                 ndjson / "conditions.ndjson",
                 "\n".join(
                     [
-                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1","code":"I10"}',
-                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/allergy.json","event_time":"2020-01-04T07:00:00Z","run_id":"run-1","event_key":"a1","resource_type":"AllergyIntolerance","source_id":"AllergyIntolerance/a1"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1","code":"I10"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/allergy.json","event_time":"2020-01-04T07:00:00Z","run_id":"run-1","event_key":"a1","resource_type":"AllergyIntolerance","source_id":"AllergyIntolerance/a1"}',
                     ]
                 )
                 + "\n",
             )
             _write_text(
                 ndjson / "encounters.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n',
             )
             _write_text(
                 ndjson / "procedures.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/procedure.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p1","resource_type":"Procedure","source_id":"Procedure/p1","status":"completed"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/procedure.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p1","resource_type":"Procedure","source_id":"Procedure/p1","status":"completed"}\n',
             )
             _write_text(
                 ndjson / "diagnostic_reports.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/diag_report.json","event_time":"2020-01-07T08:00:00Z","run_id":"run-1","event_key":"dr1","resource_type":"DiagnosticReport","source_id":"DiagnosticReport/dr1","status":"final"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/diag_report.json","event_time":"2020-01-07T08:00:00Z","run_id":"run-1","event_key":"dr1","resource_type":"DiagnosticReport","source_id":"DiagnosticReport/dr1","status":"final"}\n',
             )
 
             db_path = root / "out.duckdb"
@@ -126,6 +126,7 @@ class TestReports(unittest.TestCase):
                 out_dir / "summary.md",
                 out_dir / "coverage_by_person.csv",
                 out_dir / "coverage_by_source.csv",
+                out_dir / "coverage_by_source_system.csv",
                 out_dir / "timeline_daily_counts.csv",
                 out_dir / "reference_integrity_unresolved.csv",
             ]
@@ -178,6 +179,12 @@ class TestReports(unittest.TestCase):
             for k, v in expected.items():
                 self.assertEqual(got.get(k), v)
 
+            by_source_system = _read_csv(out_dir / "coverage_by_source_system.csv")
+            ss = {(r["stream"], r["source_system"]): r["rows"] for r in by_source_system}
+            self.assertEqual(ss.get(("observations", "ss_fhir")), "2")
+            self.assertEqual(ss.get(("observations", "ss_healthkit")), "1")
+            self.assertEqual(ss.get(("observations", "ss_cda")), "1")
+
             timeline = _read_csv(out_dir / "timeline_daily_counts.csv")
             # day is YYYY-MM-DD
             day_stream_source = {(r["day"], r["stream"], r["source"]): r["rows"] for r in timeline}
@@ -228,20 +235,20 @@ class TestReports(unittest.TestCase):
                 ndjson / "encounters.ndjson",
                 "\n".join(
                     [
-                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/encounter_ok.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e-ok","resource_type":"Encounter","source_id":"Encounter/e-ok","status":"finished"}',
-                        '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/encounter_bad_1.json","event_time":"2020-01-05T11:00:00Z","run_id":"run-1","event_key":"e-bad-1","resource_type":"Encounter","source_id":"Encounter/e-bad-1","status":"finished"}',
-                        '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/encounter_bad_2.json","event_time":"2020-01-05T12:00:00Z","run_id":"run-1","event_key":"e-bad-2","resource_type":"Encounter","source_id":"Encounter/e-bad-2","status":"finished"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter_ok.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e-ok","resource_type":"Encounter","source_id":"Encounter/e-ok","status":"finished"}',
+                        '{"canonical_person_id":"unresolved","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter_bad_1.json","event_time":"2020-01-05T11:00:00Z","run_id":"run-1","event_key":"e-bad-1","resource_type":"Encounter","source_id":"Encounter/e-bad-1","status":"finished"}',
+                        '{"canonical_person_id":"unresolved","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter_bad_2.json","event_time":"2020-01-05T12:00:00Z","run_id":"run-1","event_key":"e-bad-2","resource_type":"Encounter","source_id":"Encounter/e-bad-2","status":"finished"}',
                     ]
                 )
                 + "\n",
             )
             _write_text(
                 ndjson / "procedures.ndjson",
-                '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/procedure_bad.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p-bad-1","resource_type":"Procedure","source_id":"Procedure/p-bad-1","status":"completed"}\n',
+                '{"canonical_person_id":"unresolved","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/procedure_bad.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p-bad-1","resource_type":"Procedure","source_id":"Procedure/p-bad-1","status":"completed"}\n',
             )
             _write_text(
                 ndjson / "observations.ndjson",
-                '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/immunization_bad.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i-bad-1","resource_type":"Immunization","source_id":"Immunization/i-bad-1","status":"completed"}\n',
+                '{"canonical_person_id":"unresolved","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/immunization_bad.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i-bad-1","resource_type":"Immunization","source_id":"Immunization/i-bad-1","status":"completed"}\n',
             )
             _write_text(ndjson / "documents.ndjson", "\n")
             _write_text(ndjson / "medications.ndjson", "\n")

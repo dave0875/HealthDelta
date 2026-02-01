@@ -72,3 +72,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,81,,20,codex,,"CDA discharge sections and encounter timing coverage"
 2026-02-01,82,,20,codex,,"versioned NDJSON schemas and validator compatibility checks"
 2026-02-01,83,,20,codex,,"duckdb/report/note coverage for diagnostic report stream"
+2026-02-01,84,,25,codex,,"share-safe source_system tagging through export, duckdb, and reports"

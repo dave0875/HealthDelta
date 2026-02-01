@@ -137,6 +137,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
 
         tables_summary: dict[str, dict[str, object]] = {}
         coverage_by_source_rows: list[tuple[str, str, int]] = []
+        coverage_by_source_system_rows: list[tuple[str, str, int]] = []
 
         source_bucket = "CASE WHEN source_file LIKE 'ndjson/%' THEN 'ios' ELSE source END"
 
@@ -155,12 +156,29 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                         by_source_map[source] = int(n)
                         coverage_by_source_rows.append((table, source, int(n)))
 
+                by_source_system = _rows(
+                    con,
+                    f"""
+                    SELECT COALESCE(source_system, '') AS source_system, COUNT(*) AS n
+                    FROM {table}
+                    GROUP BY 1
+                    ORDER BY 1;
+                    """,
+                )
+                by_source_system_map: dict[str, int] = {}
+                for source_system, n in by_source_system:
+                    if isinstance(source_system, str):
+                        key = source_system or "unknown"
+                        by_source_system_map[key] = int(n)
+                        coverage_by_source_system_rows.append((table, key, int(n)))
+
                 tables_summary[table] = {
                     "total_rows": total_rows,
                     "distinct_canonical_person_id": distinct_people,
                     "min_event_time": _fmt_ts(min_et),
                     "max_event_time": _fmt_ts(max_et),
                     "rows_by_source": {k: by_source_map[k] for k in sorted(by_source_map)},
+                    "rows_by_source_system": {k: by_source_system_map[k] for k in sorted(by_source_system_map)},
                 }
                 task.advance(1)
 
@@ -391,7 +409,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 task_people.advance(batch)
 
         with progress.phase("report: write artifacts"):
-            task_write = progress.task("report: write artifacts", total=5, unit="files")
+            task_write = progress.task("report: write artifacts", total=6, unit="files")
 
             # CSV: coverage_by_person.csv
             header = [
@@ -433,6 +451,15 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 out / "coverage_by_source.csv",
                 header=["stream", "source", "rows"],
                 rows=[[stream, source, n] for stream, source, n in coverage_by_source_rows],
+            )
+            task_write.advance(1)
+
+            # CSV: coverage_by_source_system.csv
+            coverage_by_source_system_rows.sort(key=lambda r: (r[0], r[1]))
+            _write_csv(
+                out / "coverage_by_source_system.csv",
+                header=["stream", "source_system", "rows"],
+                rows=[[stream, source_system, n] for stream, source_system, n in coverage_by_source_system_rows],
             )
             task_write.advance(1)
 
