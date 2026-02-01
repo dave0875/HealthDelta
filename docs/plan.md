@@ -43,40 +43,34 @@ CI proof is mandatory:
 These issues are intended as small vertical slices.
 
 Completed
-- Issues #1–#69 (bootstrap through CLI progress + CD, including iOS incremental export pipeline) are closed.
-- Issues #33–#42 (plan refresh, iOS deterministic exports, staging, DuckDB/reporting, and ADR convergence) are closed.
+- Issues #1-#86 are closed (bootstrap through governance/evidence guardrails for FHIR, NDJSON, reporting, and CI policy enforcement).
+- Issue #117 is closed (managed hidden worktree root + auto-prune + CI path guardrail).
 
-Next (priority order)
-1) Issue #72 — Governance: plan refresh + CI issue reference gate (in progress)
+Active governance carryover
+1) Issue #72 - Governance: plan refresh + CI issue reference gate
    - https://github.com/dave0875/HealthDelta/issues/72
-2) Issue #73 — FHIR export: Encounter
-   - https://github.com/dave0875/HealthDelta/issues/73
-3) Issue #74 — FHIR export: Procedure
-   - https://github.com/dave0875/HealthDelta/issues/74
-4) Issue #75 — FHIR export: DiagnosticReport (+ Observation linkage)
-   - https://github.com/dave0875/HealthDelta/issues/75
-5) Issue #76 — FHIR export: MedicationStatement + MedicationDispense
-   - https://github.com/dave0875/HealthDelta/issues/76
-6) Issue #77 — FHIR export: AllergyIntolerance + Immunization
-   - https://github.com/dave0875/HealthDelta/issues/77
-7) Issue #78 — Identity: subject.identifier resolution
-   - https://github.com/dave0875/HealthDelta/issues/78
-8) Issue #79 — Reporting: unresolved reference integrity report
-   - https://github.com/dave0875/HealthDelta/issues/79
-9) Issue #80 — De-id: scrub FHIR free-text/narrative
-   - https://github.com/dave0875/HealthDelta/issues/80
-10) Issue #81 — CDA export: discharge summary coverage
-   - https://github.com/dave0875/HealthDelta/issues/81
-11) Issue #82 — NDJSON: JSON schema + CI validation
-   - https://github.com/dave0875/HealthDelta/issues/82
-12) Issue #83 — DuckDB/reporting: include new FHIR types
-   - https://github.com/dave0875/HealthDelta/issues/83
-13) Issue #84 — Provenance: share-safe source_system tagging
-   - https://github.com/dave0875/HealthDelta/issues/84
-14) Issue #85 — Share bundle: hospital record evidence pack
-   - https://github.com/dave0875/HealthDelta/issues/85
-15) Issue #86 — CI: enforce audit logs + evidence artifacts
-   - https://github.com/dave0875/HealthDelta/issues/86
+2) Issue #92 - Governance: CI guardrails for issue discipline
+   - https://github.com/dave0875/HealthDelta/issues/92
+
+New planning phase: Orin production deployment target (`orin.local`)
+3) Issue #120 - Planning: Orin production deployment MMF backlog
+   - https://github.com/dave0875/HealthDelta/issues/120
+4) Issue #121 - Orin MMF: export inventory + PHI field map
+   - https://github.com/dave0875/HealthDelta/issues/121
+5) Issue #122 - Orin MMF: local model/runtime matrix for summaries + risk flags
+   - https://github.com/dave0875/HealthDelta/issues/122
+6) Issue #123 - Orin MMF: ingest-to-summary vertical slice on backend
+   - https://github.com/dave0875/HealthDelta/issues/123
+7) Issue #124 - Orin MMF: risk flags v1 with evidence + disclaimers
+   - https://github.com/dave0875/HealthDelta/issues/124
+8) Issue #125 - Orin MMF: trend analysis v1 for longitudinal records
+   - https://github.com/dave0875/HealthDelta/issues/125
+9) Issue #126 - Orin MMF: grounded Q&A v1 with abstain behavior
+   - https://github.com/dave0875/HealthDelta/issues/126
+10) Issue #127 - Orin MMF: production deployment + rollback proof on orin.local
+    - https://github.com/dave0875/HealthDelta/issues/127
+11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements
+    - https://github.com/dave0875/HealthDelta/issues/128
 
 ## Operating rules (quick reference)
 
