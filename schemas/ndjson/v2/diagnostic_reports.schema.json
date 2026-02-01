@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HealthDelta NDJSON Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_key",
+    "canonical_person_id",
+    "source",
+    "source_file",
+    "event_time",
+    "run_id"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "record_key": { "type": "string" },
+    "canonical_person_id": { "type": "string" },
+    "source": { "type": "string" },
+    "source_file": { "type": "string" },
+    "event_time": { "type": "string" },
+    "run_id": { "type": "string" }
+  },
+  "additionalProperties": true
+}
