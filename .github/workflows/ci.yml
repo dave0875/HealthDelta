@@ -17,26 +17,36 @@ jobs:
           fetch-depth: 0
 
       - name: Enforce Issue footer in commit messages
+        id: policy_issue_footer
+        continue-on-error: true
         run: |
           set -euo pipefail
           python3 scripts/check_issue_footer.py
 
       - name: Enforce PR Issue metadata
+        id: policy_pr_issue
+        continue-on-error: true
         run: |
           set -euo pipefail
           python3 scripts/check_pr_issue.py
 
       - name: Enforce audit artifacts
+        id: policy_audit_artifacts
+        continue-on-error: true
         run: |
           set -euo pipefail
           python3 scripts/check_audit_artifacts.py
 
       - name: Enforce prompt immutability
+        id: policy_prompt_immutability
+        continue-on-error: true
         run: |
           set -euo pipefail
           python3 scripts/check_prompt_immutability.py
 
       - name: Enforce managed worktree policy
+        id: policy_worktree
+        continue-on-error: true
         run: |
           set -euo pipefail
           python3 scripts/worktree_manager.py check
@@ -83,13 +93,30 @@ jobs:
             artifacts/linux/ndjson_validate.log
           if-no-files-found: error
 
-      - name: Fail if unittest failed
+      - name: Fail if policy or unittest failed
         if: always()
         run: |
           set -euo pipefail
+          policy_failed=0
+          for outcome in \
+            "${{ steps.policy_issue_footer.outcome }}" \
+            "${{ steps.policy_pr_issue.outcome }}" \
+            "${{ steps.policy_audit_artifacts.outcome }}" \
+            "${{ steps.policy_prompt_immutability.outcome }}" \
+            "${{ steps.policy_worktree.outcome }}"; do
+            if [ "$outcome" = "failure" ]; then
+              policy_failed=1
+            fi
+          done
+
           if [ "${UNITTEST_EXIT:-0}" != "0" ]; then
-            echo "unittest failed with exit code ${UNITTEST_EXIT}"
+            echo "infra/test failure: unittest failed with exit code ${UNITTEST_EXIT}"
             exit "${UNITTEST_EXIT}"
+          fi
+
+          if [ "${policy_failed}" != "0" ]; then
+            echo "policy failure: one or more governance checks failed."
+            exit 1
           fi
 
   ios-xcode-tests:

@@ -12,6 +12,10 @@ This runbook defines how HealthDelta produces share-safe build artifacts and wha
     - `linux-unittest` (`python_version.txt`, `unittest.log`)
     - `ndjson_validate.log` smoke validation output
   - macOS job passes and uploads `ios-xcresult`.
+- Governance hardening behavior:
+  - Governance checks are rewrite-tolerant and never crash on missing commit ranges.
+  - Tests/build execution still runs when policy checks fail.
+  - Governance failures are reported as explicit `policy failure` outcomes (not infra failures).
 
 ### Release (artifact publication)
 - Workflow: `.github/workflows/release.yml`

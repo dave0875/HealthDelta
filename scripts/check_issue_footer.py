@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI if commits lack an Issue footer (Issue: #NN)."""
+"""Best-effort commit Issue footer validation with rewrite-tolerant fallbacks."""
 from __future__ import annotations
 
 import argparse
@@ -31,11 +31,23 @@ def extract_issue_numbers(message: str) -> list[str]:
 
 
 def _git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+    proc = subprocess.run(["git", *args], check=False, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout).strip() or f"git {' '.join(args)} failed")
+    return proc.stdout.strip()
+
+
+def _git_try(*args: str) -> str | None:
+    proc = subprocess.run(["git", *args], check=False, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
 
 
 def _merge_parents() -> list[str]:
-    line = _git("rev-list", "--parents", "-n", "1", "HEAD")
+    line = _git_try("rev-list", "--parents", "-n", "1", "HEAD")
+    if not line:
+        return []
     parts = line.split()
     return parts[1:]
 
@@ -48,18 +60,34 @@ def _load_event() -> dict:
         return json.load(handle)
 
 
-def _resolve_commit_range() -> list[str]:
+def _commit_list(range_expr: str) -> list[str]:
+    out = _git_try("rev-list", range_expr)
+    if not out:
+        return []
+    return [line for line in out.splitlines() if line]
+
+
+def _resolve_commit_range_with_notes() -> tuple[list[str], list[str]]:
+    notes: list[str] = []
     parents = _merge_parents()
     if len(parents) >= 2:
-        mb = _git("merge-base", parents[0], parents[1])
-        if mb == parents[0]:
-            base, head = parents[0], parents[1]
-        elif mb == parents[1]:
-            base, head = parents[1], parents[0]
-        else:
-            base, head = mb, "HEAD"
-        commits = _git("rev-list", f"{base}..{head}").splitlines()
-        return commits or [head]
+        mb = _git_try("merge-base", parents[0], parents[1])
+        if mb:
+            if mb == parents[0]:
+                base, head = parents[0], parents[1]
+            elif mb == parents[1]:
+                base, head = parents[1], parents[0]
+            else:
+                base, head = mb, "HEAD"
+            commits = _commit_list(f"{base}..{head}")
+            if commits:
+                notes.append("resolved commit range via merge-parent topology.")
+                return commits, notes
+            head_sha = _git_try("rev-parse", head)
+            if head_sha:
+                notes.append("merge-parent range was empty; checking merge head only.")
+                return [head_sha], notes
+        notes.append("merge-parent resolution unavailable; falling back to event metadata.")
 
     event = _load_event()
     event_name = os.getenv("GITHUB_EVENT_NAME", "")
@@ -74,32 +102,60 @@ def _resolve_commit_range() -> list[str]:
         head = event.get("after")
 
     if head and base and base != "0" * 40:
-        try:
-            subprocess.check_call(["git", "merge-base", "--is-ancestor", base, head])
-            mb = _git("merge-base", base, head)
-            commits = _git("rev-list", f"{mb}..{head}").splitlines()
-            return commits or [head]
-        except Exception:
-            pass
+        anc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base, head],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if anc.returncode == 0:
+            mb = _git_try("merge-base", base, head)
+            if mb:
+                commits = _commit_list(f"{mb}..{head}")
+                if commits:
+                    notes.append("resolved commit range from event before/after ancestry.")
+                    return commits, notes
+                notes.append("event ancestry range was empty; checking push/pr head only.")
+                return [head], notes
+        else:
+            notes.append(
+                "event before SHA is not an ancestor of after (likely rebase/force-push); using rewrite-tolerant fallback."
+            )
 
-        try:
-            main_ref = _git("rev-parse", "origin/main")
-            merge_base = _git("merge-base", head, main_ref)
-            commits = _git("rev-list", f"{merge_base}..{head}").splitlines()
-            return commits or [head]
-        except Exception:
-            commits = _git("rev-list", f"{base}..{head}").splitlines()
-            return commits or [head]
+    if head:
+        main_ref = _git_try("rev-parse", "origin/main")
+        if main_ref:
+            merge_base = _git_try("merge-base", head, main_ref)
+            if merge_base:
+                commits = _commit_list(f"{merge_base}..{head}")
+                if commits:
+                    notes.append("resolved range from merge-base(head, origin/main).")
+                    return commits, notes
+        if _git_try("cat-file", "-e", f"{head}^{{commit}}") is not None:
+            notes.append("using head commit only because no stable range was available.")
+            return [head], notes
 
-    try:
-        main_ref = _git("rev-parse", "origin/main")
-        merge_base = _git("merge-base", "HEAD", main_ref)
-        commits = _git("rev-list", f"{merge_base}..HEAD").splitlines()
-        return commits or [merge_base]
-    except Exception:
-        pass
+    main_ref = _git_try("rev-parse", "origin/main")
+    if main_ref:
+        merge_base = _git_try("merge-base", "HEAD", main_ref)
+        if merge_base:
+            commits = _commit_list(f"{merge_base}..HEAD")
+            if commits:
+                notes.append("resolved range from merge-base(HEAD, origin/main).")
+                return commits, notes
 
-    return _git("rev-list", "-n", "1", "HEAD").splitlines()
+    head_only = _git_try("rev-list", "-n", "1", "HEAD")
+    if head_only:
+        notes.append("falling back to HEAD-only commit check.")
+        return [head_only], notes
+
+    notes.append("unable to resolve any commits; skipping commit-level enforcement.")
+    return [], notes
+
+
+def _resolve_commit_range() -> list[str]:
+    commits, _ = _resolve_commit_range_with_notes()
+    return commits
 
 
 def main() -> int:
@@ -107,20 +163,42 @@ def main() -> int:
     parser.add_argument("--print-issue", action="store_true", help="Print the single Issue number if one is found.")
     args = parser.parse_args()
 
-    commits = _resolve_commit_range()
+    commits, notes = _resolve_commit_range_with_notes()
+    for note in notes:
+        print(f"governance-info: {note}")
     if not commits:
-        print("No commits resolved for issue footer check.")
-        return 1
+        print("governance-warning: commit Issue footer check skipped (no resolvable commits).")
+        print("what happened: git history context was incomplete or rewritten.")
+        print("what was checked instead: PR metadata and other durable governance artifacts still run.")
+        print("how to fix: ensure checkout has history (fetch-depth: 0) or rerun after refs are available.")
+        return 0
 
-    messages = [_git("log", "-1", "--format=%B", sha) for sha in commits]
+    messages: list[str] = []
+    resolved: list[str] = []
+    for sha in commits:
+        msg = _git_try("log", "-1", "--format=%B", sha)
+        if msg is None:
+            print(f"governance-info: commit {sha[:12]} is unavailable locally; skipped.")
+            continue
+        resolved.append(sha)
+        messages.append(msg)
+    commits = resolved
+    if not commits:
+        print("governance-warning: no readable commit messages were available for Issue footer checks.")
+        print("what happened: commit objects referenced by event metadata were missing after history rewrite.")
+        print("what was checked instead: PR metadata checks remain authoritative for this run.")
+        print("how to fix: push updated refs or rerun with full commit history fetched.")
+        return 0
+
     missing = commits_missing_issue_footer(messages)
     if missing:
-        print("Missing Issue footer in one or more commits.")
+        print("policy failure: missing Issue footer in one or more commits.")
         for sha, msg in zip(commits, messages):
             if not message_has_issue_footer(msg):
                 summary = msg.splitlines()[0] if msg else "(empty message)"
                 print(f"- {sha[:12]}: {summary}")
         print("Expected footer format: 'Issue: #NN'.")
+        print("how to fix: amend commit messages or squash/rebase to include one consistent Issue footer.")
         return 1
 
     issue_numbers: set[str] = set()
@@ -128,11 +206,13 @@ def main() -> int:
         issue_numbers.update(extract_issue_numbers(msg))
 
     if not issue_numbers:
-        print("No Issue footer numbers found in commit set.")
+        print("policy failure: no Issue footer numbers found in commit set.")
+        print("how to fix: include 'Issue: #NN' in commit message footer.")
         return 1
     if len(issue_numbers) > 1:
         issues = ", ".join(sorted(issue_numbers))
-        print(f"Multiple Issue numbers found in commit set: {issues}")
+        print(f"policy failure: multiple Issue numbers found in commit set: {issues}")
+        print("how to fix: keep one issue per PR and make commit footers consistent.")
         return 1
 
     issue_no = sorted(issue_numbers)[0]
