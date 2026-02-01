@@ -87,6 +87,24 @@ def _rows(con, sql: str, params: list[Any] | None = None) -> list[tuple]:
     return con.execute(sql, params or []).fetchall()
 
 
+def _reference_type_label(*, stream: str, resource_type: str | None) -> str:
+    if isinstance(resource_type, str) and resource_type.strip():
+        rt = resource_type.strip()
+        if rt == "Immunization":
+            return "Immunization.patient"
+        return f"{rt}.subject"
+
+    defaults = {
+        "observations": "Observation.subject",
+        "documents": "DocumentReference.subject",
+        "medications": "MedicationRequest.subject",
+        "conditions": "Condition.subject",
+        "encounters": "Encounter.subject",
+        "procedures": "Procedure.subject",
+    }
+    return defaults.get(stream, f"{stream}.subject")
+
+
 def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
     if mode not in {"local", "share"}:
         raise ValueError("--mode must be one of: local, share")
@@ -179,6 +197,27 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 )
             else:
                 per_person_times = []
+
+        # Unresolved reference integrity by resource type
+        unresolved_by_type: dict[str, int] = {}
+        unresolved_total = 0
+        with progress.phase("report: unresolved reference integrity"):
+            task_ref = progress.task("report: unresolved reference scan", total=len(streams), unit="tables")
+            for table in streams:
+                for resource_type, n in _rows(
+                    con,
+                    f"""
+                    SELECT resource_type, COUNT(*) AS n
+                    FROM {table}
+                    WHERE canonical_person_id = 'unresolved'
+                    GROUP BY resource_type
+                    ORDER BY resource_type;
+                    """,
+                ):
+                    label = _reference_type_label(stream=table, resource_type=resource_type if isinstance(resource_type, str) else None)
+                    unresolved_by_type[label] = int(unresolved_by_type.get(label, 0)) + int(n)
+                    unresolved_total += int(n)
+                task_ref.advance(1)
 
         times_map: dict[str, tuple[object | None, object | None]] = {}
         for person_id, min_et, max_et in per_person_times:
@@ -333,7 +372,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 task_people.advance(batch)
 
         with progress.phase("report: write artifacts"):
-            task_write = progress.task("report: write artifacts", total=4, unit="files")
+            task_write = progress.task("report: write artifacts", total=5, unit="files")
 
             # CSV: coverage_by_person.csv
             header = [
@@ -405,6 +444,14 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             )
             task_write.advance(1)
 
+            # CSV: unresolved reference integrity
+            _write_csv(
+                out / "reference_integrity_unresolved.csv",
+                header=["reference_type", "rows"],
+                rows=[[k, unresolved_by_type[k]] for k in sorted(unresolved_by_type)],
+            )
+            task_write.advance(1)
+
         summary = {
             "schema_version": 1,
             "mode": mode,
@@ -414,6 +461,10 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             },
             "tables": {k: tables_summary[k] for k in sorted(tables_summary)},
             "per_person": per_person,
+            "reference_integrity": {
+                "unresolved_reference_rows_total": unresolved_total,
+                "rows_by_reference_type": {k: unresolved_by_type[k] for k in sorted(unresolved_by_type)},
+            },
             "notes": {
                 "privacy": "Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.",
                 "determinism": "No generated_at timestamps. Stable ordering and stable formatting for same DB bytes.",
@@ -434,6 +485,9 @@ def _render_markdown(summary: dict[str, object]) -> str:
         tables = {}
     if not isinstance(per_person, list):
         per_person = []
+    reference_integrity = summary.get("reference_integrity")
+    if not isinstance(reference_integrity, dict):
+        reference_integrity = {}
 
     lines: list[str] = []
     lines.append("# HealthDelta Summary Report")
@@ -474,7 +528,15 @@ def _render_markdown(summary: dict[str, object]) -> str:
                 n = item.get("rows")
                 if isinstance(rt, str):
                     lines.append(f"  - {rt}: {n}")
-        lines.append("")
+    lines.append("")
+
+    lines.append("## Reference Integrity")
+    lines.append(f"- unresolved_reference_rows_total: {reference_integrity.get('unresolved_reference_rows_total', 0)}")
+    by_type = reference_integrity.get("rows_by_reference_type")
+    if isinstance(by_type, dict):
+        for key in sorted(by_type.keys()):
+            lines.append(f"- unresolved.{key}: {by_type[key]}")
+    lines.append("")
 
     lines.append("## Notes")
     notes = summary.get("notes")
