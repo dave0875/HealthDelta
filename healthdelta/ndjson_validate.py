@@ -9,6 +9,7 @@ from healthdelta.progress import progress
 
 
 BASE_REQUIRED_KEYS: tuple[str, ...] = ("canonical_person_id", "source", "source_file", "event_time", "run_id", "record_key")
+SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "schemas" / "ndjson"
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,69 @@ def _iter_ndjson_files(root: Path) -> list[Path]:
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 
 
+def _stream_name(rel_path: str) -> str:
+    return Path(rel_path).stem
+
+
+def _validate_by_schema(
+    *,
+    rel_path: str,
+    line_no: int,
+    obj: dict,
+    schema_cache: dict[tuple[str, int], dict | None],
+) -> list[ValidationError]:
+    errs: list[ValidationError] = []
+    stream = _stream_name(rel_path)
+    schema_version = obj.get("schema_version")
+    if not isinstance(schema_version, int):
+        return errs
+
+    key = (stream, schema_version)
+    schema = schema_cache.get(key)
+    if key not in schema_cache:
+        schema_path = SCHEMA_ROOT / f"v{schema_version}" / f"{stream}.schema.json"
+        if schema_path.exists():
+            try:
+                loaded = json.loads(schema_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                loaded = None
+            schema_cache[key] = loaded if isinstance(loaded, dict) else None
+        else:
+            schema_cache[key] = None
+    schema = schema_cache.get(key)
+
+    if schema is None:
+        errs.append(
+            ValidationError(
+                rel_path=rel_path,
+                line_no=line_no,
+                code="schema_version_incompatible",
+                message=f"no schema for stream={stream!r} schema_version={schema_version}",
+            )
+        )
+        return errs
+
+    required = schema.get("required")
+    if isinstance(required, list):
+        for k in required:
+            if isinstance(k, str) and k not in obj:
+                errs.append(
+                    ValidationError(rel_path=rel_path, line_no=line_no, code="missing_required_key", message=f"missing required key: {k}")
+                )
+
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for k, spec in properties.items():
+            if k not in obj or not isinstance(spec, dict):
+                continue
+            t = spec.get("type")
+            if t == "string" and not isinstance(obj[k], str):
+                errs.append(ValidationError(rel_path=rel_path, line_no=line_no, code="invalid_type", message=f"key {k} must be a string"))
+            if t == "integer" and not isinstance(obj[k], int):
+                errs.append(ValidationError(rel_path=rel_path, line_no=line_no, code="invalid_type", message=f"key {k} must be an integer"))
+    return errs
+
+
 def validate_ndjson_dir(
     *,
     input_dir: str,
@@ -43,6 +107,7 @@ def validate_ndjson_dir(
         return [ValidationError(rel_path=".", line_no=0, code="no_ndjson_files", message="no *.ndjson files found under input_dir")]
 
     errors: list[ValidationError] = []
+    schema_cache: dict[tuple[str, int], dict | None] = {}
 
     with progress.phase("validate: ndjson"):
         task_files = progress.task("validate: files", total=len(files), unit="files")
@@ -116,6 +181,10 @@ def validate_ndjson_dir(
                     elif not isinstance(obj.get("schema_version"), int):
                         errors.append(
                             ValidationError(rel_path=rel, line_no=line_no, code="invalid_type", message="key schema_version must be an integer")
+                        )
+                    else:
+                        errors.extend(
+                            _validate_by_schema(rel_path=rel, line_no=line_no, obj=obj, schema_cache=schema_cache)
                         )
 
                     batch += 1
