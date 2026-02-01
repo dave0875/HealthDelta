@@ -62,6 +62,11 @@ class TestDuckdbLoader(unittest.TestCase):
             )
             _write_text(ndjson / "conditions.ndjson", conditions)
 
+            encounters = (
+                '{"schema_version":2,"record_key":"e1","canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n'
+            )
+            _write_text(ndjson / "encounters.ndjson", encounters)
+
             db_path = root / "out.duckdb"
 
             build = subprocess.run(
@@ -123,8 +128,27 @@ class TestDuckdbLoader(unittest.TestCase):
             rows = list(csv.DictReader(q2.stdout.splitlines()))
             self.assertEqual(rows[0]["n"], "1")
 
+            q3 = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT COUNT(*) AS n FROM encounters ORDER BY n;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q3.returncode, 0, msg=f"stdout={q3.stdout}\nstderr={q3.stderr}")
+            rows = list(csv.DictReader(q3.stdout.splitlines()))
+            self.assertEqual(rows[0]["n"], "1")
+
             # Ensure the loader did not introduce PII into query output.
-            combined_out = q1.stdout + q2.stdout
+            combined_out = q1.stdout + q2.stdout + q3.stdout
             self.assertNotIn(pii_name, combined_out)
             self.assertNotIn(pii_dob, combined_out)
             self.assertNotIn(pii_patient_id, combined_out)

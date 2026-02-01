@@ -193,6 +193,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
         documents_path = ndjson_root / "documents.ndjson"
         medications_path = ndjson_root / "medications.ndjson"
         conditions_path = ndjson_root / "conditions.ndjson"
+        encounters_path = ndjson_root / "encounters.ndjson"
 
         if not observations_path.exists():
             raise FileNotFoundError("Missing required NDJSON stream: observations.ndjson")
@@ -441,6 +442,77 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                             obj.get("code") if isinstance(obj.get("code"), str) else None,
                             _stable_json(obj.get("code_coding")),
+                            record_key,
+                        ],
+                    )
+
+                    batch += 1
+                    if batch >= 1000:
+                        task.advance(batch)
+                        batch = 0
+                if batch:
+                    task.advance(batch)
+
+        if encounters_path.exists():
+            with progress.phase("duckdb: ensure schema (encounters)"):
+                con.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS encounters (
+                      schema_version INTEGER,
+                      record_key VARCHAR,
+                      canonical_person_id VARCHAR,
+                      source VARCHAR,
+                      source_file VARCHAR,
+                      event_time TIMESTAMP,
+                      run_id VARCHAR,
+                      event_key VARCHAR,
+                      source_id VARCHAR,
+                      resource_type VARCHAR,
+                      status VARCHAR,
+                      class_code VARCHAR,
+                      class_system VARCHAR
+                    );
+                    """
+                )
+                _require_columns(con, "encounters", ["record_key"])
+                _create_unique_index_if_possible(
+                    con, name="encounters_record_key_uq", table="encounters", column="record_key"
+                )
+
+            with progress.phase("duckdb: load encounters"):
+                task = progress.task("duckdb: load encounters", unit="rows")
+                batch = 0
+                for obj in _iter_ndjson(encounters_path):
+                    record_key = obj.get("record_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = obj.get("event_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = _sha256_text(_stable_json(obj) or "")
+
+                    event_key = obj.get("event_key")
+                    if not isinstance(event_key, str) or not event_key:
+                        event_key = record_key
+
+                    con.execute(
+                        """
+                        INSERT INTO encounters
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
+                        WHERE NOT EXISTS (SELECT 1 FROM encounters WHERE record_key=?);
+                        """,
+                        [
+                            obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
+                            record_key,
+                            obj.get("canonical_person_id"),
+                            obj.get("source"),
+                            obj.get("source_file"),
+                            _parse_event_time(obj.get("event_time")),
+                            obj.get("run_id"),
+                            event_key,
+                            obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                            obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                            obj.get("status") if isinstance(obj.get("status"), str) else None,
+                            obj.get("class_code") if isinstance(obj.get("class_code"), str) else None,
+                            obj.get("class_system") if isinstance(obj.get("class_system"), str) else None,
                             record_key,
                         ],
                     )

@@ -46,6 +46,13 @@ FHIR_COND = {
     "recordedDate": "2020-01-04T00:00:00Z",
     "code": {"text": "Hypertension"},
 }
+FHIR_ENCOUNTER = {
+    "resourceType": "Encounter",
+    "id": "e1",
+    "status": "finished",
+    "subject": {"reference": "Patient/p1"},
+    "period": {"start": "2020-01-05T10:00:00Z", "end": "2020-01-05T12:00:00Z"},
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -113,6 +120,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "doc.json", FHIR_DOC)
             _write_json(clinical_dir / "med.json", FHIR_MED)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
+            _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
 
             base_dir = root / "out"
 
@@ -167,6 +175,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "documents.ndjson",
                 out_local / "medications.ndjson",
                 out_local / "conditions.ndjson",
+                out_local / "encounters.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -176,12 +185,17 @@ class TestNdjsonExport(unittest.TestCase):
             documents = _read_ndjson(out_local / "documents.ndjson")
             meds = _read_ndjson(out_local / "medications.ndjson")
             conds = _read_ndjson(out_local / "conditions.ndjson")
+            encounters = _read_ndjson(out_local / "encounters.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1)
             self.assertEqual(len(observations), 3)
             self.assertEqual(len(documents), 1)
             self.assertEqual(len(meds), 1)
             self.assertEqual(len(conds), 1)
+            self.assertEqual(len(encounters), 1)
+
+            self.assertEqual(encounters[0].get("resource_type"), "Encounter")
+            self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
 
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_files)
             self.assertNotIn("John Doe", combined)
@@ -189,7 +203,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds]:
+            for row in [*observations, *documents, *meds, *conds, *encounters]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)
