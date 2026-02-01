@@ -61,6 +61,24 @@ FHIR_PROC = {
     "performedPeriod": {"start": "2020-01-06T09:30:00Z", "end": "2020-01-06T10:00:00Z"},
     "code": {"text": "Procedure A"},
 }
+FHIR_DIAG_REPORT = {
+    "resourceType": "DiagnosticReport",
+    "id": "dr1",
+    "status": "final",
+    "subject": {"reference": "Patient/p1"},
+    "issued": "2020-01-07T08:00:00Z",
+    "result": [{"reference": "Observation/o1"}],
+    "code": {"text": "Basic metabolic panel"},
+}
+FHIR_DIAG_REPORT_MISSING = {
+    "resourceType": "DiagnosticReport",
+    "id": "dr2",
+    "status": "final",
+    "subject": {"reference": "Patient/p1"},
+    "issued": "2020-01-07T09:00:00Z",
+    "result": [{"reference": "Observation/missing"}],
+    "code": {"text": "Missing results"},
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -130,6 +148,8 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "cond.json", FHIR_COND)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
             _write_json(clinical_dir / "procedure.json", FHIR_PROC)
+            _write_json(clinical_dir / "diag_report.json", FHIR_DIAG_REPORT)
+            _write_json(clinical_dir / "diag_report_missing.json", FHIR_DIAG_REPORT_MISSING)
 
             base_dir = root / "out"
 
@@ -186,6 +206,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "conditions.ndjson",
                 out_local / "encounters.ndjson",
                 out_local / "procedures.ndjson",
+                out_local / "diagnostic_reports.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -197,6 +218,7 @@ class TestNdjsonExport(unittest.TestCase):
             conds = _read_ndjson(out_local / "conditions.ndjson")
             encounters = _read_ndjson(out_local / "encounters.ndjson")
             procedures = _read_ndjson(out_local / "procedures.ndjson")
+            reports = _read_ndjson(out_local / "diagnostic_reports.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1)
             self.assertEqual(len(observations), 3)
@@ -205,6 +227,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(conds), 1)
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 1)
+            self.assertEqual(len(reports), 2)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -212,13 +235,23 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(procedures[0].get("resource_type"), "Procedure")
             self.assertEqual(procedures[0].get("event_time"), "2020-01-06T09:30:00Z")
 
+            report_by_id = {r.get("source_id"): r for r in reports}
+            self.assertIn("DiagnosticReport/dr1", report_by_id)
+            self.assertIn("DiagnosticReport/dr2", report_by_id)
+
+            fhir_obs = [o for o in observations if o.get("resource_type") == "Observation" and o.get("source") == "fhir"]
+            self.assertTrue(fhir_obs)
+            obs_key = fhir_obs[0].get("record_key")
+            self.assertIn(obs_key, report_by_id["DiagnosticReport/dr1"].get("result_observation_record_keys", []))
+            self.assertNotIn("result_observation_record_keys", report_by_id["DiagnosticReport/dr2"])
+
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_files)
             self.assertNotIn("John Doe", combined)
             self.assertNotIn("Doe, John", combined)
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

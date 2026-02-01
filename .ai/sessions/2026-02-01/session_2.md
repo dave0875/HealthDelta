@@ -7,3 +7,6 @@ Goal
 
 Notes
 - Add DiagnosticReport stream, link to Observations when references resolve.
+
+Local verification
+- TZ=UTC python3 -m unittest tests/test_ndjson_export.py -v
