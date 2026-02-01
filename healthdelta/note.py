@@ -74,7 +74,7 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
     try:
         with progress.phase("note: scan tables"):
             present = _tables_present(con)
-            tables = [t for t in ["observations", "documents", "medications", "conditions"] if t in present]
+            tables = [t for t in ["observations", "documents", "medications", "conditions", "encounters", "procedures", "diagnostic_reports"] if t in present]
 
         def union_all(select_expr: str) -> str | None:
             if not tables:
@@ -128,8 +128,9 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         # totals per table (include even if missing)
         with progress.phase("note: compute totals"):
             totals: dict[str, int] = {}
-            task = progress.task("note: compute totals", total=4, unit="tables")
-            for t in ["observations", "documents", "medications", "conditions"]:
+            total_keys = ["observations", "documents", "medications", "conditions", "encounters", "procedures", "diagnostic_reports"]
+            task = progress.task("note: compute totals", total=len(total_keys), unit="tables")
+            for t in total_keys:
                 if t in present:
                     totals[t] = int(_scalar(con, f"SELECT COUNT(*) FROM {t};") or 0)
                 else:
@@ -183,6 +184,9 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         lines.append(f"totals.documents={totals['documents']}")
         lines.append(f"totals.medications={totals['medications']}")
         lines.append(f"totals.conditions={totals['conditions']}")
+        lines.append(f"totals.encounters={totals['encounters']}")
+        lines.append(f"totals.procedures={totals['procedures']}")
+        lines.append(f"totals.diagnostic_reports={totals['diagnostic_reports']}")
         lines.append(f"sources.healthkit={sources['healthkit']}")
         lines.append(f"sources.fhir={sources['fhir']}")
         lines.append(f"sources.cda={sources['cda']}")

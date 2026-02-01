@@ -125,6 +125,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 t
                 for t in [
                     "conditions",
+                    "diagnostic_reports",
                     "documents",
                     "encounters",
                     "medications",
@@ -335,6 +336,24 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                     if isinstance(pid, str) and isinstance(rt, str)
                 ]
             )
+        if "diagnostic_reports" in streams:
+            type_rows.extend(
+                [
+                    (pid, f"diagnostic_reports:{rt}", int(n))
+                    for pid, rt, n in _rows(
+                        con,
+                        """
+                        SELECT canonical_person_id,
+                               COALESCE(resource_type, code, 'unknown') AS record_type,
+                               COUNT(*) AS n
+                        FROM diagnostic_reports
+                        GROUP BY canonical_person_id, record_type
+                        ORDER BY canonical_person_id, n DESC, record_type ASC;
+                        """,
+                    )
+                    if isinstance(pid, str) and isinstance(rt, str)
+                ]
+            )
 
         types_by_person: dict[str, list[tuple[str, int]]] = {p: [] for p in people}
         for pid, type_key, n in type_rows:
@@ -383,6 +402,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 "conditions_rows",
                 "encounters_rows",
                 "procedures_rows",
+                "diagnostic_reports_rows",
                 "min_event_time",
                 "max_event_time",
             ]
@@ -398,6 +418,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                         int(rows_map.get("conditions", 0)),
                         int(rows_map.get("encounters", 0)),
                         int(rows_map.get("procedures", 0)),
+                        int(rows_map.get("diagnostic_reports", 0)),
                         p.get("min_event_time") or "",
                         p.get("max_event_time") or "",
                     ]
@@ -554,7 +575,7 @@ def show_report(*, db_path: str) -> None:
         present = _tables_present(con)
         streams = [
             t
-            for t in ["observations", "documents", "medications", "conditions", "encounters", "procedures"]
+            for t in ["observations", "documents", "medications", "conditions", "encounters", "procedures", "diagnostic_reports"]
             if t in present
         ]
         print("HealthDelta Report (terminal)")
