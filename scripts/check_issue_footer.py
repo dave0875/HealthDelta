@@ -164,13 +164,15 @@ def main() -> int:
     args = parser.parse_args()
 
     commits, notes = _resolve_commit_range_with_notes()
-    for note in notes:
-        print(f"governance-info: {note}")
+    if not args.print_issue:
+        for note in notes:
+            print(f"governance-info: {note}")
     if not commits:
-        print("governance-warning: commit Issue footer check skipped (no resolvable commits).")
-        print("what happened: git history context was incomplete or rewritten.")
-        print("what was checked instead: PR metadata and other durable governance artifacts still run.")
-        print("how to fix: ensure checkout has history (fetch-depth: 0) or rerun after refs are available.")
+        if not args.print_issue:
+            print("governance-warning: commit Issue footer check skipped (no resolvable commits).")
+            print("what happened: git history context was incomplete or rewritten.")
+            print("what was checked instead: PR metadata and other durable governance artifacts still run.")
+            print("how to fix: ensure checkout has history (fetch-depth: 0) or rerun after refs are available.")
         return 0
 
     messages: list[str] = []
@@ -178,16 +180,18 @@ def main() -> int:
     for sha in commits:
         msg = _git_try("log", "-1", "--format=%B", sha)
         if msg is None:
-            print(f"governance-info: commit {sha[:12]} is unavailable locally; skipped.")
+            if not args.print_issue:
+                print(f"governance-info: commit {sha[:12]} is unavailable locally; skipped.")
             continue
         resolved.append(sha)
         messages.append(msg)
     commits = resolved
     if not commits:
-        print("governance-warning: no readable commit messages were available for Issue footer checks.")
-        print("what happened: commit objects referenced by event metadata were missing after history rewrite.")
-        print("what was checked instead: PR metadata checks remain authoritative for this run.")
-        print("how to fix: push updated refs or rerun with full commit history fetched.")
+        if not args.print_issue:
+            print("governance-warning: no readable commit messages were available for Issue footer checks.")
+            print("what happened: commit objects referenced by event metadata were missing after history rewrite.")
+            print("what was checked instead: PR metadata checks remain authoritative for this run.")
+            print("how to fix: push updated refs or rerun with full commit history fetched.")
         return 0
 
     missing = commits_missing_issue_footer(messages)
