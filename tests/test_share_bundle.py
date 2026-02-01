@@ -1,5 +1,6 @@
 import io
 import json
+import csv
 import subprocess
 import sys
 import tarfile
@@ -98,6 +99,7 @@ class TestShareBundle(unittest.TestCase):
                 self.assertIn(f"{run_id}/note/doctor_note.txt", names)
                 self.assertIn(f"{run_id}/deid/source/export.xml", names)
                 self.assertIn(f"{run_id}/registry/run_entry.json", names)
+                self.assertIn(f"{run_id}/registry/validation_log.txt", names)
                 self.assertIn(f"{run_id}/registry/bundle_manifest.csv", names)
 
                 self.assertFalse(any("/staging/" in n or n.startswith(f"{run_id}/staging") for n in names))
@@ -108,6 +110,22 @@ class TestShareBundle(unittest.TestCase):
                 reg_obj = json.loads(reg.read().decode("utf-8"))
                 self.assertEqual(reg_obj.get("run_id"), run_id)
                 self.assertNotIn("notes", reg_obj)
+
+                manifest_f = tf.extractfile(f"{run_id}/registry/bundle_manifest.csv")
+                self.assertIsNotNone(manifest_f)
+                manifest_rows = list(csv.DictReader(manifest_f.read().decode("utf-8").splitlines()))
+                by_path = {r["path"]: r for r in manifest_rows}
+                required = [
+                    f"{run_id}/ndjson/observations.ndjson",
+                    f"{run_id}/duckdb/run.duckdb",
+                    f"{run_id}/reports/summary.json",
+                    f"{run_id}/note/doctor_note.txt",
+                    f"{run_id}/registry/run_entry.json",
+                    f"{run_id}/registry/validation_log.txt",
+                ]
+                for req in required:
+                    self.assertIn(req, by_path)
+                    self.assertEqual(len(by_path[req]["sha256"]), 64)
 
     def test_share_verify_rejects_disallowed_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
