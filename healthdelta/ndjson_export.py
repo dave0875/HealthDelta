@@ -217,6 +217,19 @@ def _extract_fhir_subject_patient_id(resource: dict) -> str | None:
     return None
 
 
+def _extract_fhir_reference_id(ref: str, resource_type: str) -> str | None:
+    if not isinstance(ref, str) or not ref.strip():
+        return None
+    ref = ref.strip()
+    prefix = f"{resource_type}/"
+    if ref.startswith(prefix):
+        return ref.split("/", 1)[1]
+    token = f"/{resource_type}/"
+    if token in ref:
+        return ref.rsplit("/", 1)[1]
+    return None
+
+
 def _walk_source_fhir_files(ctx: ExportContext) -> Iterable[tuple[str, dict]]:
     for rel in ctx.clinical_json_rels:
         p = ctx.root_dir / rel
@@ -330,18 +343,36 @@ def _fhir_event_time(resource: dict) -> str | None:
             end = period.get("end")
             if isinstance(end, str):
                 return _normalize_time(end)
+    if rt == "DiagnosticReport":
+        t = resource.get("effectiveDateTime")
+        if isinstance(t, str):
+            return _normalize_time(t)
+        period = resource.get("effectivePeriod")
+        if isinstance(period, dict):
+            start = period.get("start")
+            if isinstance(start, str):
+                return _normalize_time(start)
+            end = period.get("end")
+            if isinstance(end, str):
+                return _normalize_time(end)
+        issued = resource.get("issued")
+        if isinstance(issued, str):
+            return _normalize_time(issued)
     return None
 
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
     conds: list[dict] = []
     encounters: list[dict] = []
     procedures: list[dict] = []
+    diagnostic_reports: list[dict] = []
+    observation_keys: dict[str, str] = {}
+    pending_report_links: list[tuple[dict, list[str]]] = []
 
     task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
     for rel in ctx.clinical_json_rels:
@@ -408,6 +439,9 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             observations.append(base)
+            if rid and isinstance(base.get("record_key"), str):
+                observation_keys[rid] = base["record_key"]
+                observation_keys[f"Observation/{rid}"] = base["record_key"]
         elif rt == "DocumentReference":
             t = res.get("type")
             if isinstance(t, dict):
@@ -490,9 +524,70 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             procedures.append(base)
+        elif rt == "DiagnosticReport":
+            status = res.get("status")
+            if isinstance(status, str):
+                base["status"] = status
+            code = res.get("code")
+            if isinstance(code, dict):
+                coding = code.get("coding")
+                if isinstance(coding, list):
+                    codings = []
+                    for c in coding:
+                        if not isinstance(c, dict):
+                            continue
+                        system = c.get("system")
+                        code_val = c.get("code")
+                        if isinstance(system, str) and isinstance(code_val, str) and system.strip() and code_val.strip():
+                            codings.append({"system": system, "code": code_val})
+                    if codings:
+                        base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            result_refs: list[str] = []
+            result = res.get("result")
+            if isinstance(result, list):
+                for item in result:
+                    if not isinstance(item, dict):
+                        continue
+                    ref = item.get("reference")
+                    if not isinstance(ref, str):
+                        continue
+                    obs_id = _extract_fhir_reference_id(ref, "Observation")
+                    if obs_id:
+                        result_refs.append(obs_id)
+            if result_refs:
+                resolved = sorted(
+                    {
+                        observation_keys.get(r) or observation_keys.get(f"Observation/{r}")
+                        for r in result_refs
+                        if observation_keys.get(r) or observation_keys.get(f"Observation/{r}")
+                    }
+                )
+                if resolved:
+                    base["result_observation_record_keys"] = resolved
+                else:
+                    pending_report_links.append((base, result_refs))
+            diagnostic_reports.append(base)
         task_files.advance(1)
 
-    return observations, documents, meds, conds, encounters, procedures
+    if pending_report_links:
+        for report, refs in pending_report_links:
+            resolved = sorted(
+                {
+                    observation_keys.get(r) or observation_keys.get(f"Observation/{r}")
+                    for r in refs
+                    if observation_keys.get(r) or observation_keys.get(f"Observation/{r}")
+                }
+            )
+            if resolved:
+                report["result_observation_record_keys"] = resolved
+
+    for report in diagnostic_reports:
+        report["event_key"] = _sha256_bytes(
+            json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+        report["record_key"] = report["event_key"]
+
+    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
 
 
 def _export_cda_observations(ctx: ExportContext) -> list[dict]:
@@ -567,6 +662,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_conds,
             fhir_encounters,
             fhir_procedures,
+            fhir_reports,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs = _export_cda_observations(ctx)
@@ -577,6 +673,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     conds = [*fhir_conds]
     encounters = [*fhir_encounters]
     procedures = [*fhir_procedures]
+    diagnostic_reports = [*fhir_reports]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -615,6 +712,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         conds = sort_rows(dedupe(conds))
         encounters = sort_rows(dedupe(encounters))
         procedures = sort_rows(dedupe(procedures))
+        diagnostic_reports = sort_rows(dedupe(diagnostic_reports))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -627,3 +725,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "encounters.ndjson", encounters)
         if procedures:
             _write_ndjson(out_root / "procedures.ndjson", procedures)
+        if diagnostic_reports:
+            _write_ndjson(out_root / "diagnostic_reports.ndjson", diagnostic_reports)
