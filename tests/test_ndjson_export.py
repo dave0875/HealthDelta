@@ -52,6 +52,7 @@ FHIR_ENCOUNTER = {
     "status": "finished",
     "subject": {"reference": "Patient/p1"},
     "period": {"start": "2020-01-05T10:00:00Z", "end": "2020-01-05T12:00:00Z"},
+}
 FHIR_PROC = {
     "resourceType": "Procedure",
     "id": "pr1",

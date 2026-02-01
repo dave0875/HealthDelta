@@ -1,9 +1,13 @@
 # Session 1 — 2026-02-01
 
-Issue: #99
+Issue: #74
 
 Goal
-- Fix Issue footer checker to handle force-push commit ranges without failing CI.
+- Rebase Procedure export after Encounter merge and resolve conflicts.
 
 Notes
-- Add tests covering push event with missing base SHA and normal ancestor case.
+- Merged Encounter + Procedure handling across NDJSON export, DuckDB loader, reporting, and tests.
+- Fixed test_ndjson_export fixture definition and validated locally.
+
+Local verification
+- TZ=UTC python3 -m unittest tests/test_ndjson_export.py -v
