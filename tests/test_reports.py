@@ -123,6 +123,7 @@ class TestReports(unittest.TestCase):
                 out_dir / "coverage_by_person.csv",
                 out_dir / "coverage_by_source.csv",
                 out_dir / "timeline_daily_counts.csv",
+                out_dir / "reference_integrity_unresolved.csv",
             ]
             for p in expected_paths:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -138,6 +139,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(summary["tables"]["conditions"]["total_rows"], 2)
             self.assertEqual(summary["tables"]["encounters"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["procedures"]["total_rows"], 1)
+            self.assertEqual(summary["reference_integrity"]["unresolved_reference_rows_total"], 0)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-08T09:00:00Z")
@@ -206,6 +208,83 @@ class TestReports(unittest.TestCase):
             self.assertEqual(run2.returncode, 0, msg=f"stdout={run2.stdout}\nstderr={run2.stderr}")
             self.assertEqual((out_dir / "summary.json").read_bytes(), before_json)
             self.assertEqual((out_dir / "summary.md").read_bytes(), before_md)
+
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_report_build_writes_unresolved_reference_integrity_report(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ndjson = root / "ndjson"
+            ndjson.mkdir(parents=True, exist_ok=True)
+
+            _write_text(
+                ndjson / "encounters.ndjson",
+                "\n".join(
+                    [
+                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/encounter_ok.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e-ok","resource_type":"Encounter","source_id":"Encounter/e-ok","status":"finished"}',
+                        '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/encounter_bad_1.json","event_time":"2020-01-05T11:00:00Z","run_id":"run-1","event_key":"e-bad-1","resource_type":"Encounter","source_id":"Encounter/e-bad-1","status":"finished"}',
+                        '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/encounter_bad_2.json","event_time":"2020-01-05T12:00:00Z","run_id":"run-1","event_key":"e-bad-2","resource_type":"Encounter","source_id":"Encounter/e-bad-2","status":"finished"}',
+                    ]
+                )
+                + "\n",
+            )
+            _write_text(
+                ndjson / "procedures.ndjson",
+                '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/procedure_bad.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p-bad-1","resource_type":"Procedure","source_id":"Procedure/p-bad-1","status":"completed"}\n',
+            )
+            _write_text(
+                ndjson / "observations.ndjson",
+                '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/immunization_bad.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i-bad-1","resource_type":"Immunization","source_id":"Immunization/i-bad-1","status":"completed"}\n',
+            )
+
+            db_path = root / "out.duckdb"
+            build = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "build",
+                    "--input",
+                    str(ndjson),
+                    "--db",
+                    str(db_path),
+                    "--replace",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+
+            out_dir = root / "report"
+            run1 = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "report",
+                    "build",
+                    "--db",
+                    str(db_path),
+                    "--out",
+                    str(out_dir),
+                    "--mode",
+                    "share",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run1.returncode, 0, msg=f"stdout={run1.stdout}\nstderr={run1.stderr}")
+
+            rows = _read_csv(out_dir / "reference_integrity_unresolved.csv")
+            got = {(r["reference_type"]): r["rows"] for r in rows}
+            self.assertEqual(got.get("Encounter.subject"), "2")
+            self.assertEqual(got.get("Procedure.subject"), "1")
+            self.assertEqual(got.get("Immunization.patient"), "1")
+
+            summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            integrity = summary.get("reference_integrity")
+            self.assertIsInstance(integrity, dict)
+            self.assertEqual(integrity.get("unresolved_reference_rows_total"), 4)
 
 
 if __name__ == "__main__":

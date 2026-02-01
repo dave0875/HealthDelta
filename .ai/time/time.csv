@@ -67,3 +67,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,76,,20,codex,,"Export MedicationStatement/MedicationDispense"
 2026-02-01,77,,20,codex,,"Export AllergyIntolerance + Immunization"
 2026-02-01,78,,25,codex,,"subject.identifier and patient.identifier resolution with ambiguity guard"
+2026-02-01,79,,20,codex,,"unresolved reference integrity report outputs and tests"
