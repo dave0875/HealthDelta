@@ -38,6 +38,9 @@ SYNTH_FHIR_OBS = {
     "resourceType": "Observation",
     "id": "o1",
     "subject": {"display": "John Doe"},
+    "comments": "Patient John Doe reported chest pain at Mercy Hospital.",
+    "text": {"status": "generated", "div": "<div>John Doe narrative</div>"},
+    "note": [{"text": "John Doe says he feels better today."}],
 }
 
 
@@ -114,6 +117,11 @@ class TestDeid(unittest.TestCase):
             self.assertNotIn("Doe, John", all_text)
             self.assertNotIn("19800102", all_text)  # CDA birthTime
             self.assertNotIn("1980-01-02", all_text)  # FHIR birthDate
+
+            obs_obj = json.loads((out_dir / obs_rel).read_text(encoding="utf-8"))
+            self.assertEqual(obs_obj.get("comments"), "[REDACTED_TEXT]")
+            self.assertEqual(obs_obj.get("text"), {"status": "generated", "div": "[REDACTED_TEXT]"})
+            self.assertEqual(obs_obj.get("note"), [{"text": "[REDACTED_TEXT]"}])
 
             # Determinism: running again yields identical mapping and identical deid export.xml bytes
             out_dir_2 = root / "data" / "deid" / "run123_2"

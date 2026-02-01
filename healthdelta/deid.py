@@ -30,6 +30,29 @@ def _read_json(path: Path) -> Any:
 
 
 _WS_RE = re.compile(r"\s+")
+FHIR_TEXT_PLACEHOLDER = "[REDACTED_TEXT]"
+FHIR_FREE_TEXT_RESOURCE_TYPES = {
+    "AllergyIntolerance",
+    "Condition",
+    "DiagnosticReport",
+    "DocumentReference",
+    "Encounter",
+    "Immunization",
+    "MedicationDispense",
+    "MedicationRequest",
+    "MedicationStatement",
+    "Observation",
+    "Procedure",
+}
+FHIR_FREE_TEXT_KEYS = {
+    "comments",
+    "conclusion",
+    "description",
+    "display",
+    "instructions",
+    "title",
+    "valueString",
+}
 
 
 def _collapse_ws(s: str) -> str:
@@ -134,8 +157,48 @@ def _deep_replace_strings(obj: Any, *, people: list[PersonPseudonym]) -> Any:
     return obj
 
 
+def _redact_fhir_free_text(obj: Any) -> Any:
+    if isinstance(obj, list):
+        return [_redact_fhir_free_text(v) for v in obj]
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for key, value in obj.items():
+            if key in FHIR_FREE_TEXT_KEYS and isinstance(value, str):
+                out[key] = FHIR_TEXT_PLACEHOLDER
+                continue
+            if key == "text" and isinstance(value, dict):
+                # Keep narrative status while redacting XHTML/string payload.
+                status = value.get("status")
+                out[key] = {
+                    "status": status if isinstance(status, str) else "generated",
+                    "div": FHIR_TEXT_PLACEHOLDER,
+                }
+                continue
+            if key == "note" and isinstance(value, list):
+                notes: list[Any] = []
+                for item in value:
+                    if isinstance(item, dict):
+                        redacted = dict(item)
+                        if isinstance(redacted.get("text"), str):
+                            redacted["text"] = FHIR_TEXT_PLACEHOLDER
+                        notes.append(_redact_fhir_free_text(redacted))
+                    elif isinstance(item, str):
+                        notes.append(FHIR_TEXT_PLACEHOLDER)
+                    else:
+                        notes.append(_redact_fhir_free_text(item))
+                out[key] = notes
+                continue
+            out[key] = _redact_fhir_free_text(value)
+        return out
+    return obj
+
+
 def _deid_fhir_json(obj: Any, people: list[PersonPseudonym]) -> Any:
     obj = _deep_replace_strings(obj, people=people)
+    if isinstance(obj, dict):
+        rt = obj.get("resourceType")
+        if isinstance(rt, str) and rt in FHIR_FREE_TEXT_RESOURCE_TYPES:
+            obj = _redact_fhir_free_text(obj)
     if isinstance(obj, dict) and obj.get("resourceType") == "Patient":
         names = obj.get("name")
         if isinstance(names, list):
