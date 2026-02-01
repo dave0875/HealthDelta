@@ -214,6 +214,11 @@ def _extract_fhir_subject_patient_id(resource: dict) -> str | None:
         ref = subj.get("reference")
         if isinstance(ref, str) and ref.startswith("Patient/"):
             return ref.split("/", 1)[1]
+    patient = resource.get("patient")
+    if isinstance(patient, dict):
+        ref = patient.get("reference")
+        if isinstance(ref, str) and ref.startswith("Patient/"):
+            return ref.split("/", 1)[1]
     return None
 
 
@@ -340,6 +345,17 @@ def _fhir_event_time(resource: dict) -> str | None:
         onset = resource.get("onsetDateTime")
         if isinstance(onset, str):
             return _normalize_time(onset)
+    if rt == "AllergyIntolerance":
+        onset = resource.get("onsetDateTime")
+        if isinstance(onset, str):
+            return _normalize_time(onset)
+        t = resource.get("recordedDate")
+        if isinstance(t, str):
+            return _normalize_time(t)
+    if rt == "Immunization":
+        t = resource.get("occurrenceDateTime")
+        if isinstance(t, str):
+            return _normalize_time(t)
     if rt == "Encounter":
         period = resource.get("period")
         if isinstance(period, dict):
@@ -489,7 +505,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             meds.append(base)
-        elif rt == "Condition":
+        elif rt in {"Condition", "AllergyIntolerance"}:
             code = res.get("code")
             if isinstance(code, dict):
                 coding = code.get("coding")
@@ -507,6 +523,27 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             conds.append(base)
+        elif rt == "Immunization":
+            status = res.get("status")
+            if isinstance(status, str):
+                base["status"] = status
+            vaccine_code = res.get("vaccineCode")
+            if isinstance(vaccine_code, dict):
+                coding = vaccine_code.get("coding")
+                if isinstance(coding, list):
+                    codings = []
+                    for c in coding:
+                        if not isinstance(c, dict):
+                            continue
+                        system = c.get("system")
+                        code_val = c.get("code")
+                        if isinstance(system, str) and isinstance(code_val, str) and system.strip() and code_val.strip():
+                            codings.append({"system": system, "code": code_val})
+                    if codings:
+                        base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            observations.append(base)
         elif rt == "Encounter":
             status = res.get("status")
             if isinstance(status, str):
