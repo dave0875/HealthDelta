@@ -69,3 +69,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,78,,25,codex,,"subject.identifier and patient.identifier resolution with ambiguity guard"
 2026-02-01,79,,20,codex,,"unresolved reference integrity report outputs and tests"
 2026-02-01,80,,20,codex,,"de-id free-text narrative redaction for FHIR resources"
+2026-02-01,81,,20,codex,,"CDA discharge sections and encounter timing coverage"
