@@ -39,6 +39,20 @@ FHIR_MED = {
     "subject": {"reference": "Patient/p1"},
     "authoredOn": "2020-01-03T00:00:00Z",
 }
+FHIR_MED_STATEMENT = {
+    "resourceType": "MedicationStatement",
+    "id": "ms1",
+    "status": "active",
+    "subject": {"reference": "Patient/p1"},
+    "effectiveDateTime": "2020-01-03T06:00:00Z",
+}
+FHIR_MED_DISPENSE = {
+    "resourceType": "MedicationDispense",
+    "id": "md1",
+    "status": "completed",
+    "subject": {"reference": "Patient/p1"},
+    "whenHandedOver": "2020-01-03T12:00:00Z",
+}
 FHIR_COND = {
     "resourceType": "Condition",
     "id": "c1",
@@ -145,6 +159,8 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "obs.json", FHIR_OBS)
             _write_json(clinical_dir / "doc.json", FHIR_DOC)
             _write_json(clinical_dir / "med.json", FHIR_MED)
+            _write_json(clinical_dir / "med_statement.json", FHIR_MED_STATEMENT)
+            _write_json(clinical_dir / "med_dispense.json", FHIR_MED_DISPENSE)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
             _write_json(clinical_dir / "procedure.json", FHIR_PROC)
@@ -223,7 +239,7 @@ class TestNdjsonExport(unittest.TestCase):
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1)
             self.assertEqual(len(observations), 3)
             self.assertEqual(len(documents), 1)
-            self.assertEqual(len(meds), 1)
+            self.assertEqual(len(meds), 3)
             self.assertEqual(len(conds), 1)
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 1)
@@ -244,6 +260,11 @@ class TestNdjsonExport(unittest.TestCase):
             obs_key = fhir_obs[0].get("record_key")
             self.assertIn(obs_key, report_by_id["DiagnosticReport/dr1"].get("result_observation_record_keys", []))
             self.assertNotIn("result_observation_record_keys", report_by_id["DiagnosticReport/dr2"])
+            med_types = {m.get("resource_type") for m in meds}
+            self.assertEqual(
+                med_types,
+                {"MedicationRequest", "MedicationStatement", "MedicationDispense"},
+            )
 
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_files)
             self.assertNotIn("John Doe", combined)

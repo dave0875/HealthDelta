@@ -314,6 +314,25 @@ def _fhir_event_time(resource: dict) -> str | None:
         t = resource.get("authoredOn")
         if isinstance(t, str):
             return _normalize_time(t)
+    if rt == "MedicationStatement":
+        t = resource.get("effectiveDateTime")
+        if isinstance(t, str):
+            return _normalize_time(t)
+        period = resource.get("effectivePeriod")
+        if isinstance(period, dict):
+            start = period.get("start")
+            if isinstance(start, str):
+                return _normalize_time(start)
+            end = period.get("end")
+            if isinstance(end, str):
+                return _normalize_time(end)
+    if rt == "MedicationDispense":
+        t = resource.get("whenHandedOver")
+        if isinstance(t, str):
+            return _normalize_time(t)
+        t = resource.get("whenPrepared")
+        if isinstance(t, str):
+            return _normalize_time(t)
     if rt == "Condition":
         t = resource.get("recordedDate")
         if isinstance(t, str):
@@ -463,7 +482,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             documents.append(base)
-        elif rt == "MedicationRequest":
+        elif rt in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
