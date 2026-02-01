@@ -49,7 +49,20 @@ Note: CLI packaging version is tag-derived; do not manually edit a fixed `versio
 - Local dev (Compose): `docker compose -f compose.backend.dev.yaml up --build`
 - Version injection for containers:
   - Build args: `HEALTHDELTA_VERSION`, `HEALTHDELTA_GIT_SHA`
-  - Runtime env vars: `HEALTHDELTA_VERSION`, `HEALTHDELTA_GIT_SHA`
+- Runtime env vars: `HEALTHDELTA_VERSION`, `HEALTHDELTA_GIT_SHA`
+
+## Orin production target (planning baseline)
+
+Target host: `orin.local` (Jetson Orin Nano Super, local-only analytics).
+
+Deployment proof for Orin-target issues must include:
+- CI workflow/job evidence for build + tests tied to the issue.
+- Artifact evidence for deployment package contents and version metadata.
+- Smoke verification evidence from target-compatible run steps (`/healthz`, `/version`, and issue-scoped endpoint checks).
+- Rollback procedure evidence that restores a known-good version deterministically.
+
+Planning/sequence is tracked by:
+- `docs/plan.md` Orin phase issues: #120-#128.
 
 ## References
 - Production targets ADR: `docs/adr/ADR_5_continuous_deployment_targets.md`
