@@ -69,8 +69,17 @@ def _resolve_commit_range() -> list[str]:
 
     if head and base and base != "0" * 40:
         try:
+            subprocess.check_call(["git", "merge-base", "--is-ancestor", base, head])
             mb = _git("merge-base", base, head)
             commits = _git("rev-list", f"{mb}..{head}").splitlines()
+            return commits or [head]
+        except Exception:
+            pass
+
+        try:
+            main_ref = _git("rev-parse", "origin/main")
+            merge_base = _git("merge-base", head, main_ref)
+            commits = _git("rev-list", f"{merge_base}..{head}").splitlines()
             return commits or [head]
         except Exception:
             commits = _git("rev-list", f"{base}..{head}").splitlines()
