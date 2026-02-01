@@ -60,6 +60,21 @@ FHIR_COND = {
     "recordedDate": "2020-01-04T00:00:00Z",
     "code": {"text": "Hypertension"},
 }
+FHIR_ALLERGY = {
+    "resourceType": "AllergyIntolerance",
+    "id": "a1",
+    "subject": {"reference": "Patient/p1"},
+    "onsetDateTime": "2020-01-04T07:00:00Z",
+    "code": {"text": "Peanut allergy"},
+}
+FHIR_IMMUNIZATION = {
+    "resourceType": "Immunization",
+    "id": "i1",
+    "status": "completed",
+    "patient": {"reference": "Patient/p1"},
+    "occurrenceDateTime": "2020-01-08T09:00:00Z",
+    "vaccineCode": {"text": "Influenza"},
+}
 FHIR_ENCOUNTER = {
     "resourceType": "Encounter",
     "id": "e1",
@@ -162,6 +177,8 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "med_statement.json", FHIR_MED_STATEMENT)
             _write_json(clinical_dir / "med_dispense.json", FHIR_MED_DISPENSE)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
+            _write_json(clinical_dir / "allergy.json", FHIR_ALLERGY)
+            _write_json(clinical_dir / "immunization.json", FHIR_IMMUNIZATION)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
             _write_json(clinical_dir / "procedure.json", FHIR_PROC)
             _write_json(clinical_dir / "diag_report.json", FHIR_DIAG_REPORT)
@@ -236,11 +253,11 @@ class TestNdjsonExport(unittest.TestCase):
             procedures = _read_ndjson(out_local / "procedures.ndjson")
             reports = _read_ndjson(out_local / "diagnostic_reports.ndjson")
 
-            # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1)
-            self.assertEqual(len(observations), 3)
+            # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (1)
+            self.assertEqual(len(observations), 4)
             self.assertEqual(len(documents), 1)
             self.assertEqual(len(meds), 3)
-            self.assertEqual(len(conds), 1)
+            self.assertEqual(len(conds), 2)
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 1)
             self.assertEqual(len(reports), 2)
@@ -250,6 +267,14 @@ class TestNdjsonExport(unittest.TestCase):
 
             self.assertEqual(procedures[0].get("resource_type"), "Procedure")
             self.assertEqual(procedures[0].get("event_time"), "2020-01-06T09:30:00Z")
+
+            allergy_rows = [c for c in conds if c.get("resource_type") == "AllergyIntolerance"]
+            self.assertEqual(len(allergy_rows), 1)
+            self.assertEqual(allergy_rows[0].get("event_time"), "2020-01-04T07:00:00Z")
+
+            imm_rows = [o for o in observations if o.get("resource_type") == "Immunization"]
+            self.assertEqual(len(imm_rows), 1)
+            self.assertEqual(imm_rows[0].get("event_time"), "2020-01-08T09:00:00Z")
 
             report_by_id = {r.get("source_id"): r for r in reports}
             self.assertIn("DiagnosticReport/dr1", report_by_id)

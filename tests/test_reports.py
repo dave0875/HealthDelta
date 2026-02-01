@@ -46,6 +46,7 @@ class TestReports(unittest.TestCase):
                         '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
                         % pii_patient_id,
                         '{"canonical_person_id":"person-1","source":"cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/immunization.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i1","resource_type":"Immunization","source_id":"Immunization/i1","status":"completed"}',
                     ]
                 )
                 + "\n",
@@ -60,7 +61,13 @@ class TestReports(unittest.TestCase):
             )
             _write_text(
                 ndjson / "conditions.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1","code":"I10"}\n',
+                "\n".join(
+                    [
+                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"run-1","event_key":"c1","resource_type":"Condition","source_id":"Condition/c1","code":"I10"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/allergy.json","event_time":"2020-01-04T07:00:00Z","run_id":"run-1","event_key":"a1","resource_type":"AllergyIntolerance","source_id":"AllergyIntolerance/a1"}',
+                    ]
+                )
+                + "\n",
             )
             _write_text(
                 ndjson / "encounters.ndjson",
@@ -125,36 +132,36 @@ class TestReports(unittest.TestCase):
             before_md = (out_dir / "summary.md").read_bytes()
 
             summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["tables"]["observations"]["total_rows"], 3)
+            self.assertEqual(summary["tables"]["observations"]["total_rows"], 4)
             self.assertEqual(summary["tables"]["documents"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["medications"]["total_rows"], 1)
-            self.assertEqual(summary["tables"]["conditions"]["total_rows"], 1)
+            self.assertEqual(summary["tables"]["conditions"]["total_rows"], 2)
             self.assertEqual(summary["tables"]["encounters"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["procedures"]["total_rows"], 1)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
-            self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-01T11:22:33Z")
+            self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-08T09:00:00Z")
 
             per_person = {p["canonical_person_id"]: p for p in summary["per_person"]}
             self.assertIn("person-1", per_person)
-            self.assertEqual(per_person["person-1"]["rows_by_table"]["observations"], 3)
+            self.assertEqual(per_person["person-1"]["rows_by_table"]["observations"], 4)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["documents"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["medications"], 1)
-            self.assertEqual(per_person["person-1"]["rows_by_table"]["conditions"], 1)
+            self.assertEqual(per_person["person-1"]["rows_by_table"]["conditions"], 2)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["encounters"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["procedures"], 1)
             self.assertEqual(per_person["person-1"]["min_event_time"], "2020-01-01T01:02:03Z")
-            self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-06T09:30:00Z")
+            self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-08T09:00:00Z")
 
             by_source = _read_csv(out_dir / "coverage_by_source.csv")
             # Stable expectations: stream+source rows
             expected = {
                 ("observations", "cda"): "1",
-                ("observations", "fhir"): "1",
                 ("observations", "healthkit"): "1",
+                ("observations", "fhir"): "2",
                 ("documents", "fhir"): "1",
                 ("medications", "fhir"): "1",
-                ("conditions", "fhir"): "1",
+                ("conditions", "fhir"): "2",
                 ("encounters", "fhir"): "1",
                 ("procedures", "fhir"): "1",
             }
@@ -168,6 +175,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(day_stream_source.get(("2020-01-01", "observations", "healthkit")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-01", "observations", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-01", "observations", "cda")), "1")
+            self.assertEqual(day_stream_source.get(("2020-01-08", "observations", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-02", "documents", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-05", "encounters", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-06", "procedures", "fhir")), "1")
