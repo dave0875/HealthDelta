@@ -63,3 +63,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-01-30,96,,20,codex,,"Enforce prompt immutability in CI with tests"
 2026-01-30,96,,10,codex,,"Run unit tests for Issue #96 guardrail changes"
 2026-02-01,74,,30,codex,,"Rebase + conflict resolution for Procedure export; fix ndjson export test"
+2026-02-01,75,,20,codex,,"Export DiagnosticReport NDJSON with Observation linkage"
