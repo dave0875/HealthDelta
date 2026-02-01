@@ -235,6 +235,9 @@ class TestReports(unittest.TestCase):
                 ndjson / "observations.ndjson",
                 '{"canonical_person_id":"unresolved","source":"fhir","source_file":"source/clinical/immunization_bad.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i-bad-1","resource_type":"Immunization","source_id":"Immunization/i-bad-1","status":"completed"}\n',
             )
+            _write_text(ndjson / "documents.ndjson", "\n")
+            _write_text(ndjson / "medications.ndjson", "\n")
+            _write_text(ndjson / "conditions.ndjson", "\n")
 
             db_path = root / "out.duckdb"
             build = subprocess.run(
