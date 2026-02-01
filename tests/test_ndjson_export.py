@@ -141,6 +141,49 @@ EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </ClinicalDocument>
 """
 
+EXPORT_CDA_DISCHARGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3">
+  <componentOf>
+    <encompassingEncounter>
+      <effectiveTime>
+        <low value="20200110120000"/>
+        <high value="20200111103000"/>
+      </effectiveTime>
+    </encompassingEncounter>
+  </componentOf>
+  <component>
+    <structuredBody>
+      <component>
+        <section>
+          <code code="11450-4" displayName="Problem List"/>
+          <title>Problem List</title>
+          <entry>
+            <observation classCode="OBS" moodCode="EVN">
+              <effectiveTime value="20200110130000"/>
+              <code code="75326-9" displayName="Problem"/>
+              <value xsi:type="ST" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" value="Hypertension"/>
+            </observation>
+          </entry>
+        </section>
+      </component>
+      <component>
+        <section>
+          <code code="18842-5" displayName="Discharge Summary"/>
+          <title>Discharge Summary</title>
+          <entry>
+            <observation classCode="OBS" moodCode="EVN">
+              <effectiveTime value="20200111100000"/>
+              <code code="34109-9" displayName="Discharge diagnosis"/>
+              <value xsi:type="ST" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" value="Recovered"/>
+            </observation>
+          </entry>
+        </section>
+      </component>
+    </structuredBody>
+  </component>
+</ClinicalDocument>
+"""
+
 
 def _write_json(path: Path, obj: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +201,57 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 class TestNdjsonExport(unittest.TestCase):
+    def test_export_ndjson_cda_discharge_sections_and_encounter_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_dir = root / "staging" / "run-cda"
+            cda_rel = "source/unpacked/export_cda.xml"
+            (run_dir / "source" / "unpacked").mkdir(parents=True, exist_ok=True)
+            (run_dir / cda_rel).write_text(EXPORT_CDA_DISCHARGE_XML, encoding="utf-8")
+
+            _write_json(
+                run_dir / "layout.json",
+                {
+                    "run_id": "run-cda",
+                    "export_cda_xml": cda_rel,
+                    "clinical_json": [],
+                },
+            )
+
+            out_local = root / "ndjson_local"
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "export",
+                    "ndjson",
+                    "--input",
+                    str(run_dir),
+                    "--out",
+                    str(out_local),
+                    "--mode",
+                    "local",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            observations = _read_ndjson(out_local / "observations.ndjson")
+            encounters = _read_ndjson(out_local / "encounters.ndjson")
+
+            section_rows = [r for r in observations if r.get("resource_type") == "CDASection"]
+            self.assertEqual(len(section_rows), 2)
+            self.assertEqual({r.get("section_code") for r in section_rows}, {"11450-4", "18842-5"})
+
+            observation_rows = [r for r in observations if r.get("resource_type") == "CDAObservation"]
+            self.assertGreaterEqual(len(observation_rows), 2)
+
+            encounter_rows = [r for r in encounters if r.get("resource_type") == "CDAEncounter"]
+            self.assertEqual(len(encounter_rows), 1)
+            self.assertEqual(encounter_rows[0].get("event_time"), "2020-01-10T12:00:00Z")
+
     def test_export_ndjson_resolves_subject_and_patient_identifier_mappings(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

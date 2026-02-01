@@ -701,62 +701,141 @@ def _export_fhir_streams(
     return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
 
 
-def _export_cda_observations(ctx: ExportContext) -> list[dict]:
+def _xml_child_text(el: ET.Element, name: str) -> str | None:
+    for child in list(el):
+        if _localname(child.tag) != name:
+            continue
+        text = "".join(child.itertext()).strip()
+        if text:
+            return text
+    return None
+
+
+def _xml_child_attr(el: ET.Element, name: str, attr: str) -> str | None:
+    for child in list(el):
+        if _localname(child.tag) == name:
+            value = child.attrib.get(attr)
+            if isinstance(value, str) and value.strip():
+                return value
+    return None
+
+
+def _cda_effective_start_end(el: ET.Element) -> tuple[str | None, str | None]:
+    for child in list(el):
+        if _localname(child.tag) != "effectiveTime":
+            continue
+        direct_value = child.attrib.get("value")
+        if isinstance(direct_value, str) and direct_value.strip():
+            t = _normalize_time(direct_value)
+            return t, t
+        low = None
+        high = None
+        for grand in list(child):
+            ln = _localname(grand.tag)
+            v = grand.attrib.get("value")
+            if not isinstance(v, str):
+                continue
+            if ln == "low":
+                low = _normalize_time(v)
+            elif ln == "high":
+                high = _normalize_time(v)
+        return low, high
+    return None, None
+
+
+def _export_cda_streams(ctx: ExportContext) -> tuple[list[dict], list[dict]]:
     if not ctx.export_cda_rel:
-        return []
+        return [], []
     path = ctx.root_dir / ctx.export_cda_rel
     if not path.exists():
-        return []
+        return [], []
 
     observations: list[dict] = []
-    task = progress.task("Parse export_cda.xml observations", total=None, unit="rows")
-    batch = 0
-    for _, el in ET.iterparse(path, events=("end",)):
-        if _localname(el.tag) != "observation":
-            continue
+    encounters: list[dict] = []
 
-        effective_time = None
-        code_code = None
-        code_display = None
-        value_val = None
-        value_unit = None
+    root = ET.parse(path).getroot()
 
-        for child in list(el):
-            ln = _localname(child.tag)
-            if ln == "effectiveTime":
-                v = child.attrib.get("value")
-                if isinstance(v, str):
-                    effective_time = _normalize_time(v)
-            elif ln == "code":
-                code_code = child.attrib.get("code")
-                code_display = child.attrib.get("displayName")
-            elif ln == "value":
-                value_val = child.attrib.get("value")
-                value_unit = child.attrib.get("unit")
+    # Section-level rows provide deterministic, share-safe discharge summary context.
+    sections = [el for el in root.iter() if _localname(el.tag) == "section"]
+    task_sections = progress.task("Parse export_cda.xml sections", total=len(sections), unit="sections")
+    for section in sections:
+        section_code = _xml_child_attr(section, "code", "code")
+        section_display = _xml_child_attr(section, "code", "displayName")
+        section_title = _xml_child_text(section, "title")
+        section_time = _normalize_time(_xml_child_attr(section, "effectiveTime", "value"))
 
-        base = {
-            "schema_version": 2,
-            "canonical_person_id": _canonical_person_id(ctx),
-            "source": "cda",
-            "source_file": _safe_relpath(ctx.export_cda_rel),
-            "event_time": effective_time,
-            "run_id": ctx.run_id,
-            "code": code_code,
-            "value": value_val,
-            "unit": value_unit,
-        }
-        base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-        base["record_key"] = base["event_key"]
-        observations.append(base)
-        el.clear()
-        batch += 1
-        if batch >= 500:
-            task.advance(batch)
-            batch = 0
+        if section_code or section_title or section_display:
+            base = {
+                "schema_version": 2,
+                "canonical_person_id": _canonical_person_id(ctx),
+                "source": "cda",
+                "source_file": _safe_relpath(ctx.export_cda_rel),
+                "event_time": section_time,
+                "run_id": ctx.run_id,
+                "resource_type": "CDASection",
+                "section_code": section_code,
+                "section_display": section_display,
+                "section_title": section_title,
+            }
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            observations.append(base)
 
-    if batch:
-        task.advance(batch)
-    return observations
+        for observation in [el for el in section.iter() if _localname(el.tag) == "observation"]:
+            effective_time = _normalize_time(_xml_child_attr(observation, "effectiveTime", "value"))
+            code_code = _xml_child_attr(observation, "code", "code")
+            code_display = _xml_child_attr(observation, "code", "displayName")
+            value_val = _xml_child_attr(observation, "value", "value")
+            value_unit = _xml_child_attr(observation, "value", "unit")
+
+            base = {
+                "schema_version": 2,
+                "canonical_person_id": _canonical_person_id(ctx),
+                "source": "cda",
+                "source_file": _safe_relpath(ctx.export_cda_rel),
+                "event_time": effective_time,
+                "run_id": ctx.run_id,
+                "resource_type": "CDAObservation",
+                "section_code": section_code,
+                "section_display": section_display,
+                "section_title": section_title,
+                "code": code_code,
+                "value": value_val,
+                "unit": value_unit,
+            }
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            observations.append(base)
+        task_sections.advance(1)
+
+    # Encounter-like rows from discharge/service-event timing.
+    encounter_like = [
+        el
+        for el in root.iter()
+        if _localname(el.tag) in {"encompassingEncounter", "serviceEvent"}
+    ]
+    task_enc = progress.task("Parse export_cda.xml encounter timing", total=len(encounter_like), unit="rows")
+    for el in encounter_like:
+        start, end = _cda_effective_start_end(el)
+        event_time = start or end
+        if event_time:
+            base = {
+                "schema_version": 2,
+                "canonical_person_id": _canonical_person_id(ctx),
+                "source": "cda",
+                "source_file": _safe_relpath(ctx.export_cda_rel),
+                "event_time": event_time,
+                "run_id": ctx.run_id,
+                "resource_type": "CDAEncounter",
+                "start_time": start,
+                "end_time": end,
+            }
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            encounters.append(base)
+        task_enc.advance(1)
+
+    return observations, encounters
 
 
 def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
@@ -776,13 +855,13 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_reports,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
-        cda_obs = _export_cda_observations(ctx)
+        cda_obs, cda_encounters = _export_cda_streams(ctx)
 
     observations = [*healthkit_obs, *fhir_obs, *cda_obs]
     documents = [*fhir_docs]
     meds = [*fhir_meds]
     conds = [*fhir_conds]
-    encounters = [*fhir_encounters]
+    encounters = [*fhir_encounters, *cda_encounters]
     procedures = [*fhir_procedures]
     diagnostic_reports = [*fhir_reports]
 
