@@ -75,3 +75,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,84,,25,codex,,"share-safe source_system tagging through export, duckdb, and reports"
 2026-02-01,85,,20,codex,,"share bundle evidence pack with validation log + manifest checks"
 2026-02-01,86,,25,codex,,"CI guardrails for audit updates + validation evidence artifacts"
+2026-02-01,117,,45,codex,,"Managed issue worktree root + auto-prune policy guardrails"
