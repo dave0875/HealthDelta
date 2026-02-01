@@ -124,6 +124,9 @@ class TestDoctorNote(unittest.TestCase):
                 "totals.documents=1\n"
                 "totals.medications=0\n"
                 "totals.conditions=0\n"
+                "totals.encounters=0\n"
+                "totals.procedures=0\n"
+                "totals.diagnostic_reports=0\n"
                 "sources.healthkit=1\n"
                 "sources.fhir=1\n"
                 "sources.cda=1\n"
@@ -153,4 +156,3 @@ class TestDoctorNote(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

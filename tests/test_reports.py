@@ -77,6 +77,10 @@ class TestReports(unittest.TestCase):
                 ndjson / "procedures.ndjson",
                 '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/procedure.json","event_time":"2020-01-06T09:30:00Z","run_id":"run-1","event_key":"p1","resource_type":"Procedure","source_id":"Procedure/p1","status":"completed"}\n',
             )
+            _write_text(
+                ndjson / "diagnostic_reports.ndjson",
+                '{"canonical_person_id":"person-1","source":"fhir","source_file":"source/clinical/diag_report.json","event_time":"2020-01-07T08:00:00Z","run_id":"run-1","event_key":"dr1","resource_type":"DiagnosticReport","source_id":"DiagnosticReport/dr1","status":"final"}\n',
+            )
 
             db_path = root / "out.duckdb"
             build = subprocess.run(
@@ -139,6 +143,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(summary["tables"]["conditions"]["total_rows"], 2)
             self.assertEqual(summary["tables"]["encounters"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["procedures"]["total_rows"], 1)
+            self.assertEqual(summary["tables"]["diagnostic_reports"]["total_rows"], 1)
             self.assertEqual(summary["reference_integrity"]["unresolved_reference_rows_total"], 0)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
@@ -152,6 +157,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(per_person["person-1"]["rows_by_table"]["conditions"], 2)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["encounters"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["procedures"], 1)
+            self.assertEqual(per_person["person-1"]["rows_by_table"]["diagnostic_reports"], 1)
             self.assertEqual(per_person["person-1"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-08T09:00:00Z")
 
@@ -166,6 +172,7 @@ class TestReports(unittest.TestCase):
                 ("conditions", "fhir"): "2",
                 ("encounters", "fhir"): "1",
                 ("procedures", "fhir"): "1",
+                ("diagnostic_reports", "fhir"): "1",
             }
             got = {(r["stream"], r["source"]): r["rows"] for r in by_source}
             for k, v in expected.items():
@@ -181,6 +188,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(day_stream_source.get(("2020-01-02", "documents", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-05", "encounters", "fhir")), "1")
             self.assertEqual(day_stream_source.get(("2020-01-06", "procedures", "fhir")), "1")
+            self.assertEqual(day_stream_source.get(("2020-01-07", "diagnostic_reports", "fhir")), "1")
 
             combined = "".join(p.read_text(encoding="utf-8") for p in expected_paths)
             self.assertNotIn(pii_name, combined)
