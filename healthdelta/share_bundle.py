@@ -14,10 +14,11 @@ from healthdelta.state import load_registry
 from healthdelta.progress import progress
 
 
-_ALLOWLIST_DIRS: tuple[str, ...] = ("deid", "ndjson", "duckdb", "reports", "note")
+_ALLOWLIST_DIRS: tuple[str, ...] = ("deid", "ndjson", "duckdb", "reports", "note", "validation")
 _REGISTRY_DIR = "registry"
 _RUN_ENTRY_JSON = "run_entry.json"
 _BUNDLE_MANIFEST_CSV = "bundle_manifest.csv"
+_VALIDATION_LOG_TXT = "validation_log.txt"
 _MANIFEST_HEADER = ["path", "size", "sha256"]
 
 
@@ -122,6 +123,27 @@ def _safe_run_registry_snippet(*, base_out: Path, run_id: str, present_dirs: lis
     }
 
 
+def _validation_log_bytes(*, run_id: str, include_dirs: list[str], file_members: list[tuple[str, Path]]) -> bytes:
+    file_arcs = {arc for arc, _ in file_members}
+    has_duckdb_file = any(arc.startswith(f"{run_id}/duckdb/") and arc.endswith(".duckdb") for arc in file_arcs)
+    checks = {
+        "ndjson_observations": f"{run_id}/ndjson/observations.ndjson" in file_arcs,
+        "reports_summary": f"{run_id}/reports/summary.json" in file_arcs,
+        "note_doctor_note": f"{run_id}/note/doctor_note.txt" in file_arcs,
+        "duckdb_file": has_duckdb_file,
+        "validation_dir_present": "validation" in include_dirs,
+    }
+
+    lines = [
+        "HealthDelta Bundle Validation Log",
+        f"run_id={run_id}",
+        f"included_dirs={','.join(include_dirs)}",
+    ]
+    for key in sorted(checks):
+        lines.append(f"check.{key}={'pass' if checks[key] else 'missing'}")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 def build_share_bundle(*, run_dir: str, out_path: str) -> None:
     run_root = Path(run_dir)
     if not run_root.is_dir():
@@ -164,14 +186,19 @@ def build_share_bundle(*, run_dir: str, out_path: str) -> None:
     with progress.phase("bundle: build manifest"):
         snippet = _safe_run_registry_snippet(base_out=base_out, run_id=run_id, present_dirs=include_dirs)
         snippet_arc = f"{run_id}/{_REGISTRY_DIR}/{_RUN_ENTRY_JSON}"
+        validation_arc = f"{run_id}/{_REGISTRY_DIR}/{_VALIDATION_LOG_TXT}"
         dir_names.add(f"{run_id}/{_REGISTRY_DIR}/")
+        validation_bytes = _validation_log_bytes(run_id=run_id, include_dirs=include_dirs, file_members=file_members)
 
         # Manifest covers all regular files except the manifest itself.
         manifest_arc = f"{run_id}/{_REGISTRY_DIR}/{_BUNDLE_MANIFEST_CSV}"
         snippet_bytes = _stable_json_bytes(snippet)
-        manifest_entries: list[tuple[str, int, str]] = [(snippet_arc, len(snippet_bytes), _sha256_bytes(snippet_bytes))]
-        task = progress.task("bundle: hash files", total=len(file_members) + 1, unit="files")
-        task.advance(1)
+        manifest_entries: list[tuple[str, int, str]] = [
+            (snippet_arc, len(snippet_bytes), _sha256_bytes(snippet_bytes)),
+            (validation_arc, len(validation_bytes), _sha256_bytes(validation_bytes)),
+        ]
+        task = progress.task("bundle: hash files", total=len(file_members) + 2, unit="files")
+        task.advance(2)
         for arc, p in sorted(file_members, key=lambda t: t[0]):
             manifest_entries.append((arc, p.stat().st_size, _sha256_file(p)))
             task.advance(1)
@@ -180,7 +207,7 @@ def build_share_bundle(*, run_dir: str, out_path: str) -> None:
 
     # Write deterministic tar.gz (stable gzip header mtime + stable tar metadata).
     with progress.phase("bundle: write archive"):
-        total_members = len(dir_names) + 2 + len(file_members)  # dirs + snippet + manifest + files
+        total_members = len(dir_names) + 3 + len(file_members)  # dirs + snippet + validation + manifest + files
         task = progress.task("bundle: write archive", total=total_members, unit="members")
 
         with out.open("wb") as raw:
@@ -191,6 +218,9 @@ def build_share_bundle(*, run_dir: str, out_path: str) -> None:
                         task.advance(1)
 
                     tf.addfile(_tarinfo_file(snippet_arc, size=len(snippet_bytes)), io.BytesIO(snippet_bytes))
+                    task.advance(1)
+
+                    tf.addfile(_tarinfo_file(validation_arc, size=len(validation_bytes)), io.BytesIO(validation_bytes))
                     task.advance(1)
 
                     tf.addfile(_tarinfo_file(manifest_arc, size=len(manifest_bytes)), io.BytesIO(manifest_bytes))
@@ -267,11 +297,12 @@ def verify_share_bundle(*, bundle_path: str) -> list[str]:
                     # Allow only registry dir and known files.
                     if len(p.parts) == 2:
                         continue
-                    if len(p.parts) == 3 and p.parts[2] in {_RUN_ENTRY_JSON, _BUNDLE_MANIFEST_CSV}:
+                    if len(p.parts) == 3 and p.parts[2] in {_RUN_ENTRY_JSON, _BUNDLE_MANIFEST_CSV, _VALIDATION_LOG_TXT}:
                         continue
                 errors.append(f"disallowed path: {n}")
 
             run_entry_path = f"{run_id}/{_REGISTRY_DIR}/{_RUN_ENTRY_JSON}"
+            validation_path = f"{run_id}/{_REGISTRY_DIR}/{_VALIDATION_LOG_TXT}"
             manifest_path = f"{run_id}/{_REGISTRY_DIR}/{_BUNDLE_MANIFEST_CSV}"
 
             try:
@@ -285,6 +316,17 @@ def verify_share_bundle(*, bundle_path: str) -> list[str]:
                     json.loads(run_entry_f.read().decode("utf-8"))
                 except Exception as e:
                     errors.append(f"invalid JSON: {run_entry_path}: {type(e).__name__}")
+
+            try:
+                validation_f = tf.extractfile(validation_path)
+            except KeyError:
+                validation_f = None
+            if validation_f is None:
+                errors.append(f"missing {validation_path}")
+            else:
+                text = validation_f.read().decode("utf-8", errors="replace")
+                if "HealthDelta Bundle Validation Log" not in text:
+                    errors.append(f"invalid validation log: {validation_path}")
 
             try:
                 manifest_f = tf.extractfile(manifest_path)
