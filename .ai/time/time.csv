@@ -66,3 +66,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,75,,20,codex,,"Export DiagnosticReport NDJSON with Observation linkage"
 2026-02-01,76,,20,codex,,"Export MedicationStatement/MedicationDispense"
 2026-02-01,77,,20,codex,,"Export AllergyIntolerance + Immunization"
+2026-02-01,78,,25,codex,,"subject.identifier and patient.identifier resolution with ambiguity guard"

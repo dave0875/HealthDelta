@@ -158,6 +158,135 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 class TestNdjsonExport(unittest.TestCase):
+    def test_export_ndjson_resolves_subject_and_patient_identifier_mappings(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base = root / "out"
+            run_dir = base / "staging" / "run-1"
+            clinical_dir = run_dir / "source" / "clinical-records"
+            clinical_dir.mkdir(parents=True, exist_ok=True)
+
+            layout = {
+                "run_id": "run-1",
+                "clinical_json": [
+                    "source/clinical-records/obs_subject_identifier.json",
+                    "source/clinical-records/obs_reference_fallback.json",
+                    "source/clinical-records/obs_ambiguous.json",
+                    "source/clinical-records/immunization_patient_identifier.json",
+                ],
+            }
+            _write_json(run_dir / "layout.json", layout)
+
+            _write_json(
+                clinical_dir / "obs_subject_identifier.json",
+                {
+                    "resourceType": "Observation",
+                    "id": "o-subject",
+                    "status": "final",
+                    "subject": {"identifier": {"system": "urn:mrn", "value": "111"}},
+                    "effectiveDateTime": "2020-01-01T00:00:00Z",
+                },
+            )
+            _write_json(
+                clinical_dir / "obs_reference_fallback.json",
+                {
+                    "resourceType": "Observation",
+                    "id": "o-fallback",
+                    "status": "final",
+                    "subject": {
+                        "reference": "Patient/p1",
+                        "identifier": {"system": "urn:mrn", "value": "unmapped"},
+                    },
+                    "effectiveDateTime": "2020-01-01T01:00:00Z",
+                },
+            )
+            _write_json(
+                clinical_dir / "obs_ambiguous.json",
+                {
+                    "resourceType": "Observation",
+                    "id": "o-ambiguous",
+                    "status": "final",
+                    "subject": {
+                        "reference": "Patient/p1",
+                        "identifier": {"system": "urn:mrn", "value": "222"},
+                    },
+                    "effectiveDateTime": "2020-01-01T02:00:00Z",
+                },
+            )
+            _write_json(
+                clinical_dir / "immunization_patient_identifier.json",
+                {
+                    "resourceType": "Immunization",
+                    "id": "i-subject",
+                    "status": "completed",
+                    "patient": {"identifier": {"system": "urn:mrn", "value": "111"}},
+                    "occurrenceDateTime": "2020-01-01T03:00:00Z",
+                },
+            )
+
+            identity = base / "identity"
+            identity.mkdir(parents=True, exist_ok=True)
+            _write_json(
+                identity / "people.json",
+                {
+                    "people": [
+                        {"person_key": "person-a"},
+                        {"person_key": "person-b"},
+                    ]
+                },
+            )
+            _write_json(
+                identity / "aliases.json",
+                {
+                    "aliases": [
+                        {
+                            "person_key": "person-a",
+                            "source": {
+                                "external_ids": [
+                                    {"system": "fhir:id", "value": "p1"},
+                                    {"system": "urn:mrn", "value": "111"},
+                                ]
+                            },
+                        },
+                        {
+                            "person_key": "person-b",
+                            "source": {
+                                "external_ids": [
+                                    {"system": "urn:mrn", "value": "222"},
+                                ]
+                            },
+                        },
+                    ]
+                },
+            )
+
+            out_local = root / "ndjson_local"
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "export",
+                    "ndjson",
+                    "--input",
+                    str(run_dir),
+                    "--out",
+                    str(out_local),
+                    "--mode",
+                    "local",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            observations = _read_ndjson(out_local / "observations.ndjson")
+            by_source_id = {r.get("source_id"): r for r in observations if isinstance(r, dict)}
+            self.assertEqual(by_source_id["Observation/o-subject"]["canonical_person_id"], "person-a")
+            self.assertEqual(by_source_id["Observation/o-fallback"]["canonical_person_id"], "person-a")
+            self.assertEqual(by_source_id["Observation/o-ambiguous"]["canonical_person_id"], "unresolved")
+            self.assertEqual(by_source_id["Immunization/i-subject"]["canonical_person_id"], "person-a")
+
     def test_export_ndjson_local_and_share_are_deterministic_and_pii_free(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

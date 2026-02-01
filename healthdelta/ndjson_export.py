@@ -222,6 +222,62 @@ def _extract_fhir_subject_patient_id(resource: dict) -> str | None:
     return None
 
 
+def _extract_identifier_pairs(value: Any) -> list[tuple[str, str]]:
+    items = value if isinstance(value, list) else [value]
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        system = item.get("system")
+        ident_value = item.get("value")
+        if not (isinstance(system, str) and isinstance(ident_value, str)):
+            continue
+        system = system.strip()
+        ident_value = ident_value.strip()
+        if not system or not ident_value:
+            continue
+        pair = (system, ident_value)
+        if pair not in seen:
+            seen.add(pair)
+            pairs.append(pair)
+    return pairs
+
+
+def _extract_fhir_reference_identifier_pairs(resource: dict) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for key in ("subject", "patient"):
+        ref = resource.get(key)
+        if not isinstance(ref, dict):
+            continue
+        ident = ref.get("identifier")
+        pairs.extend(_extract_identifier_pairs(ident))
+    return pairs
+
+
+def _resolve_fhir_person_id(ctx: ExportContext, resource: dict) -> str:
+    candidates: set[str] = set()
+    subject_patient_id = _extract_fhir_subject_patient_id(resource)
+    if subject_patient_id:
+        mapped = ctx.patient_id_map.get(("fhir:id", subject_patient_id))
+        if isinstance(mapped, str):
+            candidates.add(mapped)
+
+    for system, value in _extract_fhir_reference_identifier_pairs(resource):
+        mapped = ctx.patient_id_map.get((system, value))
+        if isinstance(mapped, str):
+            candidates.add(mapped)
+
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if len(candidates) > 1:
+        return "unresolved"
+
+    if subject_patient_id:
+        return _canonical_person_id(ctx, system="fhir:id", value=subject_patient_id)
+    return _canonical_person_id(ctx)
+
+
 def _extract_fhir_reference_id(ref: str, resource_type: str) -> str | None:
     if not isinstance(ref, str) or not ref.strip():
         return None
@@ -435,8 +491,7 @@ def _export_fhir_streams(
             continue
 
         rid = res.get("id") if isinstance(res.get("id"), str) else None
-        subject_patient_id = _extract_fhir_subject_patient_id(res)
-        person = _canonical_person_id(ctx, system="fhir:id", value=subject_patient_id) if subject_patient_id else _canonical_person_id(ctx)
+        person = _resolve_fhir_person_id(ctx, res)
         event_time = _fhir_event_time(res)
 
         base = {
