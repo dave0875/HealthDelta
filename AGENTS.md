@@ -75,6 +75,7 @@ Optional clarifications or constraints.
 - Doctor’s Note architecture (reusable component + operator integration): `docs/adr/ADR_3_doctors_note_architecture.md`
 - Ingestion paths convergence (Apple export directory/zip vs iOS incremental): `docs/adr/ADR_4_ingestion_paths_convergence.md`
 - Continuous deployment targets and deployment proof: `docs/adr/ADR_5_continuous_deployment_targets.md`
+- Governance anchors + rewrite-tolerant enforcement: `docs/adr/ADR_6_governance_anchors_rewrite_tolerant_enforcement.md`
 
 ## Project Plan
 - Living plan/backlog: `docs/plan.md` (share-safe; links to the prioritized next GitHub issues)
@@ -93,5 +94,6 @@ Optional clarifications or constraints.
 - No code, workflow, or documentation changes without a GitHub Issue capturing *why*.
 - All CI work must produce observable, persisted artifacts (logs + uploaded artifacts/test results).
 - Self-hosted runners are authoritative; cloud runners must not substitute silently.
+- Governance enforcement must be rewrite-tolerant and anchored to PRs, releases, and `.ai/` artifacts — not commit SHAs.
 - Ambiguity pauses execution until clarified before proceeding.
 - Definition of done: each issue must explicitly name the workflow/job that proves correctness (CI), and when it changes deployable artifacts it must also name the workflow/job/artifact that proves deployment readiness (see `docs/runbook_cd.md`).

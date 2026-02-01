@@ -23,17 +23,32 @@ def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def _git_try(*args: str) -> str | None:
+    proc = subprocess.run(["git", *args], check=False, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
+
+
 def _merge_base() -> str:
-    try:
-        main_ref = _git("rev-parse", "origin/main")
-        return _git("merge-base", "HEAD", main_ref)
-    except Exception:
-        return _git("rev-list", "-n", "1", "HEAD")
+    main_ref = _git_try("rev-parse", "origin/main")
+    if main_ref:
+        mb = _git_try("merge-base", "HEAD", main_ref)
+        if mb:
+            return mb
+    head = _git_try("rev-list", "-n", "1", "HEAD")
+    return head or ""
 
 
 def _changed_paths() -> list[tuple[str, str]]:
     base = _merge_base()
-    out = _git("diff", "--name-status", f"{base}..HEAD")
+    if not base:
+        print("governance-warning: prompt immutability check skipped (no merge-base/HEAD resolved).")
+        return []
+    out = _git_try("diff", "--name-status", f"{base}..HEAD")
+    if out is None:
+        print("governance-warning: prompt immutability check skipped (git diff range unavailable).")
+        return []
     changes: list[tuple[str, str]] = []
     for line in out.splitlines():
         parts = line.split("\t")

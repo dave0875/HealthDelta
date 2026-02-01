@@ -45,17 +45,21 @@ class TestResolveCommitRange(unittest.TestCase):
                 return "basesha"
             if args == ("rev-list", "basesha..headsha"):
                 return "c1\nc2"
+            if args == ("cat-file", "-e", "headsha^{commit}"):
+                return ""
             raise AssertionError(f"Unexpected git call: {args}")
 
         with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
             with mock.patch.object(
                 mod, "_load_event", return_value={"before": "badbase", "after": "headsha"}
             ):
-                with mock.patch.object(mod, "_git", side_effect=fake_git):
+                with mock.patch.object(mod, "_git_try", side_effect=fake_git):
                     with mock.patch.object(
                         mod.subprocess,
-                        "check_call",
-                        side_effect=subprocess.CalledProcessError(1, ["git"]),
+                        "run",
+                        return_value=subprocess.CompletedProcess(
+                            args=["git"], returncode=1, stdout="", stderr="not ancestor"
+                        ),
                     ):
                         commits = mod._resolve_commit_range()
 
@@ -77,11 +81,25 @@ class TestResolveCommitRange(unittest.TestCase):
             with mock.patch.object(
                 mod, "_load_event", return_value={"before": "basesha", "after": "headsha"}
             ):
-                with mock.patch.object(mod, "_git", side_effect=fake_git):
-                    with mock.patch.object(mod.subprocess, "check_call", return_value=None):
+                with mock.patch.object(mod, "_git_try", side_effect=fake_git):
+                    with mock.patch.object(
+                        mod.subprocess,
+                        "run",
+                        return_value=subprocess.CompletedProcess(args=["git"], returncode=0),
+                    ):
                         commits = mod._resolve_commit_range()
 
         self.assertEqual(commits, ["c3", "c4"])
+
+    def test_no_commit_context_is_non_blocking(self):
+        mod = _load_module()
+
+        with mock.patch.object(mod, "_resolve_commit_range_with_notes", return_value=([], ["note"])):
+            with mock.patch("builtins.print"):
+                with mock.patch.object(mod.sys, "argv", ["check_issue_footer.py"]):
+                    rc = mod.main()
+
+        self.assertEqual(rc, 0)
 
 
 class TestIssueNumberExtraction(unittest.TestCase):

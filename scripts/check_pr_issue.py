@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI if PR metadata lacks Issue footer matching commit Issue."""
+"""Validate PR metadata Issue anchor with rewrite-tolerant commit fallback."""
 from __future__ import annotations
 
 import json
@@ -24,13 +24,19 @@ def _load_event() -> dict:
 
 
 def _commit_issue_number() -> str | None:
-    try:
-        out = subprocess.check_output(
-            [sys.executable, "scripts/check_issue_footer.py", "--print-issue"],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
+    proc = subprocess.run(
+        [sys.executable, "scripts/check_issue_footer.py", "--print-issue"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        print("governance-info: commit Issue resolution failed; proceeding with PR metadata as authoritative anchor.")
+        stderr = (proc.stderr or "").strip()
+        if stderr:
+            print(f"governance-info: commit resolution detail: {stderr}")
         return None
+    out = proc.stdout.strip()
     return out or None
 
 
@@ -42,7 +48,10 @@ def main() -> int:
     event = _load_event()
     pr = event.get("pull_request") if isinstance(event, dict) else None
     if not isinstance(pr, dict):
-        print("Missing pull_request payload; cannot validate PR issue metadata.")
+        print("governance-warning: missing pull_request payload; PR Issue metadata check skipped.")
+        print("what happened: CI event payload did not include pull_request data.")
+        print("what was checked instead: commit-level and audit artifact checks still run.")
+        print("how to fix: rerun from a pull_request event context.")
         return 1
 
     title = pr.get("title") if isinstance(pr.get("title"), str) else ""
@@ -50,17 +59,20 @@ def main() -> int:
     pr_issues = extract_issue_numbers("\n".join([title, body]))
 
     if not pr_issues:
-        print("PR title/body must include Issue: #NN.")
+        print("policy failure: PR title/body must include Issue: #NN.")
+        print("how to fix: add 'Issue: #NN' to the PR title or body.")
         return 1
 
     issue_no = _commit_issue_number()
     if not issue_no:
-        print("Unable to resolve commit Issue number.")
-        return 1
+        print("governance-info: commit-level Issue check unavailable (history rewrite or shallow context).")
+        print("governance-info: using PR metadata as the durable enforcement anchor for this run.")
+        return 0
 
     if issue_no not in pr_issues:
         issues = ", ".join(sorted(pr_issues))
-        print(f"PR Issue numbers ({issues}) do not match commit Issue #{issue_no}.")
+        print(f"policy failure: PR Issue numbers ({issues}) do not match commit Issue #{issue_no}.")
+        print("how to fix: make PR Issue footer match commit Issue footer, or re-scope commits to one issue.")
         return 1
 
     print("PR Issue metadata check passed.")

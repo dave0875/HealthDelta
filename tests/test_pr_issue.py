@@ -1,5 +1,9 @@
 import importlib.util
+import os
+import tempfile
+import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def _load_module():
@@ -11,7 +15,36 @@ def _load_module():
     return module
 
 
-def test_extract_issue_numbers_from_title_and_body():
-    mod = _load_module()
-    text = "Title\n\nIssue: #72\nBody Issue: #73"
-    assert mod.extract_issue_numbers(text) == {"72", "73"}
+class TestPrIssueCheck(unittest.TestCase):
+    def test_pr_issue_required(self) -> None:
+        mod = _load_module()
+        with tempfile.TemporaryDirectory() as td:
+            event_path = Path(td) / "event.json"
+            event_path.write_text('{"pull_request": {"title": "No footer", "body": ""}}', encoding="utf-8")
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": str(event_path)},
+                clear=False,
+            ):
+                with mock.patch("builtins.print"):
+                    self.assertEqual(mod.main(), 1)
+
+    def test_commit_resolution_unavailable_is_non_blocking(self) -> None:
+        mod = _load_module()
+        with tempfile.TemporaryDirectory() as td:
+            event_path = Path(td) / "event.json"
+            event_path.write_text(
+                '{"pull_request": {"title": "Issue: #130", "body": "context"}}', encoding="utf-8"
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": str(event_path)},
+                clear=False,
+            ):
+                with mock.patch.object(mod, "_commit_issue_number", return_value=None):
+                    with mock.patch("builtins.print"):
+                        self.assertEqual(mod.main(), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
