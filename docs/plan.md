@@ -46,8 +46,8 @@ Completed
 - Issues #1-#86 are closed (bootstrap through governance/evidence guardrails for FHIR, NDJSON, reporting, and CI policy enforcement).
 - Issue #117 is closed (managed hidden worktree root + auto-prune + CI path guardrail).
 
-Active governance carryover
-1) Issue #72 - Governance: plan refresh + CI issue reference gate (active)
+Governance carryover
+1) Issue #72 - Governance: plan refresh + CI issue reference gate (closed)
    - https://github.com/dave0875/HealthDelta/issues/72
 2) Issue #92 - Governance: CI guardrails for issue discipline (closed)
    - https://github.com/dave0875/HealthDelta/issues/92
@@ -71,9 +71,11 @@ New planning phase: Orin production deployment target (`orin.local`)
     - https://github.com/dave0875/HealthDelta/issues/127
 11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements (closed)
     - https://github.com/dave0875/HealthDelta/issues/128
+12) Issue #162 - ORIN benchmark artifacts + regression thresholds (active)
+    - https://github.com/dave0875/HealthDelta/issues/162
 
 Next roadmap focus (post-MMF)
-- Harden performance envelopes on ORIN with benchmark artifacts and regression thresholds.
+- Complete Issue #162 benchmark rollout and establish baseline threshold maintenance cadence.
 - Expand risk/trend rule coverage with stricter clinical evidence mappings.
 - Add operator-facing runbook automation for routine rollback drills and release readiness checks.
 

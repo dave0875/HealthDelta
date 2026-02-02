@@ -8,6 +8,21 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Runner: ORIN self-hosted GitHub Actions runner (LAN-local)
 - Deploy dir: `/opt/healthdelta`
 
+## Benchmark workflow (Issue #162)
+- Workflow: `.github/workflows/orin_backend_benchmark.yml`
+- Trigger: manual dispatch (`workflow_dispatch`)
+- Runner: ORIN self-hosted GitHub Actions runner (`self-hosted`, `linux`, `orin`)
+- Inputs:
+  - `base_url` (default `http://127.0.0.1:8080`)
+  - `summary_input_path` (default `/app/deploy/fixtures/profile_export`)
+  - `pipeline_input_path` (default `tests/fixtures/profile_export`)
+  - `iterations` and `pipeline_iterations`
+- Output artifact: `orin-backend-benchmark`
+  - `benchmark_results.json` (machine-readable metrics)
+  - `benchmark_report.md` (operator-readable summary)
+- Regression policy thresholds are defined in `deploy/orin/benchmark_thresholds.json`.
+- CI fails with explicit metric diagnostics when observed values exceed thresholds.
+
 ## Planning artifact linkage
 - Model/runtime planning matrix for ORIN MMF workloads: `docs/orin_model_runtime_matrix.md` (Issue #122).
 - This matrix is the source for summary/risk/trend/Q&A runtime selection and latency/memory envelopes.
@@ -73,6 +88,13 @@ The deploy workflow verifies:
   - `artifacts/linux/backend_slice/smoke.log`
   - `artifacts/linux/backend_slice/summary_response.json`
 
+Benchmark verification adds:
+- p50/p95 latency metrics for `POST /summary` and `POST /qa`
+- p50/p95 runtime metrics for `healthdelta pipeline run` on synthetic fixture input
+- threshold enforcement messages in the form:
+  - `metric=<name> threshold<= <value> observed= <value>`
+  - This enables deterministic pass/fail debugging without reading raw logs.
+
 ## Grounded Q&A endpoint (Issue #126)
 - Endpoint: `POST /qa`
 - Required request fields:
@@ -101,3 +123,21 @@ This script:
 ## Credentials / secrets
 - The workflow uses `GITHUB_TOKEN` for `docker login ghcr.io` with `packages: read` permission.
 - If GHCR pulls fail on ORIN, use a fine-grained PAT with `read:packages` via a new secret and update the workflow accordingly (do not commit tokens).
+
+## Local reproduction (on ORIN runner host)
+Run benchmark + threshold check without GitHub Actions:
+
+```bash
+python3 scripts/cd/orin_benchmark_backend.py \
+  --base-url http://127.0.0.1:8080 \
+  --summary-input-path /app/deploy/fixtures/profile_export \
+  --pipeline-input-path tests/fixtures/profile_export \
+  --iterations 5 \
+  --pipeline-iterations 3 \
+  --out-json artifacts/orin-benchmark/benchmark_results.json \
+  --out-md artifacts/orin-benchmark/benchmark_report.md
+
+python3 scripts/cd/check_benchmark_thresholds.py \
+  --results artifacts/orin-benchmark/benchmark_results.json \
+  --thresholds deploy/orin/benchmark_thresholds.json
+```

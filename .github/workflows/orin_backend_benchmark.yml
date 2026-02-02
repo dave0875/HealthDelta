@@ -1,0 +1,77 @@
+name: ORIN Backend Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Backend base URL on ORIN
+        required: true
+        default: http://127.0.0.1:8080
+        type: string
+      summary_input_path:
+        description: Input path visible inside backend container for /summary and /qa
+        required: true
+        default: /app/deploy/fixtures/profile_export
+        type: string
+      pipeline_input_path:
+        description: Host path used for CLI pipeline benchmark
+        required: true
+        default: tests/fixtures/profile_export
+        type: string
+      iterations:
+        description: Summary/QA iteration count
+        required: true
+        default: "5"
+        type: string
+      pipeline_iterations:
+        description: Pipeline run iteration count
+        required: true
+        default: "3"
+        type: string
+
+concurrency:
+  group: orin-backend-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: ORIN benchmark + threshold gate
+    runs-on: [self-hosted, linux, orin]
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run ORIN benchmark
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/orin-benchmark
+          python3 scripts/cd/orin_benchmark_backend.py \
+            --base-url "${{ inputs.base_url }}" \
+            --summary-input-path "${{ inputs.summary_input_path }}" \
+            --pipeline-input-path "${{ inputs.pipeline_input_path }}" \
+            --iterations "${{ inputs.iterations }}" \
+            --pipeline-iterations "${{ inputs.pipeline_iterations }}" \
+            --out-json artifacts/orin-benchmark/benchmark_results.json \
+            --out-md artifacts/orin-benchmark/benchmark_report.md
+
+      - name: Enforce regression thresholds
+        run: |
+          set -euo pipefail
+          python3 scripts/cd/check_benchmark_thresholds.py \
+            --results artifacts/orin-benchmark/benchmark_results.json \
+            --thresholds deploy/orin/benchmark_thresholds.json
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orin-backend-benchmark
+          path: |
+            artifacts/orin-benchmark/benchmark_results.json
+            artifacts/orin-benchmark/benchmark_report.md
+          if-no-files-found: error

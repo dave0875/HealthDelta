@@ -1,0 +1,19 @@
+{
+  "metrics": {
+    "summary.p95_ms": {
+      "max": 12000.0
+    },
+    "summary.p50_ms": {
+      "max": 6000.0
+    },
+    "qa.p95_ms": {
+      "max": 12000.0
+    },
+    "qa.p50_ms": {
+      "max": 7000.0
+    },
+    "pipeline.p95_s": {
+      "max": 45.0
+    }
+  }
+}
