@@ -29,6 +29,8 @@ Written under `--out`:
 - `counts_by_ext.csv`: file extension counts.
 - `healthkit_record_types.csv`: HealthKit `Record` `type=` counts (when `export.xml` exists).
 - `clinical_resource_types.csv`: FHIR `resourceType` counts from clinical JSON (when `clinical-records/*.json` exists).
+- `clinical_schema_keys.csv`: sampled FHIR key-path cardinality by `resourceType`.
+- `sensitive_field_map.json`: field-level redaction strategy map + observed sensitive schema paths.
 - `cda_tag_counts.csv`: CDA tag name counts (top N only) from `export_cda.xml` when present.
 
 ## Privacy guarantees and limits
@@ -46,4 +48,3 @@ Allowed outputs are limited to:
   - HealthKit `Record` `type=` values
   - FHIR `resourceType` values
   - CDA tag names (local names only)
-

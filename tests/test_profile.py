@@ -47,6 +47,8 @@ class TestExportProfile(unittest.TestCase):
                 out / "counts_by_ext.csv",
                 out / "healthkit_record_types.csv",
                 out / "clinical_resource_types.csv",
+                out / "clinical_schema_keys.csv",
+                out / "sensitive_field_map.json",
                 out / "cda_tag_counts.csv",
             ]
             for p in expected_outputs:
@@ -108,6 +110,21 @@ class TestExportProfile(unittest.TestCase):
             fhir_rows = _read_csv(out / "clinical_resource_types.csv")
             fhir = [(r["resourceType"], int(r["count"])) for r in fhir_rows]
             self.assertEqual(fhir, [("Observation", 1), ("Patient", 1)])
+
+            schema_rows = _read_csv(out / "clinical_schema_keys.csv")
+            schema_paths = {(r["resourceType"], r["path"]) for r in schema_rows}
+            self.assertIn(("Patient", "birthDate"), schema_paths)
+            self.assertIn(("Patient", "name[].text"), schema_paths)
+            self.assertIn(("Observation", "subject.display"), schema_paths)
+
+            sensitive = json.loads((out / "sensitive_field_map.json").read_text(encoding="utf-8"))
+            self.assertIn("sensitive_fields", sensitive)
+            self.assertIn("sensitive_paths_observed", sensitive)
+            by_field = {x["field"]: x for x in sensitive["sensitive_fields"]}
+            self.assertTrue(by_field["name"]["observed"])
+            self.assertTrue(by_field["birthDate"]["observed"])
+            self.assertTrue(by_field["display"]["observed"])
+            self.assertFalse(by_field["address"]["observed"])
 
             # CDA tag counts: should include expected tags and not include attributes/text.
             cda_rows = _read_csv(out / "cda_tag_counts.csv")
