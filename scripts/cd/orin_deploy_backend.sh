@@ -36,4 +36,4 @@ docker compose --env-file .env up -d --remove-orphans
 
 DEPLOY_DIR="$DEPLOY_DIR" SERVICE_NAME="$SERVICE_NAME" BASE_URL="$BASE_URL" \
   EXPECTED_TAG="$TAG" EXPECTED_VERSION="$VERSION" EXPECTED_SHA="$GIT_SHA" \
-  "$REPO_ROOT/scripts/cd/orin_verify_backend.sh"
+  bash "$REPO_ROOT/scripts/cd/orin_verify_backend.sh"

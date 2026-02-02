@@ -82,3 +82,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,134,UNASSIGNED,35,codex,UNASSIGNED,"Release workflow multi-arch backend publish + manifest verification"
 2026-02-01,136,UNASSIGNED,45,codex,UNASSIGNED,"ORIN deploy workflow proof artifacts + tagged release/deploy execution"
 2026-02-01,138,UNASSIGNED,20,codex,UNASSIGNED,"Option A hardening: remove sudo from ORIN deploy path"
+2026-02-01,140,UNASSIGNED,15,codex,UNASSIGNED,"ORIN deploy verify invocation fix for non-executable script path"
