@@ -23,9 +23,10 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
    - `curl`
    - `python3`
 4) Deploy directory permissions
-   - Preferred: allow the runner user to write `/opt/healthdelta`:
+   - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
      - `sudo chown <runner-user>:<runner-user> /opt/healthdelta`
+   - The deploy workflow does not use sudo; it fails fast if the directory is missing/not writable.
    - The deploy workflow copies `deploy/orin/compose.yaml` and writes `/opt/healthdelta/.env` to pin the tag.
 
 ## What gets deployed
