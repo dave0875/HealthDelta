@@ -48,6 +48,27 @@ jobs:
           echo "ver=$ver" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for GHCR tag availability
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ github.repository_owner }}/healthdelta-backend:${{ steps.v.outputs.tag }}"
+          max_attempts=45
+          delay_seconds=4
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "image available: $image"
+              break
+            fi
+            echo "waiting for image manifest ($attempt/$max_attempts): $image"
+            attempt=$((attempt + 1))
+            sleep "$delay_seconds"
+          done
+          if [ "$attempt" -gt "$max_attempts" ]; then
+            echo "ERROR: timed out waiting for image manifest: $image"
+            exit 1
+          fi
+
       - name: Deploy + verify (compose)
         run: |
           set -euo pipefail

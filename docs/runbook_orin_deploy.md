@@ -36,6 +36,7 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 
 ## Verification (“150%” backend checks)
 The deploy workflow verifies:
+- GHCR tag manifest is available before compose pull (bounded wait loop).
 - Correct image tag is running (container image contains `:vX.Y.Z`)
 - `GET /healthz` returns 200
 - `GET /version` returns `version=X.Y.Z` and `git_sha=<sha>`
