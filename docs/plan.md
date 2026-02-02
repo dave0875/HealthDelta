@@ -67,9 +67,9 @@ New planning phase: Orin production deployment target (`orin.local`)
    - https://github.com/dave0875/HealthDelta/issues/125
 9) Issue #126 - Orin MMF: grounded Q&A v1 with abstain behavior (closed)
    - https://github.com/dave0875/HealthDelta/issues/126
-10) Issue #127 - Orin MMF: production deployment + rollback proof on orin.local (active)
+10) Issue #127 - Orin MMF: production deployment + rollback proof on orin.local (closed)
     - https://github.com/dave0875/HealthDelta/issues/127
-11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements
+11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements (active)
     - https://github.com/dave0875/HealthDelta/issues/128
 
 ## Operating rules (quick reference)
