@@ -1,0 +1,7 @@
+{
+  "resourceType": "Patient",
+  "id": "p1",
+  "name": [{"text": "John Doe"}],
+  "birthDate": "1980-01-02"
+}
+

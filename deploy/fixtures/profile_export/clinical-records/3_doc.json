@@ -1,0 +1,9 @@
+{
+  "resourceType": "DocumentReference",
+  "id": "d1",
+  "status": "current",
+  "subject": {"display": "John Doe"},
+  "date": "2020-01-02T03:04:05Z",
+  "text": {"div": "John Doe discharge summary free text"}
+}
+

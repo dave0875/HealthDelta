@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HealthData>
+  <Me name="John Doe" />
+  <Record type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="72" startDate="2020-01-01 00:00:00 -0500" endDate="2020-01-01 00:01:00 -0500"/>
+  <Record type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="75" startDate="2020-01-01 01:00:00 -0500" endDate="2020-01-01 01:01:00 -0500"/>
+  <Record type="HKQuantityTypeIdentifierStepCount" unit="count" value="123" startDate="2020-01-02 00:00:00 -0500" endDate="2020-01-02 00:05:00 -0500"/>
+</HealthData>
+

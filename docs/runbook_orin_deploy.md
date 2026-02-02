@@ -62,6 +62,7 @@ The deploy workflow verifies:
 - `GET /version` returns `version=X.Y.Z` and `git_sha=<sha>`
 - `POST /summary` succeeds against synthetic fixture path and includes citations + risk/trend payload shape
 - `POST /qa` succeeds against synthetic fixture path and includes citations + disclaimer
+- Synthetic fixture path used in-container: `/app/deploy/fixtures/profile_export`
 - Recent logs do not contain obvious fatal indicators (bounded tail scan)
 - Workflow uploads artifact `orin-deploy-proof` containing:
   - `deploy_verify.log`

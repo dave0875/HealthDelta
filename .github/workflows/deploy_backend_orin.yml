@@ -81,8 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/orin-deploy
-          summary_payload='{"citation_limit":5,"input_path":"/app/tests/fixtures/profile_export"}'
-          qa_payload='{"citation_limit":5,"input_path":"/app/tests/fixtures/profile_export","question":"what observations exist?"}'
+          summary_payload='{"citation_limit":5,"input_path":"/app/deploy/fixtures/profile_export"}'
+          qa_payload='{"citation_limit":5,"input_path":"/app/deploy/fixtures/profile_export","question":"what observations exist?"}'
           curl -fsS -X POST "http://127.0.0.1:8080/summary" -H "content-type: application/json" --data "$summary_payload" > artifacts/orin-deploy/summary_response.json
           curl -fsS -X POST "http://127.0.0.1:8080/qa" -H "content-type: application/json" --data "$qa_payload" > artifacts/orin-deploy/qa_response.json
 
