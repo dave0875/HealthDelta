@@ -49,6 +49,8 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Response includes:
   - deterministic stream-count summary text
   - citation list (`stream`, `record_key`, `source_file`, `event_time`, `line`)
+  - deterministic risk flags (`flag_id`, `category`, `severity`, `rationale`, `evidence`)
+  - mandatory disclaimer string stating flags are not medical advice
   - PHI token guard check result (`phi_tokens_checked`, `phi_token_hits`)
 
 ## Verification (“150%” backend checks)
