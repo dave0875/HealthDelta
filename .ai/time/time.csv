@@ -99,3 +99,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,159,UNASSIGNED,20,codex,UNASSIGNED,"Fix brittle iOS time-label assertions in SyncStatusStoreTests after macOS CI failure"
 2026-02-02,159,UNASSIGNED,15,codex,UNASSIGNED,"Fix optional+accuracy compile issue in SyncStatusStoreTests on macOS CI"
 2026-02-02,159,UNASSIGNED,10,codex,UNASSIGNED,"Correct delta epoch expectations in SyncStatusStoreTests from macOS CI evidence"
+2026-02-02,162,UNASSIGNED,70,codex,UNASSIGNED,"ORIN benchmark workflow + threshold checker + runbook integration"
