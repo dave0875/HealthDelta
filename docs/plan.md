@@ -63,9 +63,9 @@ New planning phase: Orin production deployment target (`orin.local`)
    - https://github.com/dave0875/HealthDelta/issues/123
 7) Issue #124 - Orin MMF: risk flags v1 with evidence + disclaimers (closed)
    - https://github.com/dave0875/HealthDelta/issues/124
-8) Issue #125 - Orin MMF: trend analysis v1 for longitudinal records (active)
+8) Issue #125 - Orin MMF: trend analysis v1 for longitudinal records (closed)
    - https://github.com/dave0875/HealthDelta/issues/125
-9) Issue #126 - Orin MMF: grounded Q&A v1 with abstain behavior
+9) Issue #126 - Orin MMF: grounded Q&A v1 with abstain behavior (active)
    - https://github.com/dave0875/HealthDelta/issues/126
 10) Issue #127 - Orin MMF: production deployment + rollback proof on orin.local
     - https://github.com/dave0875/HealthDelta/issues/127

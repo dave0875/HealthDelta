@@ -93,6 +93,48 @@ class TestBackendServer(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_qa_endpoint_returns_citations(self) -> None:
+        server, thread, base_url = self._start_server()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                payload = json.dumps(
+                    {
+                        "input_path": str((Path("tests/fixtures/profile_export")).resolve()),
+                        "work_dir": str((Path(td) / "work").resolve()),
+                        "question": "what observations are present?",
+                        "citation_limit": 5,
+                    }
+                ).encode("utf-8")
+                req = Request(base_url + "/qa", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                with urlopen(req) as resp:
+                    self.assertEqual(resp.status, 200)
+                    obj = json.loads(resp.read().decode("utf-8"))
+                    self.assertTrue(obj.get("ok"))
+                    self.assertIn("qa", obj)
+                    self.assertIn("citations", obj["qa"])
+                    self.assertIn("disclaimer", obj["qa"])
+                    self.assertGreater(len(obj["qa"]["citations"]), 0)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_qa_endpoint_requires_question(self) -> None:
+        server, thread, base_url = self._start_server()
+        try:
+            payload = json.dumps({"input_path": str((Path("tests/fixtures/profile_export")).resolve())}).encode("utf-8")
+            req = Request(base_url + "/qa", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                urlopen(req)
+                self.fail("expected HTTP error")
+            except Exception as e:
+                body = getattr(e, "read", lambda: b"")().decode("utf-8")
+                self.assertIn("question_required", body)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,7 @@ from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.ndjson_export import export_ndjson
+from healthdelta.qa import answer_question
 from healthdelta.risk_flags import build_risk_flags
 from healthdelta.trends import build_trend_analysis
 from healthdelta.version import get_build_info
@@ -109,7 +110,7 @@ def _build_summary_from_ndjson(ndjson_dir: Path, *, citation_limit: int) -> tupl
     return "\n".join(lines) + "\n", citations, counts
 
 
-def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int = 12) -> dict[str, Any]:
+def _prepare_vertical_slice_assets(*, input_path: str, work_dir: str) -> dict[str, Any]:
     input_p = Path(input_path)
     if not input_p.exists():
         raise FileNotFoundError(f"input path not found: {input_p}")
@@ -136,6 +137,26 @@ def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int =
     export_ndjson(input_dir=str(deid_dir), out_dir=str(ndjson_dir), mode="share")
     log_lines.append("step=export_ndjson status=ok")
 
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    return {
+        "run_id": run_id,
+        "run_root": run_root,
+        "ndjson_dir": ndjson_dir,
+        "slice_log": log_path,
+        "identity_dir": identity_dir,
+        "log_lines": log_lines,
+    }
+
+
+def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int = 12) -> dict[str, Any]:
+    assets = _prepare_vertical_slice_assets(input_path=input_path, work_dir=work_dir)
+    ndjson_dir = assets["ndjson_dir"]
+    identity_dir = assets["identity_dir"]
+    run_id = assets["run_id"]
+    log_path = assets["slice_log"]
+    log_lines = assets["log_lines"]
+
     summary, citations, counts = _build_summary_from_ndjson(ndjson_dir, citation_limit=citation_limit)
     risk_flags = build_risk_flags(ndjson_dir=str(ndjson_dir))
     trends = build_trend_analysis(ndjson_dir=str(ndjson_dir))
@@ -147,9 +168,6 @@ def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int =
     if hits:
         raise RuntimeError(f"policy failure: banned PHI tokens detected in output/logs: {', '.join(sorted(hits))}")
 
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
-
     return {
         "ok": True,
         "run_id": run_id,
@@ -158,6 +176,31 @@ def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int =
         "citations": citations,
         "risk_flags": risk_flags,
         "trends": trends,
+        "policy": {"phi_tokens_checked": sorted(tokens), "phi_token_hits": []},
+        "artifacts": {
+            "run_dir": run_id,
+            "slice_log": "slice.log",
+            "ndjson_dir": "ndjson",
+        },
+    }
+
+
+def _run_grounded_qa(*, input_path: str, work_dir: str, question: str, citation_limit: int = 8) -> dict[str, Any]:
+    assets = _prepare_vertical_slice_assets(input_path=input_path, work_dir=work_dir)
+    ndjson_dir = assets["ndjson_dir"]
+    identity_dir = assets["identity_dir"]
+    run_id = assets["run_id"]
+    log_lines = list(assets["log_lines"])
+    qa = answer_question(ndjson_dir=str(ndjson_dir), question=question, citation_limit=citation_limit)
+    log_lines.append(f"step=qa abstained={qa.get('abstained')}")
+    tokens = _load_identity_tokens(identity_dir)
+    hits = _find_token_hits("\n".join([json.dumps(qa, sort_keys=True), "\n".join(log_lines)]), tokens)
+    if hits:
+        raise RuntimeError(f"policy failure: banned PHI tokens detected in QA output/logs: {', '.join(sorted(hits))}")
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "qa": qa,
         "policy": {"phi_tokens_checked": sorted(tokens), "phi_token_hits": []},
         "artifacts": {
             "run_dir": run_id,
@@ -189,7 +232,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/summary":
+        if self.path not in {"/summary", "/qa"}:
             self._send_json(404, {"error": "not_found"})
             return
         try:
@@ -218,7 +261,19 @@ class _Handler(BaseHTTPRequestHandler):
             citation_limit = 12
         citation_limit = min(citation_limit, 50)
         try:
-            obj = _run_vertical_slice(input_path=input_path, work_dir=work_dir, citation_limit=citation_limit)
+            if self.path == "/summary":
+                obj = _run_vertical_slice(input_path=input_path, work_dir=work_dir, citation_limit=citation_limit)
+            else:
+                question = payload.get("question")
+                if not isinstance(question, str) or not question.strip():
+                    self._send_json(400, {"error": "question_required"})
+                    return
+                obj = _run_grounded_qa(
+                    input_path=input_path,
+                    work_dir=work_dir,
+                    question=question,
+                    citation_limit=min(citation_limit, 20),
+                )
         except FileNotFoundError as e:
             self._send_json(400, {"error": "input_not_found", "detail": str(e)})
             return
