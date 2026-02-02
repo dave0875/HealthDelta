@@ -97,3 +97,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,72,UNASSIGNED,30,codex,UNASSIGNED,"Plan refresh and deterministic CI issue-reference gate coverage tests"
 2026-02-02,159,UNASSIGNED,75,codex,UNASSIGNED,"iOS sync status dashboard + insights cards + deterministic mapping tests"
 2026-02-02,159,UNASSIGNED,20,codex,UNASSIGNED,"Fix brittle iOS time-label assertions in SyncStatusStoreTests after macOS CI failure"
+2026-02-02,159,UNASSIGNED,15,codex,UNASSIGNED,"Fix optional+accuracy compile issue in SyncStatusStoreTests on macOS CI"
