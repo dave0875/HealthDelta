@@ -55,9 +55,9 @@ Active governance carryover
 New planning phase: Orin production deployment target (`orin.local`)
 3) Issue #120 - Planning: Orin production deployment MMF backlog
    - https://github.com/dave0875/HealthDelta/issues/120
-4) Issue #121 - Orin MMF: export inventory + PHI field map
+4) Issue #121 - Orin MMF: export inventory + PHI field map (closed)
    - https://github.com/dave0875/HealthDelta/issues/121
-5) Issue #122 - Orin MMF: local model/runtime matrix for summaries + risk flags
+5) Issue #122 - Orin MMF: local model/runtime matrix for summaries + risk flags (active)
    - https://github.com/dave0875/HealthDelta/issues/122
 6) Issue #123 - Orin MMF: ingest-to-summary vertical slice on backend
    - https://github.com/dave0875/HealthDelta/issues/123

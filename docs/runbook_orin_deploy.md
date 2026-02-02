@@ -8,6 +8,10 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Runner: ORIN self-hosted GitHub Actions runner (LAN-local)
 - Deploy dir: `/opt/healthdelta`
 
+## Planning artifact linkage
+- Model/runtime planning matrix for ORIN MMF workloads: `docs/orin_model_runtime_matrix.md` (Issue #122).
+- This matrix is the source for summary/risk/trend/Q&A runtime selection and latency/memory envelopes.
+
 ## Runner diagnostics proof workflow
 - Workflow: `.github/workflows/orin_runner_diagnostics.yml`
 - Trigger: manual dispatch
