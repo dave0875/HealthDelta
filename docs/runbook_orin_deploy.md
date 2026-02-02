@@ -39,6 +39,9 @@ The deploy workflow verifies:
 - `GET /healthz` returns 200
 - `GET /version` returns `version=X.Y.Z` and `git_sha=<sha>`
 - Recent logs do not contain obvious fatal indicators (bounded tail scan)
+- Workflow uploads artifact `orin-deploy-proof` containing:
+  - `deploy_verify.log`
+  - `metadata.txt` (tag/version/sha/run URL)
 
 ## Rollback
 1) Choose a previous tag (example: `v0.0.1`)
