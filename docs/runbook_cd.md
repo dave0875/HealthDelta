@@ -16,6 +16,7 @@ This runbook defines how HealthDelta produces share-safe build artifacts and wha
   - macOS job passes and uploads `ios-xcresult`.
 - Governance hardening behavior:
   - Governance checks are rewrite-tolerant and never crash on missing commit ranges.
+  - Issue-reference gate is enforced by `scripts/check_issue_footer.py` and `scripts/check_pr_issue.py`.
   - Tests/build execution still runs when policy checks fail.
   - Governance failures are reported as explicit `policy failure` outcomes (not infra failures).
 
