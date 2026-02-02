@@ -14,6 +14,7 @@ from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.risk_flags import build_risk_flags
+from healthdelta.trends import build_trend_analysis
 from healthdelta.version import get_build_info
 
 
@@ -137,8 +138,11 @@ def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int =
 
     summary, citations, counts = _build_summary_from_ndjson(ndjson_dir, citation_limit=citation_limit)
     risk_flags = build_risk_flags(ndjson_dir=str(ndjson_dir))
+    trends = build_trend_analysis(ndjson_dir=str(ndjson_dir))
     tokens = _load_identity_tokens(identity_dir)
-    scan_text = "\n".join([summary, json.dumps(citations, sort_keys=True), json.dumps(risk_flags, sort_keys=True), "\n".join(log_lines)])
+    scan_text = "\n".join(
+        [summary, json.dumps(citations, sort_keys=True), json.dumps(risk_flags, sort_keys=True), json.dumps(trends, sort_keys=True), "\n".join(log_lines)]
+    )
     hits = _find_token_hits(scan_text, tokens)
     if hits:
         raise RuntimeError(f"policy failure: banned PHI tokens detected in output/logs: {', '.join(sorted(hits))}")
@@ -153,6 +157,7 @@ def _run_vertical_slice(*, input_path: str, work_dir: str, citation_limit: int =
         "counts_by_stream": [{"stream": k, "count": counts[k]} for k in sorted(counts.keys())],
         "citations": citations,
         "risk_flags": risk_flags,
+        "trends": trends,
         "policy": {"phi_tokens_checked": sorted(tokens), "phi_token_hits": []},
         "artifacts": {
             "run_dir": run_id,

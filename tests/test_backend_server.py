@@ -66,6 +66,8 @@ class TestBackendServer(unittest.TestCase):
                     self.assertIn("citations", obj)
                     self.assertIn("risk_flags", obj)
                     self.assertIn("disclaimer", obj["risk_flags"])
+                    self.assertIn("trends", obj)
+                    self.assertIn("trends", obj["trends"])
                     self.assertGreater(len(obj["citations"]), 0)
                     blob = json.dumps(obj, sort_keys=True)
                     self.assertNotIn("John", blob)

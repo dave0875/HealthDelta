@@ -50,6 +50,7 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
   - deterministic stream-count summary text
   - citation list (`stream`, `record_key`, `source_file`, `event_time`, `line`)
   - deterministic risk flags (`flag_id`, `category`, `severity`, `rationale`, `evidence`)
+  - trend analysis (`metric`, `window_days`, `direction`, `confidence`, `delta`) with explicit insufficiency reporting
   - mandatory disclaimer string stating flags are not medical advice
   - PHI token guard check result (`phi_tokens_checked`, `phi_token_hits`)
 
