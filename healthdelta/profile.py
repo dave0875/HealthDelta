@@ -135,6 +135,19 @@ def _count_healthkit_record_types(export_xml: Path) -> list[tuple[str, int]]:
 
 _FHIR_RESOURCE_TYPE_RE = re.compile(br"\"resourceType\"\s*:\s*\"([A-Za-z][A-Za-z0-9]+)\"")
 
+_SENSITIVE_FIELD_STRATEGIES: dict[str, str] = {
+    "name": "remove_or_tokenize",
+    "birthDate": "coarsen_or_remove",
+    "address": "remove",
+    "telecom": "remove",
+    "identifier": "tokenize_or_remove",
+    "display": "redact_free_text",
+    "div": "redact_narrative",
+    "text": "redact_narrative",
+    "note": "redact_narrative",
+    "valueString": "redact_free_text",
+}
+
 
 def _extract_fhir_resource_type(path: Path, *, max_bytes: int = 64 * 1024) -> str | None:
     # Read a bounded prefix and only extract resourceType.
@@ -147,14 +160,33 @@ def _extract_fhir_resource_type(path: Path, *, max_bytes: int = 64 * 1024) -> st
     return rt or None
 
 
-def _count_clinical_resource_types(clinical_dir: Path, *, sample_json: int) -> tuple[list[tuple[str, int]], dict[str, int]]:
+def _collect_schema_paths(obj: object, prefix: str, out: set[str]) -> None:
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if not isinstance(key, str) or not key:
+                continue
+            path = f"{prefix}.{key}" if prefix else key
+            out.add(path)
+            _collect_schema_paths(value, path, out)
+        return
+    if isinstance(obj, list):
+        list_path = f"{prefix}[]" if prefix else "[]"
+        out.add(list_path)
+        for item in obj:
+            _collect_schema_paths(item, list_path, out)
+        return
+
+
+def _count_clinical_resource_types(
+    clinical_dir: Path, *, sample_json: int
+) -> tuple[list[tuple[str, int]], dict[str, int], dict[str, list[tuple[str, int]]], dict[str, object]]:
     """
     Counts FHIR resourceType across clinical JSON files. Deterministic sampling:
     - files are sorted by relative path
     - only the first N files are scanned when sample_json > 0
     """
     if not clinical_dir.exists() or not clinical_dir.is_dir():
-        return [], {"total_files": 0, "sampled_files": 0}
+        return [], {"total_files": 0, "sampled_files": 0}, {}, {"sensitive_fields": [], "sensitive_paths_observed": []}
 
     json_files = sorted([p for p in clinical_dir.rglob("*.json") if p.is_file()], key=lambda p: p.relative_to(clinical_dir).as_posix())
     total = len(json_files)
@@ -163,16 +195,61 @@ def _count_clinical_resource_types(clinical_dir: Path, *, sample_json: int) -> t
     sampled = len(json_files)
 
     counts: Counter[str] = Counter()
+    schema_by_resource: dict[str, Counter[str]] = {}
+    sensitive_paths: list[dict[str, str]] = []
+    observed_sensitive: set[str] = set()
     task = progress.task("profile: scan clinical JSON", total=len(json_files), unit="files")
     for p in json_files:
         rt = _extract_fhir_resource_type(p)
+        data_obj: object | None = None
+        try:
+            data_obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            data_obj = None
         if rt:
             counts[rt] += 1
+        if isinstance(data_obj, dict):
+            paths: set[str] = set()
+            _collect_schema_paths(data_obj, "", paths)
+            resource = rt or "Unknown"
+            bucket = schema_by_resource.setdefault(resource, Counter())
+            for path in paths:
+                bucket[path] += 1
+                leaf = path.split(".")[-1].replace("[]", "")
+                if leaf in _SENSITIVE_FIELD_STRATEGIES:
+                    observed_sensitive.add(leaf)
+                    sensitive_paths.append(
+                        {
+                            "resourceType": resource,
+                            "path": path,
+                            "field": leaf,
+                            "strategy": _SENSITIVE_FIELD_STRATEGIES[leaf],
+                        }
+                    )
         task.advance(1)
 
     items = list(counts.items())
     items.sort(key=lambda kv: (-kv[1], kv[0]))
-    return items, {"total_files": total, "sampled_files": sampled}
+    schema_out: dict[str, list[tuple[str, int]]] = {}
+    for resource, resource_counts in schema_by_resource.items():
+        pairs = list(resource_counts.items())
+        pairs.sort(key=lambda kv: (-kv[1], kv[0]))
+        schema_out[resource] = pairs
+
+    sensitive_fields_out = []
+    for field in sorted(_SENSITIVE_FIELD_STRATEGIES.keys()):
+        resource_types = sorted({x["resourceType"] for x in sensitive_paths if x["field"] == field})
+        sensitive_fields_out.append(
+            {
+                "field": field,
+                "strategy": _SENSITIVE_FIELD_STRATEGIES[field],
+                "observed": field in observed_sensitive,
+                "observed_resource_types": resource_types,
+            }
+        )
+    sensitive_paths.sort(key=lambda x: (x["resourceType"], x["path"], x["field"]))
+    sensitive_obj = {"sensitive_fields": sensitive_fields_out, "sensitive_paths_observed": sensitive_paths}
+    return items, {"total_files": total, "sampled_files": sampled}, schema_out, sensitive_obj
 
 
 _CDA_TAG_RE = re.compile(br"<\s*([A-Za-z_][A-Za-z0-9_.:-]*)")
@@ -262,7 +339,7 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         hk_counts = _count_healthkit_record_types(export_xml) if export_xml.exists() else []
 
     with progress.phase("profile: scan clinical JSON"):
-        fhir_counts, fhir_meta = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
+        fhir_counts, fhir_meta, fhir_schema, sensitive_map = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
 
     with progress.phase("profile: scan export_cda.xml"):
         cda_counts = _count_cda_tags(export_cda, top_n=50) if export_cda.exists() else []
@@ -289,6 +366,11 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         "counts_by_ext": [{"ext": ext, "count": n} for ext, n in ext_counts],
         "healthkit_record_types": [{"type": t, "count": n} for t, n in hk_counts],
         "clinical_resource_types": [{"resourceType": t, "count": n} for t, n in fhir_counts],
+        "clinical_schema_keys": {
+            resource: [{"path": path, "count": count} for path, count in rows]
+            for resource, rows in sorted(fhir_schema.items())
+        },
+        "sensitive_field_map": sensitive_map,
         "cda_tag_counts": [{"tag": t, "count": n} for t, n in cda_counts],
         "determinism": {
             "notes": [
@@ -328,6 +410,19 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
                 rows=[[t, n] for t, n in fhir_counts],
             )
             task.advance(1)
+        if fhir_schema:
+            schema_rows: list[list[object]] = []
+            for resource in sorted(fhir_schema.keys()):
+                for path, count in fhir_schema[resource]:
+                    schema_rows.append([resource, path, count])
+            _write_csv(
+                out / "clinical_schema_keys.csv",
+                header=["resourceType", "path", "count"],
+                rows=schema_rows,
+            )
+            task.advance(1)
+        _write_json(out / "sensitive_field_map.json", sensitive_map)
+        task.advance(1)
         if cda_counts:
             _write_csv(out / "cda_tag_counts.csv", header=["tag", "count"], rows=[[t, n] for t, n in cda_counts])
             task.advance(1)
@@ -382,6 +477,20 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         for t, n in fhir_counts[: min(len(fhir_counts), 15)]:
             md_lines.append(f"- {t}: {n}")
         md_lines.append("")
+
+    if fhir_schema:
+        md_lines.append("## Clinical Schema Keys (sampled JSON)")
+        for resource in sorted(fhir_schema.keys())[:10]:
+            md_lines.append(f"- {resource}:")
+            for path, count in fhir_schema[resource][:8]:
+                md_lines.append(f"  - {path} ({count})")
+        md_lines.append("")
+
+    md_lines.append("## Sensitive Field Redaction Strategy")
+    for row in sensitive_map["sensitive_fields"]:
+        status = "observed" if row.get("observed") else "not observed"
+        md_lines.append(f"- {row['field']}: {row['strategy']} ({status})")
+    md_lines.append("")
 
     if cda_counts:
         md_lines.append("## CDA Tag Counts (export_cda.xml, top)")
