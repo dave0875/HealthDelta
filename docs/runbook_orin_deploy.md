@@ -68,6 +68,17 @@ The deploy workflow verifies:
   - `artifacts/linux/backend_slice/smoke.log`
   - `artifacts/linux/backend_slice/summary_response.json`
 
+## Grounded Q&A endpoint (Issue #126)
+- Endpoint: `POST /qa`
+- Required request fields:
+  - `input_path`: local path to synthetic/unpacked export fixture
+  - `question`: question text
+- Response includes:
+  - `qa.answer` text
+  - `qa.citations` references to local records
+  - `qa.abstained` flag for low-evidence queries
+  - mandatory `qa.disclaimer` (not medical advice)
+
 ## Rollback
 1) Choose a previous tag (example: `v0.0.1`)
 2) Update `/opt/healthdelta/.env`:

@@ -89,3 +89,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,123,UNASSIGNED,70,codex,UNASSIGNED,"Backend ingest->de-id->summary vertical slice API with citation and CI evidence artifacts"
 2026-02-02,124,UNASSIGNED,55,codex,UNASSIGNED,"Risk flags v1 deterministic ruleset with evidence traceability and disclaimer"
 2026-02-02,125,UNASSIGNED,50,codex,UNASSIGNED,"Trend analysis v1 payload with windowed direction/confidence and insufficiency handling"
+2026-02-02,126,UNASSIGNED,55,codex,UNASSIGNED,"Grounded local Q&A endpoint with citations, abstain behavior, and safety disclaimer"
