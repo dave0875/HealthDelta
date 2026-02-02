@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from healthdelta.ndjson_export import export_ndjson
 from healthdelta.qa import answer_question
 from healthdelta.risk_flags import build_risk_flags
 from healthdelta.trends import build_trend_analysis
+from healthdelta.upload_plane import UploadPlane, UploadPlaneError
 from healthdelta.version import get_build_info
 
 
@@ -211,8 +213,73 @@ def _run_grounded_qa(*, input_path: str, work_dir: str, question: str, citation_
 
 
 class _Handler(BaseHTTPRequestHandler):
+    _session_status_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)$")
+    _chunk_put_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)/chunks/(\d+)$")
+    _session_finalize_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)/finalize$")
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         return
+
+    def _log_event(self, event: str, **fields: Any) -> None:
+        payload: dict[str, Any] = {
+            "ts": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "event": event,
+            "method": self.command,
+            "path": self.path,
+            "remote": self.client_address[0] if self.client_address else "",
+        }
+        payload.update(fields)
+        print(json.dumps(payload, sort_keys=True), flush=True)
+
+    def _upload_plane(self) -> UploadPlane:
+        data_root = Path(os.getenv("HEALTHDELTA_DATA_DIR", "/data"))
+        return UploadPlane(data_root)
+
+    def _authorize_upload(self) -> bool:
+        token = os.getenv("HEALTHDELTA_UPLOAD_TOKEN", "").strip()
+        if not token:
+            self._send_json(
+                503,
+                {
+                    "error": "upload_unavailable",
+                    "detail": "upload endpoints are disabled; set HEALTHDELTA_UPLOAD_TOKEN to enable them",
+                },
+            )
+            self._log_event("upload_auth_rejected", status=503, reason="token_unset")
+            return False
+        authz = self.headers.get("Authorization", "")
+        if authz != f"Bearer {token}":
+            self._send_json(401, {"error": "unauthorized", "detail": "expected Authorization: Bearer <token>"})
+            self._log_event("upload_auth_rejected", status=401, reason="invalid_bearer")
+            return False
+        return True
+
+    def _read_json_body(self) -> dict[str, Any]:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise UploadPlaneError(400, "invalid_content_length", "Content-Length must be a valid integer")
+        if content_length < 0:
+            raise UploadPlaneError(400, "invalid_content_length", "Content-Length must be >= 0")
+        raw = self.rfile.read(content_length)
+        if not raw:
+            return {}
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception as exc:
+            raise UploadPlaneError(400, "invalid_json", f"request body is not valid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise UploadPlaneError(400, "invalid_payload", "request JSON must be an object")
+        return payload
+
+    def _read_raw_body(self) -> bytes:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise UploadPlaneError(400, "invalid_content_length", "Content-Length must be a valid integer")
+        if content_length <= 0:
+            raise UploadPlaneError(400, "invalid_content_length", "Content-Length must be > 0 for chunk upload")
+        return self.rfile.read(content_length)
 
     def _send_json(self, status: int, obj: object) -> None:
         body = (json.dumps(obj, sort_keys=True) + "\n").encode("utf-8")
@@ -223,64 +290,189 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
+        self._log_event("request_received")
         if self.path == "/healthz":
             self._send_json(200, healthz_payload())
+            self._log_event("request_succeeded", status=200)
             return
         if self.path == "/version":
             self._send_json(200, version_payload())
+            self._log_event("request_succeeded", status=200)
+            return
+        if self.path == "/datasets/current":
+            if not self._authorize_upload():
+                return
+            try:
+                obj = self._upload_plane().get_current_dataset()
+                self._send_json(200, obj)
+                self._log_event("request_succeeded", status=200, dataset=obj.get("dataset"))
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
+            return
+        if self.path == "/datasets/archives":
+            if not self._authorize_upload():
+                return
+            try:
+                archives = self._upload_plane().list_archives()
+                self._send_json(200, {"archives": archives})
+                self._log_event("request_succeeded", status=200, archive_count=len(archives))
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
+            return
+        session_match = self._session_status_re.match(self.path)
+        if session_match:
+            if not self._authorize_upload():
+                return
+            session_id = session_match.group(1)
+            try:
+                obj = self._upload_plane().get_session(session_id)
+                self._send_json(200, obj)
+                self._log_event("request_succeeded", status=200, session_id=session_id)
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code, session_id=session_id)
             return
         self._send_json(404, {"error": "not_found"})
+        self._log_event("request_failed", status=404, error="not_found")
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in {"/summary", "/qa"}:
-            self._send_json(404, {"error": "not_found"})
+        self._log_event("request_received")
+        if self.path in {"/summary", "/qa"}:
+            try:
+                payload = self._read_json_body()
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
+                return
+            input_path = payload.get("input_path")
+            if not isinstance(input_path, str) or not input_path.strip():
+                self._send_json(400, {"error": "input_path_required"})
+                self._log_event("request_failed", status=400, error="input_path_required")
+                return
+            work_dir = payload.get("work_dir")
+            if not isinstance(work_dir, str) or not work_dir.strip():
+                work_dir = "data/backend_slice"
+            citation_limit = payload.get("citation_limit")
+            if not isinstance(citation_limit, int) or citation_limit <= 0:
+                citation_limit = 12
+            citation_limit = min(citation_limit, 50)
+            try:
+                if self.path == "/summary":
+                    obj = _run_vertical_slice(input_path=input_path, work_dir=work_dir, citation_limit=citation_limit)
+                else:
+                    question = payload.get("question")
+                    if not isinstance(question, str) or not question.strip():
+                        self._send_json(400, {"error": "question_required"})
+                        self._log_event("request_failed", status=400, error="question_required")
+                        return
+                    obj = _run_grounded_qa(
+                        input_path=input_path,
+                        work_dir=work_dir,
+                        question=question,
+                        citation_limit=min(citation_limit, 20),
+                    )
+            except FileNotFoundError as e:
+                self._send_json(400, {"error": "input_not_found", "detail": str(e)})
+                self._log_event("request_failed", status=400, error="input_not_found")
+                return
+            except Exception as e:
+                self._send_json(500, {"error": "summary_failed", "detail": str(e)})
+                self._log_event("request_failed", status=500, error="summary_failed")
+                return
+            self._send_json(200, obj)
+            self._log_event("request_succeeded", status=200)
             return
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            self._send_json(400, {"error": "invalid_content_length"})
+
+        if self.path == "/upload-sessions":
+            if not self._authorize_upload():
+                return
+            try:
+                payload = self._read_json_body()
+                total_size = payload.get("total_size")
+                if not isinstance(total_size, int):
+                    raise UploadPlaneError(400, "invalid_total_size", "total_size must be an integer")
+                sha256 = payload.get("sha256")
+                if sha256 is not None and not isinstance(sha256, str):
+                    raise UploadPlaneError(400, "invalid_sha256", "sha256 must be a string when provided")
+                obj = self._upload_plane().create_session(total_size=total_size, sha256=sha256)
+                self._send_json(201, obj)
+                self._log_event("upload_session_created", status=201, session_id=obj.get("id"), total_size=total_size)
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
             return
-        raw = self.rfile.read(max(content_length, 0))
-        try:
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception:
-            self._send_json(400, {"error": "invalid_json"})
+
+        if self.path == "/datasets/archive":
+            if not self._authorize_upload():
+                return
+            try:
+                obj = self._upload_plane().archive_current()
+                self._send_json(200, obj)
+                self._log_event("dataset_archived", status=200, archive=obj.get("archive"))
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
             return
-        if not isinstance(payload, dict):
-            self._send_json(400, {"error": "invalid_payload"})
-            return
-        input_path = payload.get("input_path")
-        if not isinstance(input_path, str) or not input_path.strip():
-            self._send_json(400, {"error": "input_path_required"})
-            return
-        work_dir = payload.get("work_dir")
-        if not isinstance(work_dir, str) or not work_dir.strip():
-            work_dir = "data/backend_slice"
-        citation_limit = payload.get("citation_limit")
-        if not isinstance(citation_limit, int) or citation_limit <= 0:
-            citation_limit = 12
-        citation_limit = min(citation_limit, 50)
-        try:
-            if self.path == "/summary":
-                obj = _run_vertical_slice(input_path=input_path, work_dir=work_dir, citation_limit=citation_limit)
-            else:
-                question = payload.get("question")
-                if not isinstance(question, str) or not question.strip():
-                    self._send_json(400, {"error": "question_required"})
-                    return
-                obj = _run_grounded_qa(
-                    input_path=input_path,
-                    work_dir=work_dir,
-                    question=question,
-                    citation_limit=min(citation_limit, 20),
+
+        finalize_match = self._session_finalize_re.match(self.path)
+        if finalize_match:
+            if not self._authorize_upload():
+                return
+            session_id = finalize_match.group(1)
+            try:
+                obj = self._upload_plane().finalize_session(session_id)
+                self._send_json(200, obj)
+                self._log_event(
+                    "upload_session_finalized",
+                    status=200,
+                    session_id=session_id,
+                    dataset=obj.get("finalized_dataset"),
                 )
-        except FileNotFoundError as e:
-            self._send_json(400, {"error": "input_not_found", "detail": str(e)})
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code, session_id=session_id)
             return
-        except Exception as e:
-            self._send_json(500, {"error": "summary_failed", "detail": str(e)})
+
+        self._send_json(404, {"error": "not_found"})
+        self._log_event("request_failed", status=404, error="not_found")
+
+    def do_PUT(self) -> None:  # noqa: N802
+        self._log_event("request_received")
+        match = self._chunk_put_re.match(self.path)
+        if not match:
+            self._send_json(404, {"error": "not_found"})
+            self._log_event("request_failed", status=404, error="not_found")
             return
-        self._send_json(200, obj)
+        if not self._authorize_upload():
+            return
+
+        session_id = match.group(1)
+        chunk_index = int(match.group(2))
+        try:
+            content = self._read_raw_body()
+            obj = self._upload_plane().put_chunk(session_id, chunk_index, content)
+            self._send_json(
+                200,
+                {
+                    "id": obj.get("id"),
+                    "status": obj.get("status"),
+                    "received_chunks": obj.get("received_chunks"),
+                    "received_bytes": obj.get("received_bytes"),
+                    "updated_at": obj.get("updated_at"),
+                },
+            )
+            self._log_event(
+                "upload_chunk_stored",
+                status=200,
+                session_id=session_id,
+                chunk_index=chunk_index,
+                bytes=len(content),
+            )
+        except UploadPlaneError as exc:
+            self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+            self._log_event("request_failed", status=exc.status, error=exc.code, session_id=session_id, chunk_index=chunk_index)
 
 
 def make_server(*, host: str, port: int) -> ThreadingHTTPServer:

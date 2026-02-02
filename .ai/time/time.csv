@@ -101,3 +101,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,159,UNASSIGNED,10,codex,UNASSIGNED,"Correct delta epoch expectations in SyncStatusStoreTests from macOS CI evidence"
 2026-02-02,162,UNASSIGNED,70,codex,UNASSIGNED,"ORIN benchmark workflow + threshold checker + runbook integration"
 2026-02-02,164,UNASSIGNED,60,codex,UNASSIGNED,"Persistent ORIN data-plane mount + deploy verification sentinel persistence"
+2026-02-02,166,UNASSIGNED,90,codex,UNASSIGNED,"Backend upload/dataset API with bearer auth, resumable sessions, finalize/archive/list endpoints"
