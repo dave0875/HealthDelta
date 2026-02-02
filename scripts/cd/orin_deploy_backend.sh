@@ -11,6 +11,7 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
 TAG="${TAG:?tag to deploy (e.g., v0.0.2)}"
 VERSION="${VERSION:?expected version (e.g., 0.0.2)}"
 GIT_SHA="${GIT_SHA:?expected git sha}"
+UPLOAD_TOKEN="${HEALTHDELTA_UPLOAD_TOKEN:-}"
 
 if [ ! -d "$DEPLOY_DIR" ]; then
   echo "ERROR: deploy dir '$DEPLOY_DIR' is missing." >&2
@@ -43,7 +44,12 @@ fi
 cp "$REPO_ROOT/deploy/orin/compose.yaml" "$DEPLOY_DIR/compose.yaml"
 cat >"$DEPLOY_DIR/.env" <<EOF
 HEALTHDELTA_BACKEND_IMAGE_TAG=$TAG
+HEALTHDELTA_UPLOAD_TOKEN=$UPLOAD_TOKEN
 EOF
+
+if [ -z "$UPLOAD_TOKEN" ]; then
+  echo "WARN: HEALTHDELTA_UPLOAD_TOKEN is unset; upload endpoints will return 503 until configured."
+fi
 
 cd "$DEPLOY_DIR"
 

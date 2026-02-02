@@ -42,7 +42,10 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 3) Tools required for verification
    - `curl`
    - `python3`
-4) Deploy directory permissions
+4) Upload API token (required for iOS/TestFlight upload control endpoints)
+   - Set `HEALTHDELTA_UPLOAD_TOKEN` to a long random value (stored as secret in deployment workflow context).
+   - The backend returns `503 upload_unavailable` on upload endpoints when token is unset.
+5) Deploy directory permissions
    - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
      - `sudo mkdir -p /opt/healthdelta/data`
@@ -71,6 +74,39 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
   - trend analysis (`metric`, `window_days`, `direction`, `confidence`, `delta`) with explicit insufficiency reporting
   - mandatory disclaimer string stating flags are not medical advice
   - PHI token guard check result (`phi_tokens_checked`, `phi_token_hits`)
+
+## Upload + dataset control API (Issue #166)
+All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
+
+- `POST /upload-sessions` create resumable session
+- `PUT /upload-sessions/{id}/chunks/{index}` upload chunk bytes
+- `POST /upload-sessions/{id}/finalize` assemble + verify + publish dataset
+- `GET /upload-sessions/{id}` inspect session status
+- `GET /datasets/current` show active dataset
+- `POST /datasets/archive` archive active dataset
+- `GET /datasets/archives` list archived datasets
+
+Example (2-chunk upload via curl):
+
+```bash
+TOKEN="<your_token>"
+BASE="http://127.0.0.1:8080"
+
+echo -n 'hello-' > /tmp/chunk0.bin
+echo -n 'world' > /tmp/chunk1.bin
+TOTAL=$(( $(wc -c < /tmp/chunk0.bin) + $(wc -c < /tmp/chunk1.bin) ))
+SHA="$(cat /tmp/chunk0.bin /tmp/chunk1.bin | sha256sum | awk '{print $1}')"
+
+SID="$(curl -fsS -X POST "$BASE/upload-sessions" \
+  -H "authorization: Bearer $TOKEN" \
+  -H "content-type: application/json" \
+  --data "{\"total_size\":$TOTAL,\"sha256\":\"$SHA\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
+
+curl -fsS -X PUT "$BASE/upload-sessions/$SID/chunks/0" -H "authorization: Bearer $TOKEN" --data-binary @/tmp/chunk0.bin
+curl -fsS -X PUT "$BASE/upload-sessions/$SID/chunks/1" -H "authorization: Bearer $TOKEN" --data-binary @/tmp/chunk1.bin
+curl -fsS -X POST "$BASE/upload-sessions/$SID/finalize" -H "authorization: Bearer $TOKEN"
+curl -fsS "$BASE/datasets/current" -H "authorization: Bearer $TOKEN"
+```
 
 ## Verification (“150%” backend checks)
 The deploy workflow verifies:

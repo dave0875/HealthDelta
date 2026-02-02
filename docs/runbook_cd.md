@@ -80,6 +80,10 @@ For ORIN deploy proof artifacts, include:
 - sentinel write/read success
 - sentinel persistence across restart
 
+For iOS/TestFlight dataset control, backend upload endpoints are gated by:
+- `HEALTHDELTA_UPLOAD_TOKEN` (bearer token auth)
+- `HEALTHDELTA_DATA_DIR` (defaults to `/data`; ORIN deploy sets `/app/data` via bind mount)
+
 Planning/sequence is tracked by:
 - `docs/plan.md` Orin phase issues: #120-#128.
 
