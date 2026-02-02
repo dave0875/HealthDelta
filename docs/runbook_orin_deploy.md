@@ -7,6 +7,7 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Trigger: tag `vX.Y.Z` (or manual dispatch with `tag=vX.Y.Z`)
 - Runner: ORIN self-hosted GitHub Actions runner (LAN-local)
 - Deploy dir: `/opt/healthdelta`
+- Persistent data dir: `/opt/healthdelta/data` (bind-mounted into container `/app/data`)
 
 ## Benchmark workflow (Issue #162)
 - Workflow: `.github/workflows/orin_backend_benchmark.yml`
@@ -44,13 +45,15 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 4) Deploy directory permissions
    - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
-     - `sudo chown <runner-user>:<runner-user> /opt/healthdelta`
+     - `sudo mkdir -p /opt/healthdelta/data`
+     - `sudo chown -R <runner-user>:<runner-user> /opt/healthdelta`
    - The deploy workflow does not use sudo; it fails fast if the directory is missing/not writable.
-   - The deploy workflow copies `deploy/orin/compose.yaml` and writes `/opt/healthdelta/.env` to pin the tag.
+   - The deploy workflow copies `deploy/orin/compose.yaml`, writes `/opt/healthdelta/.env`, and verifies `/opt/healthdelta/data` is writable.
 
 ## What gets deployed
 - Compose template: `deploy/orin/compose.yaml`
 - Pinned tag file: `/opt/healthdelta/.env` with `HEALTHDELTA_BACKEND_IMAGE_TAG=vX.Y.Z`
+- Bind mount: `/opt/healthdelta/data:/app/data`
 - Service listens on `http://127.0.0.1:8080` (port mapping `8080:8080`)
 
 ## Vertical slice endpoint (Issue #123)
@@ -75,6 +78,11 @@ The deploy workflow verifies:
 - Correct image tag is running (container image contains `:vX.Y.Z`)
 - `GET /healthz` returns 200
 - `GET /version` returns `version=X.Y.Z` and `git_sha=<sha>`
+- Data-plane correctness:
+  - `/app/data` is a real bind mount
+  - mount source equals `/opt/healthdelta/data`
+  - sentinel write/read works inside container and on host
+  - sentinel persists across service restart
 - `POST /summary` succeeds against synthetic fixture path and includes citations + risk/trend payload shape
 - `POST /qa` succeeds against synthetic fixture path and includes citations + disclaimer
 - Synthetic fixture path used in-container: `/app/deploy/fixtures/profile_export`
@@ -118,7 +126,7 @@ ROLLBACK_TAG=v0.0.1 ROLLBACK_SHA=<git_sha_for_tag> \
 This script:
 - rewrites `/opt/healthdelta/.env` to the rollback tag
 - redeploys compose service
-- re-runs the same verify contract (`/healthz`, `/version`, `/summary`, `/qa`)
+- re-runs the same verify contract (`/healthz`, `/version`, data-plane checks, `/summary`, `/qa`)
 
 ## Credentials / secrets
 - The workflow uses `GITHUB_TOKEN` for `docker login ghcr.io` with `packages: read` permission.
@@ -140,4 +148,12 @@ python3 scripts/cd/orin_benchmark_backend.py \
 python3 scripts/cd/check_benchmark_thresholds.py \
   --results artifacts/orin-benchmark/benchmark_results.json \
   --thresholds deploy/orin/benchmark_thresholds.json
+```
+
+Validate mount and sentinel manually:
+
+```bash
+cid="$(docker compose -f /opt/healthdelta/compose.yaml --env-file /opt/healthdelta/.env ps -q backend)"
+docker inspect "$cid" --format '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Source}} -> {{.Destination}}{{end}}{{end}}'
+cat /opt/healthdelta/data/.healthdelta_sentinel
 ```
