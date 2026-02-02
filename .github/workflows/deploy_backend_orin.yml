@@ -19,6 +19,7 @@ jobs:
   deploy:
     name: ORIN deploy + verify
     runs-on: [self-hosted, linux, orin]
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -50,7 +51,29 @@ jobs:
       - name: Deploy + verify (compose)
         run: |
           set -euo pipefail
+          mkdir -p artifacts/orin-deploy
           TAG="${{ steps.v.outputs.tag }}" VERSION="${{ steps.v.outputs.ver }}" GIT_SHA="${{ steps.v.outputs.sha }}" \
             DEPLOY_DIR="/opt/healthdelta" SERVICE_NAME="backend" BASE_URL="http://127.0.0.1:8080" \
-            bash scripts/cd/orin_deploy_backend.sh
+            bash scripts/cd/orin_deploy_backend.sh | tee artifacts/orin-deploy/deploy_verify.log
 
+      - name: Record deploy metadata
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/orin-deploy
+          {
+            echo "tag=${{ steps.v.outputs.tag }}"
+            echo "version=${{ steps.v.outputs.ver }}"
+            echo "git_sha=${{ steps.v.outputs.sha }}"
+            echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > artifacts/orin-deploy/metadata.txt
+
+      - name: Upload ORIN deploy artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orin-deploy-proof
+          path: |
+            artifacts/orin-deploy/deploy_verify.log
+            artifacts/orin-deploy/metadata.txt
+          if-no-files-found: error
