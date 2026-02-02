@@ -38,6 +38,19 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Pinned tag file: `/opt/healthdelta/.env` with `HEALTHDELTA_BACKEND_IMAGE_TAG=vX.Y.Z`
 - Service listens on `http://127.0.0.1:8080` (port mapping `8080:8080`)
 
+## Vertical slice endpoint (Issue #123)
+- Endpoint: `POST /summary`
+- Purpose: run a minimal ingest -> identity -> de-id -> NDJSON vertical slice and return a share-safe summary response.
+- Required request fields:
+  - `input_path`: local path to a synthetic/unpacked export fixture
+- Optional request fields:
+  - `work_dir`: scratch output root (default `data/backend_slice`)
+  - `citation_limit`: max response citations (default 12, capped at 50)
+- Response includes:
+  - deterministic stream-count summary text
+  - citation list (`stream`, `record_key`, `source_file`, `event_time`, `line`)
+  - PHI token guard check result (`phi_tokens_checked`, `phi_token_hits`)
+
 ## Verification (“150%” backend checks)
 The deploy workflow verifies:
 - GHCR tag manifest is available before compose pull (bounded wait loop).
@@ -48,6 +61,9 @@ The deploy workflow verifies:
 - Workflow uploads artifact `orin-deploy-proof` containing:
   - `deploy_verify.log`
   - `metadata.txt` (tag/version/sha/run URL)
+- CI Linux job also uploads backend slice evidence artifacts:
+  - `artifacts/linux/backend_slice/smoke.log`
+  - `artifacts/linux/backend_slice/summary_response.json`
 
 ## Rollback
 1) Choose a previous tag (example: `v0.0.1`)

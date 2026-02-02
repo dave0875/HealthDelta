@@ -57,9 +57,9 @@ New planning phase: Orin production deployment target (`orin.local`)
    - https://github.com/dave0875/HealthDelta/issues/120
 4) Issue #121 - Orin MMF: export inventory + PHI field map (closed)
    - https://github.com/dave0875/HealthDelta/issues/121
-5) Issue #122 - Orin MMF: local model/runtime matrix for summaries + risk flags (active)
+5) Issue #122 - Orin MMF: local model/runtime matrix for summaries + risk flags (closed)
    - https://github.com/dave0875/HealthDelta/issues/122
-6) Issue #123 - Orin MMF: ingest-to-summary vertical slice on backend
+6) Issue #123 - Orin MMF: ingest-to-summary vertical slice on backend (active)
    - https://github.com/dave0875/HealthDelta/issues/123
 7) Issue #124 - Orin MMF: risk flags v1 with evidence + disclaimers
    - https://github.com/dave0875/HealthDelta/issues/124
