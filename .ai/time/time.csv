@@ -85,3 +85,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,140,UNASSIGNED,15,codex,UNASSIGNED,"ORIN deploy verify invocation fix for non-executable script path"
 2026-02-01,143,UNASSIGNED,20,codex,UNASSIGNED,"ORIN deploy waits for GHCR manifest availability on tag-triggered runs"
 2026-02-02,121,UNASSIGNED,45,codex,UNASSIGNED,"Export profile schema inventory + sensitive field map + CI artifact evidence"
+2026-02-02,122,UNASSIGNED,35,codex,UNASSIGNED,"ORIN local model/runtime matrix planning artifact + docs linkage"
