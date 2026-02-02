@@ -63,8 +63,14 @@ Target host: `orin.local` (Jetson Orin Nano Super, local-only analytics).
 Deployment proof for Orin-target issues must include:
 - CI workflow/job evidence for build + tests tied to the issue.
 - Artifact evidence for deployment package contents and version metadata.
-- Smoke verification evidence from target-compatible run steps (`/healthz`, `/version`, and issue-scoped endpoint checks).
+- Smoke verification evidence from target-compatible run steps (`/healthz`, `/version`, `/summary`, `/qa`).
 - Rollback procedure evidence that restores a known-good version deterministically.
+
+For ORIN deploy proof artifacts, include:
+- `deploy_verify.log`
+- `summary_response.json`
+- `qa_response.json`
+- `metadata.txt`
 
 Planning/sequence is tracked by:
 - `docs/plan.md` Orin phase issues: #120-#128.
