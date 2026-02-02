@@ -112,6 +112,19 @@ jobs:
             --out-json artifacts/linux/safety/safety_report.json \
             --out-log artifacts/linux/safety/safety.log
 
+      - name: Render policy outcome report (artifact evidence)
+        if: always()
+        env:
+          POLICY_ISSUE_FOOTER: ${{ steps.policy_issue_footer.outcome }}
+          POLICY_PR_ISSUE: ${{ steps.policy_pr_issue.outcome }}
+          POLICY_AUDIT_ARTIFACTS: ${{ steps.policy_audit_artifacts.outcome }}
+          POLICY_PROMPT_IMMUTABILITY: ${{ steps.policy_prompt_immutability.outcome }}
+          POLICY_WORKTREE: ${{ steps.policy_worktree.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux/policy
+          python3 scripts/render_policy_report.py --out artifacts/linux/policy/policy_report.json
+
       - name: Upload Linux unittest artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,6 +143,7 @@ jobs:
             artifacts/linux/backend_slice/summary_response.json
             artifacts/linux/safety/safety_report.json
             artifacts/linux/safety/safety.log
+            artifacts/linux/policy/policy_report.json
           if-no-files-found: error
 
       - name: Fail if policy or unittest failed
