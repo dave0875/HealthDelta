@@ -12,13 +12,16 @@ VERSION="${VERSION:?expected version (e.g., 0.0.2)}"
 GIT_SHA="${GIT_SHA:?expected git sha}"
 
 if [ ! -d "$DEPLOY_DIR" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    sudo mkdir -p "$DEPLOY_DIR"
-    sudo chown "$USER":"$USER" "$DEPLOY_DIR"
-  else
-    echo "ERROR: deploy dir '$DEPLOY_DIR' does not exist and sudo is unavailable" >&2
-    exit 2
-  fi
+  echo "ERROR: deploy dir '$DEPLOY_DIR' is missing." >&2
+  echo "Create it once before deploy (Option A):" >&2
+  echo "  sudo mkdir -p $DEPLOY_DIR && sudo chown <runner-user>:<runner-user> $DEPLOY_DIR" >&2
+  exit 2
+fi
+
+if [ ! -w "$DEPLOY_DIR" ]; then
+  echo "ERROR: deploy dir '$DEPLOY_DIR' is not writable by user '$(id -un)'." >&2
+  echo "Fix ownership once: sudo chown <runner-user>:<runner-user> $DEPLOY_DIR" >&2
+  exit 2
 fi
 
 cp "$REPO_ROOT/deploy/orin/compose.yaml" "$DEPLOY_DIR/compose.yaml"
@@ -34,4 +37,3 @@ docker compose --env-file .env up -d --remove-orphans
 DEPLOY_DIR="$DEPLOY_DIR" SERVICE_NAME="$SERVICE_NAME" BASE_URL="$BASE_URL" \
   EXPECTED_TAG="$TAG" EXPECTED_VERSION="$VERSION" EXPECTED_SHA="$GIT_SHA" \
   "$REPO_ROOT/scripts/cd/orin_verify_backend.sh"
-
