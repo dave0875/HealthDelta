@@ -49,11 +49,11 @@ Completed
 Active governance carryover
 1) Issue #72 - Governance: plan refresh + CI issue reference gate (active)
    - https://github.com/dave0875/HealthDelta/issues/72
-2) Issue #92 - Governance: CI guardrails for issue discipline (active)
+2) Issue #92 - Governance: CI guardrails for issue discipline (closed)
    - https://github.com/dave0875/HealthDelta/issues/92
 
 New planning phase: Orin production deployment target (`orin.local`)
-3) Issue #120 - Planning: Orin production deployment MMF backlog
+3) Issue #120 - Planning: Orin production deployment MMF backlog (closed)
    - https://github.com/dave0875/HealthDelta/issues/120
 4) Issue #121 - Orin MMF: export inventory + PHI field map (closed)
    - https://github.com/dave0875/HealthDelta/issues/121
@@ -71,6 +71,11 @@ New planning phase: Orin production deployment target (`orin.local`)
     - https://github.com/dave0875/HealthDelta/issues/127
 11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements (closed)
     - https://github.com/dave0875/HealthDelta/issues/128
+
+Next roadmap focus (post-MMF)
+- Harden performance envelopes on ORIN with benchmark artifacts and regression thresholds.
+- Expand risk/trend rule coverage with stricter clinical evidence mappings.
+- Add operator-facing runbook automation for routine rollback drills and release readiness checks.
 
 ## Operating rules (quick reference)
 

@@ -94,3 +94,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,154,UNASSIGNED,25,codex,UNASSIGNED,"Release image fixture path fix for ORIN summary/qa smoke checks"
 2026-02-02,128,UNASSIGNED,45,codex,UNASSIGNED,"Blocking CI safety guardrails for PHI patterns and output disclaimer/citation contracts"
 2026-02-02,92,UNASSIGNED,35,codex,UNASSIGNED,"CI governance artifact report for deterministic issue-discipline evidence"
+2026-02-02,72,UNASSIGNED,30,codex,UNASSIGNED,"Plan refresh and deterministic CI issue-reference gate coverage tests"
