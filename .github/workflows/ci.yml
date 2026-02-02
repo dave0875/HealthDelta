@@ -92,6 +92,16 @@ jobs:
             --sample-json 3 \
             --top-files 5 > artifacts/linux/profile_smoke.log 2>&1
 
+      - name: Run backend vertical-slice smoke (artifact evidence)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux/backend_slice
+          python3 scripts/backend_slice_smoke.py \
+            --input tests/fixtures/profile_export \
+            --work artifacts/linux/backend_slice/work \
+            --response artifacts/linux/backend_slice/summary_response.json \
+            --log artifacts/linux/backend_slice/smoke.log
+
       - name: Upload Linux unittest artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -106,6 +116,8 @@ jobs:
             artifacts/linux/profile/profile.md
             artifacts/linux/profile/clinical_schema_keys.csv
             artifacts/linux/profile/sensitive_field_map.json
+            artifacts/linux/backend_slice/smoke.log
+            artifacts/linux/backend_slice/summary_response.json
           if-no-files-found: error
 
       - name: Fail if policy or unittest failed

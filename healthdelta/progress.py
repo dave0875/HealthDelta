@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import builtins
 import sys
 import time
 from dataclasses import dataclass
@@ -249,4 +250,6 @@ class Progress:
             pass
 
 
-progress = Progress()
+if not hasattr(builtins, "_healthdelta_progress_singleton"):
+    setattr(builtins, "_healthdelta_progress_singleton", Progress())
+progress = getattr(builtins, "_healthdelta_progress_singleton")
