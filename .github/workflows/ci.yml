@@ -102,6 +102,16 @@ jobs:
             --response artifacts/linux/backend_slice/summary_response.json \
             --log artifacts/linux/backend_slice/smoke.log
 
+      - name: Run safety guardrail validation (artifact evidence)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux/safety
+          python3 scripts/check_safety_outputs.py \
+            --input tests/fixtures/profile_export \
+            --work artifacts/linux/safety/work \
+            --out-json artifacts/linux/safety/safety_report.json \
+            --out-log artifacts/linux/safety/safety.log
+
       - name: Upload Linux unittest artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -118,6 +128,8 @@ jobs:
             artifacts/linux/profile/sensitive_field_map.json
             artifacts/linux/backend_slice/smoke.log
             artifacts/linux/backend_slice/summary_response.json
+            artifacts/linux/safety/safety_report.json
+            artifacts/linux/safety/safety.log
           if-no-files-found: error
 
       - name: Fail if policy or unittest failed
