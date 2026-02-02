@@ -43,10 +43,11 @@ final class SyncStatusStoreTests: XCTestCase {
         XCTAssertEqual(snapshot.anchorFiles, 1)
         XCTAssertEqual(snapshot.rowCounts, ["observations": 2])
         XCTAssertEqual(snapshot.sourceFiles, ["ndjson/observations.ndjson"])
-        XCTAssertTrue(snapshot.lastSyncLabel.contains("2024"))
-        XCTAssertTrue(snapshot.lastSyncLabel.contains("12:00 AM"))
-        XCTAssertTrue(snapshot.lastDeltaLabel.contains("2026"))
-        XCTAssertTrue(snapshot.lastDeltaLabel.contains("8:30 AM"))
+        XCTAssertEqual(snapshot.generatedAt?.timeIntervalSince1970, 1_706_884_800, accuracy: 1)
+        XCTAssertEqual(snapshot.deltaStart?.timeIntervalSince1970, 1_770_163_200, accuracy: 1)
+        XCTAssertEqual(snapshot.deltaEnd?.timeIntervalSince1970, 1_770_193_800, accuracy: 1)
+        XCTAssertNotEqual(snapshot.lastSyncLabel, "Unknown")
+        XCTAssertNotEqual(snapshot.lastDeltaLabel, "Not available yet")
     }
 
     func testLoadLatestThrowsWhenNoRunDirectoryExists() throws {
