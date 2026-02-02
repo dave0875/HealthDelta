@@ -82,6 +82,16 @@ jobs:
           python3 -m healthdelta export validate --input "$tmpdir" > artifacts/linux/ndjson_validate.log 2>&1
           rm -rf "$tmpdir"
 
+      - name: Run export profile smoke (artifact evidence)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux/profile
+          python3 -m healthdelta export profile \
+            --input tests/fixtures/profile_export \
+            --out artifacts/linux/profile \
+            --sample-json 3 \
+            --top-files 5 > artifacts/linux/profile_smoke.log 2>&1
+
       - name: Upload Linux unittest artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,6 +101,11 @@ jobs:
             artifacts/linux/python_version.txt
             artifacts/linux/unittest.log
             artifacts/linux/ndjson_validate.log
+            artifacts/linux/profile_smoke.log
+            artifacts/linux/profile/profile.json
+            artifacts/linux/profile/profile.md
+            artifacts/linux/profile/clinical_schema_keys.csv
+            artifacts/linux/profile/sensitive_field_map.json
           if-no-files-found: error
 
       - name: Fail if policy or unittest failed
