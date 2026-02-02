@@ -23,6 +23,7 @@ This runbook defines how HealthDelta produces share-safe build artifacts and wha
   - Publishes `cli-dist` as a GitHub Actions artifact containing `dist/*` (Python wheel + sdist).
 - On tags `vX.Y.Z` (and manual dispatch):
   - Creates/updates a GitHub Release and attaches the CLI `dist/*` artifacts.
+  - Publishes backend image `ghcr.io/<owner>/healthdelta-backend:vX.Y.Z` and `:latest` as a multi-arch manifest (`linux/amd64`, `linux/arm64`).
 
 ## Operator guidance (share-safety)
 - Never upload real Apple Health exports (or staged copies) to GitHub Actions artifacts or Releases.

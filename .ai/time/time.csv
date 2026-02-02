@@ -79,3 +79,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-01,120,,35,codex,,"Orin production deployment planning phase + MMF backlog"
 2026-02-01,130,,55,codex,,"Governance hardening for rewrite-tolerant non-blocking enforcement"
 2026-02-01,132,UNASSIGNED,25,codex,UNASSIGNED,"ORIN runner diagnostics workflow + evidence artifact"
+2026-02-01,134,UNASSIGNED,35,codex,UNASSIGNED,"Release workflow multi-arch backend publish + manifest verification"

@@ -87,6 +87,9 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set up QEMU for cross-platform build
+        uses: docker/setup-qemu-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -110,7 +113,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/healthdelta-backend:${{ steps.v.outputs.tag }}
             ghcr.io/${{ github.repository_owner }}/healthdelta-backend:latest
@@ -126,6 +129,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "digest=${{ steps.build.outputs.digest }}"
+
+      - name: Verify multi-arch manifest
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ github.repository_owner }}/healthdelta-backend:${{ steps.v.outputs.tag }}"
+          docker buildx imagetools inspect "$image" | tee imagetools_inspect.txt
+          grep -q "linux/amd64" imagetools_inspect.txt
+          grep -q "linux/arm64" imagetools_inspect.txt
 
       - name: Verify pushed image (pull + run)
         run: |
