@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY healthdelta ./healthdelta
+COPY tests/fixtures/profile_export ./tests/fixtures/profile_export
 
 ARG HEALTHDELTA_VERSION=0.0.0+container
 ARG HEALTHDELTA_GIT_SHA=unknown
@@ -15,4 +16,3 @@ ENV PORT=8080
 EXPOSE 8080
 
 CMD ["python", "-m", "healthdelta.backend_server"]
-

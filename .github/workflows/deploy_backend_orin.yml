@@ -77,6 +77,15 @@ jobs:
             DEPLOY_DIR="/opt/healthdelta" SERVICE_NAME="backend" BASE_URL="http://127.0.0.1:8080" \
             bash scripts/cd/orin_deploy_backend.sh | tee artifacts/orin-deploy/deploy_verify.log
 
+      - name: Capture endpoint response samples
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/orin-deploy
+          summary_payload='{"citation_limit":5,"input_path":"/app/tests/fixtures/profile_export"}'
+          qa_payload='{"citation_limit":5,"input_path":"/app/tests/fixtures/profile_export","question":"what observations exist?"}'
+          curl -fsS -X POST "http://127.0.0.1:8080/summary" -H "content-type: application/json" --data "$summary_payload" > artifacts/orin-deploy/summary_response.json
+          curl -fsS -X POST "http://127.0.0.1:8080/qa" -H "content-type: application/json" --data "$qa_payload" > artifacts/orin-deploy/qa_response.json
+
       - name: Record deploy metadata
         if: always()
         run: |
@@ -96,5 +105,7 @@ jobs:
           name: orin-deploy-proof
           path: |
             artifacts/orin-deploy/deploy_verify.log
+            artifacts/orin-deploy/summary_response.json
+            artifacts/orin-deploy/qa_response.json
             artifacts/orin-deploy/metadata.txt
           if-no-files-found: error

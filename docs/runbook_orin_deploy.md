@@ -60,9 +60,13 @@ The deploy workflow verifies:
 - Correct image tag is running (container image contains `:vX.Y.Z`)
 - `GET /healthz` returns 200
 - `GET /version` returns `version=X.Y.Z` and `git_sha=<sha>`
+- `POST /summary` succeeds against synthetic fixture path and includes citations + risk/trend payload shape
+- `POST /qa` succeeds against synthetic fixture path and includes citations + disclaimer
 - Recent logs do not contain obvious fatal indicators (bounded tail scan)
 - Workflow uploads artifact `orin-deploy-proof` containing:
   - `deploy_verify.log`
+  - `summary_response.json`
+  - `qa_response.json`
   - `metadata.txt` (tag/version/sha/run URL)
 - CI Linux job also uploads backend slice evidence artifacts:
   - `artifacts/linux/backend_slice/smoke.log`
@@ -80,16 +84,18 @@ The deploy workflow verifies:
   - mandatory `qa.disclaimer` (not medical advice)
 
 ## Rollback
-1) Choose a previous tag (example: `v0.0.1`)
-2) Update `/opt/healthdelta/.env`:
-   - `HEALTHDELTA_BACKEND_IMAGE_TAG=v0.0.1`
-3) Redeploy:
-   - `cd /opt/healthdelta`
-   - `docker compose --env-file .env pull backend`
-   - `docker compose --env-file .env up -d --remove-orphans`
-4) Verify:
-   - `curl -fsS http://127.0.0.1:8080/healthz`
-   - `curl -fsS http://127.0.0.1:8080/version`
+Use deterministic rollback helper:
+
+```bash
+ROLLBACK_TAG=v0.0.1 ROLLBACK_SHA=<git_sha_for_tag> \
+  DEPLOY_DIR=/opt/healthdelta BASE_URL=http://127.0.0.1:8080 \
+  bash scripts/cd/orin_rollback_backend.sh
+```
+
+This script:
+- rewrites `/opt/healthdelta/.env` to the rollback tag
+- redeploys compose service
+- re-runs the same verify contract (`/healthz`, `/version`, `/summary`, `/qa`)
 
 ## Credentials / secrets
 - The workflow uses `GITHUB_TOKEN` for `docker login ghcr.io` with `packages: read` permission.
