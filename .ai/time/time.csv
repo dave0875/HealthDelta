@@ -88,3 +88,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,122,UNASSIGNED,35,codex,UNASSIGNED,"ORIN local model/runtime matrix planning artifact + docs linkage"
 2026-02-02,123,UNASSIGNED,70,codex,UNASSIGNED,"Backend ingest->de-id->summary vertical slice API with citation and CI evidence artifacts"
 2026-02-02,124,UNASSIGNED,55,codex,UNASSIGNED,"Risk flags v1 deterministic ruleset with evidence traceability and disclaimer"
+2026-02-02,125,UNASSIGNED,50,codex,UNASSIGNED,"Trend analysis v1 payload with windowed direction/confidence and insufficiency handling"
