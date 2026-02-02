@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY healthdelta ./healthdelta
-COPY tests/fixtures/profile_export ./tests/fixtures/profile_export
+COPY deploy/fixtures/profile_export ./deploy/fixtures/profile_export
 
 ARG HEALTHDELTA_VERSION=0.0.0+container
 ARG HEALTHDELTA_GIT_SHA=unknown

@@ -35,6 +35,6 @@ docker compose --env-file .env pull "$SERVICE_NAME"
 docker compose --env-file .env up -d --remove-orphans
 
 DEPLOY_DIR="$DEPLOY_DIR" SERVICE_NAME="$SERVICE_NAME" BASE_URL="$BASE_URL" \
-  FIXTURE_INPUT_PATH="/app/tests/fixtures/profile_export" \
+  FIXTURE_INPUT_PATH="/app/deploy/fixtures/profile_export" \
   EXPECTED_TAG="$TAG" EXPECTED_VERSION="$VERSION" EXPECTED_SHA="$GIT_SHA" \
   bash "$REPO_ROOT/scripts/cd/orin_verify_backend.sh"

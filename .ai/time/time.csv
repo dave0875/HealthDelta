@@ -91,3 +91,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-02-02,125,UNASSIGNED,50,codex,UNASSIGNED,"Trend analysis v1 payload with windowed direction/confidence and insufficiency handling"
 2026-02-02,126,UNASSIGNED,55,codex,UNASSIGNED,"Grounded local Q&A endpoint with citations, abstain behavior, and safety disclaimer"
 2026-02-02,127,UNASSIGNED,65,codex,UNASSIGNED,"ORIN deploy/rollback proof updates for summary+qa endpoint validation and persisted artifacts"
+2026-02-02,154,UNASSIGNED,25,codex,UNASSIGNED,"Release image fixture path fix for ORIN summary/qa smoke checks"
