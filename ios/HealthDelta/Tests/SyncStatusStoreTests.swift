@@ -47,8 +47,8 @@ final class SyncStatusStoreTests: XCTestCase {
         XCTAssertNotNil(snapshot.deltaStart)
         XCTAssertNotNil(snapshot.deltaEnd)
         XCTAssertEqual(snapshot.generatedAt!.timeIntervalSince1970, 1_706_884_800.0, accuracy: 1.0)
-        XCTAssertEqual(snapshot.deltaStart!.timeIntervalSince1970, 1_770_163_200.0, accuracy: 1.0)
-        XCTAssertEqual(snapshot.deltaEnd!.timeIntervalSince1970, 1_770_193_800.0, accuracy: 1.0)
+        XCTAssertEqual(snapshot.deltaStart!.timeIntervalSince1970, 1_769_904_000.0, accuracy: 1.0)
+        XCTAssertEqual(snapshot.deltaEnd!.timeIntervalSince1970, 1_769_934_600.0, accuracy: 1.0)
         XCTAssertNotEqual(snapshot.lastSyncLabel, "Unknown")
         XCTAssertNotEqual(snapshot.lastDeltaLabel, "Not available yet")
     }
