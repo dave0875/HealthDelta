@@ -71,13 +71,35 @@ New planning phase: Orin production deployment target (`orin.local`)
     - https://github.com/dave0875/HealthDelta/issues/127
 11) Issue #128 - Orin MMF: CI safety guardrails for PHI leakage + disclosure requirements (closed)
     - https://github.com/dave0875/HealthDelta/issues/128
-12) Issue #162 - ORIN benchmark artifacts + regression thresholds (active)
+12) Issue #162 - ORIN benchmark artifacts + regression thresholds (closed)
     - https://github.com/dave0875/HealthDelta/issues/162
 
 Next roadmap focus (post-MMF)
-- Complete Issue #162 benchmark rollout and establish baseline threshold maintenance cadence.
-- Expand risk/trend rule coverage with stricter clinical evidence mappings.
-- Add operator-facing runbook automation for routine rollback drills and release readiness checks.
+- Issue #205 - Refresh roadmap and create new issue set (open)
+  - https://github.com/dave0875/HealthDelta/issues/205
+- Issue #209 - Benchmark maintenance cadence (open)
+  - https://github.com/dave0875/HealthDelta/issues/209
+- Issue #174 - Incremental HealthKit anchors (open)
+  - https://github.com/dave0875/HealthDelta/issues/174
+- Issue #175 - Share-safe bundle pipeline (open)
+  - https://github.com/dave0875/HealthDelta/issues/175
+- Issue #176 - Governance and runbook audit (open)
+  - https://github.com/dave0875/HealthDelta/issues/176
+- Issue #178 - Hospital records coverage inventory + roadmap slice (open)
+  - https://github.com/dave0875/HealthDelta/issues/178
+- Issue #179 - Hospital records coverage report artifacts (open)
+  - https://github.com/dave0875/HealthDelta/issues/179
+- Issue #180 - Clinical records export profile inventory artifact (open)
+  - https://github.com/dave0875/HealthDelta/issues/180
+- Issue #181 - Clinical records unresolved reference audit (open)
+  - https://github.com/dave0875/HealthDelta/issues/181
+- Issue #182 - Share bundle hospital record evidence artifacts (open)
+  - https://github.com/dave0875/HealthDelta/issues/182
+- Issue #183 - Clinical records coverage matrix + gap report (open)
+  - https://github.com/dave0875/HealthDelta/issues/183
+- Open mapping wave:
+  - Issues #184-#193 (FHIR and clinical-record resource coverage)
+  - Issues #200-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)
 

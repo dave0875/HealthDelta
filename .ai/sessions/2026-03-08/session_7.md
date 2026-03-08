@@ -1,16 +1,20 @@
 # Session 7 - 2026-03-08
 
-Issue: #214
+Issue: #213
 
 Goal
-- Resolve the second CI regression from the pushed closure/audit backfill commit and repush a green fix.
+- Reconcile `docs/plan.md` to the live GitHub issue state with the smallest accurate diff.
 
 Notes
-- Reviewed failed CI run `22829447109` for commit `69f1b9b`.
-- Confirmed the report contract already limits `top_record_types` to `top_n = 5`.
-- Corrected `tests/test_reports.py` to assert the actual top-5 deterministic list instead of over-asserting the full set of equal-count record types.
+- Audited `docs/plan.md` against live GitHub issue state using `gh issue list`.
+- Confirmed the concrete drift:
+  - `docs/plan.md` listed Issue #162 as active even though GitHub shows it closed.
+  - the plan omitted the currently open roadmap issues now driving work after the original Orin MMF wave.
+- Updated the plan to:
+  - mark Issue #162 closed
+  - replace stale post-MMF focus items with links to the currently open roadmap issues
+  - summarize the larger open clinical-records mapping wave without inventing new priorities outside the tracker
 
 Local verification
-- Reviewed CI logs for failed run `22829447109`.
-- Confirmed `healthdelta/reporting.py` uses `top_n = 5` for `top_record_types`.
-- `TZ=UTC python3 -m unittest tests/test_reports.py -v` remains skipped locally because `duckdb` is not installed in this environment.
+- Reviewed live issue state with `gh issue list --state open` and `gh issue view 162`
+- Reviewed updated `docs/plan.md` against the current open issue set
