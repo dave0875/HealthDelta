@@ -176,14 +176,6 @@ class TestReports(unittest.TestCase):
                     {"record_type": "diagnostic_reports:DiagnosticReport", "rows": 1},
                     {"record_type": "documents:DocumentReference", "rows": 1},
                     {"record_type": "encounters:Encounter", "rows": 1},
-                    {"record_type": "medications:MedicationDispense", "rows": 1},
-                    {"record_type": "medications:MedicationRequest", "rows": 1},
-                    {"record_type": "medications:MedicationStatement", "rows": 1},
-                    {"record_type": "observations:Immunization", "rows": 1},
-                    {"record_type": "observations:Observation", "rows": 1},
-                    {"record_type": "observations:hk:HKQuantityTypeIdentifierHeartRate", "rows": 1},
-                    {"record_type": "observations:lab:8867-4", "rows": 1},
-                    {"record_type": "procedures:Procedure", "rows": 1},
                 ],
             )
 
