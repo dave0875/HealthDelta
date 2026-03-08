@@ -83,7 +83,7 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/174
 - Issue #175 - Share-safe bundle pipeline (closed)
   - https://github.com/dave0875/HealthDelta/issues/175
-- Issue #176 - Governance and runbook audit (open)
+- Issue #176 - Governance and runbook audit (closed)
   - https://github.com/dave0875/HealthDelta/issues/176
 - Issue #178 - Hospital records coverage inventory + roadmap slice (open)
   - https://github.com/dave0875/HealthDelta/issues/178
