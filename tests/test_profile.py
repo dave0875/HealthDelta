@@ -43,6 +43,7 @@ class TestExportProfile(unittest.TestCase):
             expected_outputs = [
                 out / "profile.json",
                 out / "profile.md",
+                out / "clinical_coverage_inventory.json",
                 out / "files_top.csv",
                 out / "counts_by_ext.csv",
                 out / "healthkit_record_types.csv",
@@ -83,6 +84,28 @@ class TestExportProfile(unittest.TestCase):
             self.assertEqual(prof["summary"]["file_count"], 5)
             self.assertEqual(prof["summary"]["clinical_json_total_files"], 3)
             self.assertEqual(prof["summary"]["clinical_json_sampled_files"], 2)
+
+            inventory = json.loads((out / "clinical_coverage_inventory.json").read_text(encoding="utf-8"))
+            self.assertEqual(inventory["schema_version"], 1)
+            self.assertEqual(inventory["profile_id"], prof["profile_id"])
+            self.assertEqual(
+                inventory["fhir_resource_types"],
+                [
+                    {"resourceType": "Observation", "count": 1},
+                    {"resourceType": "Patient", "count": 1},
+                ],
+            )
+            self.assertEqual(
+                inventory["cda_sections"],
+                [
+                    {
+                        "section_code": "8716-3",
+                        "section_display": "Vital signs",
+                        "section_title": "Vital Signs",
+                        "count": 1,
+                    }
+                ],
+            )
 
             # counts_by_ext.csv should include .json=3, .xml=2
             ext_rows = _read_csv(out / "counts_by_ext.csv")

@@ -87,6 +87,13 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/176
 - Issue #178 - Hospital records coverage inventory + roadmap slice (open)
   - https://github.com/dave0875/HealthDelta/issues/178
+  - Prioritized next clinical-record targets from the current coverage slice:
+    - Issue #187 - Clinical records Encounter mapping v1
+    - Issue #188 - Clinical records Observation mapping v1
+    - Issue #189 - Clinical records DiagnosticReport mapping v1
+    - Issue #190 - Clinical records DocumentReference mapping v1
+    - Issue #191 - Clinical records CarePlan + Goal mapping v1
+    - Issue #192 - Clinical records ServiceRequest mapping v1
 - Issue #179 - Hospital records coverage report artifacts (open)
   - https://github.com/dave0875/HealthDelta/issues/179
 - Issue #180 - Clinical records export profile inventory artifact (open)

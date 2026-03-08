@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import tempfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,12 @@ def _safe_relpath(p: Path) -> str:
 
 def _sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
+
+
+def _localname(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    return tag
 
 
 @dataclass(frozen=True)
@@ -300,6 +307,53 @@ def _count_cda_tags(export_cda_xml: Path, *, top_n: int = 50) -> list[tuple[str,
     return items[: max(0, top_n)]
 
 
+def _count_cda_sections(export_cda_xml: Path) -> list[dict[str, object]]:
+    if not export_cda_xml.exists():
+        return []
+
+    counts: Counter[tuple[str | None, str | None, str | None]] = Counter()
+    task = progress.task("profile: scan CDA sections", unit="sections")
+    for _event, el in ET.iterparse(str(export_cda_xml), events=("end",)):
+        if _localname(el.tag) != "section":
+            continue
+        section_code: str | None = None
+        section_display: str | None = None
+        section_title: str | None = None
+        for child in list(el):
+            ln = _localname(child.tag)
+            if ln == "code":
+                raw_code = child.attrib.get("code")
+                raw_display = child.attrib.get("displayName")
+                section_code = raw_code.strip() if isinstance(raw_code, str) and raw_code.strip() else None
+                section_display = raw_display.strip() if isinstance(raw_display, str) and raw_display.strip() else None
+            elif ln == "title":
+                raw_title = "".join(child.itertext()).strip()
+                section_title = raw_title or None
+        counts[(section_code, section_display, section_title)] += 1
+        el.clear()
+        task.advance(1)
+
+    rows: list[dict[str, object]] = []
+    for (section_code, section_display, section_title), count in sorted(
+        counts.items(),
+        key=lambda item: (
+            -(item[1]),
+            item[0][0] or "",
+            item[0][1] or "",
+            item[0][2] or "",
+        ),
+    ):
+        rows.append(
+            {
+                "section_code": section_code,
+                "section_display": section_display,
+                "section_title": section_title,
+                "count": count,
+            }
+        )
+    return rows
+
+
 def _stable_profile_id(files: list[FileInfo]) -> str:
     """
     Deterministic profile id derived from file list (relpath + size only).
@@ -343,6 +397,7 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
 
     with progress.phase("profile: scan export_cda.xml"):
         cda_counts = _count_cda_tags(export_cda, top_n=50) if export_cda.exists() else []
+        cda_sections = _count_cda_sections(export_cda) if export_cda.exists() else []
 
     with progress.phase("profile: aggregate"):
         ext_counts = _counts_by_ext(files)
@@ -386,6 +441,29 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
 
         # Write outputs (deterministic ordering/formatting).
         _write_json(out / "profile.json", profile_obj)
+        task.advance(1)
+        _write_json(
+            out / "clinical_coverage_inventory.json",
+            {
+                "schema_version": 1,
+                "profile_id": profile_id,
+                "summary": {
+                    "clinical_json_total_files": fhir_meta["total_files"],
+                    "clinical_json_sampled_files": fhir_meta["sampled_files"],
+                    "has_export_cda_xml": export_cda.exists(),
+                    "cda_section_total": sum(int(row["count"]) for row in cda_sections),
+                },
+                "fhir_resource_types": [{"resourceType": t, "count": n} for t, n in fhir_counts],
+                "cda_sections": cda_sections,
+                "privacy": {
+                    "share_safe": True,
+                    "notes": [
+                        "Only aggregate counts and schema-level identifiers are emitted",
+                        "No names, dates of birth, identifiers, timestamps, or free-text payload fragments are included",
+                    ],
+                },
+            },
+        )
         task.advance(1)
 
         _write_csv(

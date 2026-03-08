@@ -25,6 +25,7 @@ Notes:
 Written under `--out`:
 - `profile.json`: machine-readable summary.
 - `profile.md`: human-readable one-screen summary + sections.
+- `clinical_coverage_inventory.json`: share-safe inventory of sampled FHIR resourceTypes and CDA sections with observed counts.
 - `files_top.csv`: largest files (size + relative path).
 - `counts_by_ext.csv`: file extension counts.
 - `healthkit_record_types.csv`: HealthKit `Record` `type=` counts (when `export.xml` exists).
@@ -47,4 +48,4 @@ Allowed outputs are limited to:
 - schema-level strings:
   - HealthKit `Record` `type=` values
   - FHIR `resourceType` values
-  - CDA tag names (local names only)
+  - CDA tag names and section metadata (local names only; section code/display/title)

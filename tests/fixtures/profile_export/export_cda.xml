@@ -12,6 +12,8 @@
     <structuredBody>
       <component>
         <section>
+          <code code="8716-3" displayName="Vital signs"/>
+          <title>Vital Signs</title>
           <entry>
             <observation classCode="OBS" moodCode="EVN">
               <code code="8867-4" displayName="Heart rate"/>
@@ -29,4 +31,3 @@
     </structuredBody>
   </component>
 </ClinicalDocument>
-
