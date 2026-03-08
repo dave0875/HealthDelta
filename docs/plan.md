@@ -79,9 +79,9 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/205
 - Issue #209 - Benchmark maintenance cadence (open)
   - https://github.com/dave0875/HealthDelta/issues/209
-- Issue #174 - Incremental HealthKit anchors (open)
+- Issue #174 - Incremental HealthKit anchors (closed)
   - https://github.com/dave0875/HealthDelta/issues/174
-- Issue #175 - Share-safe bundle pipeline (open)
+- Issue #175 - Share-safe bundle pipeline (closed)
   - https://github.com/dave0875/HealthDelta/issues/175
 - Issue #176 - Governance and runbook audit (open)
   - https://github.com/dave0875/HealthDelta/issues/176

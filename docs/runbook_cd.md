@@ -20,6 +20,25 @@ This runbook defines how HealthDelta produces share-safe build artifacts and wha
   - Tests/build execution still runs when policy checks fail.
   - Governance failures are reported as explicit `policy failure` outcomes (not infra failures).
 
+### Governance enforcement points
+
+The `linux-tests` job is the authoritative correctness proof for docs/governance issues unless an issue explicitly names a different job.
+
+Policy checks currently enforced there:
+- Issue footer in commit messages via `scripts/check_issue_footer.py`
+- PR issue linkage via `scripts/check_pr_issue.py`
+- Required audit artifacts for non-`.ai/` changes via `scripts/check_audit_artifacts.py`
+- Immutable issue prompts via `scripts/check_prompt_immutability.py`
+- Managed worktree policy via `scripts/worktree_manager.py check`
+
+Required project artifacts for issue-scoped work:
+- `.ai/prompts/issue_<n>.md` created once per issue and never edited after work begins
+- `.ai/sessions/YYYY-MM-DD/session_<n>.md` updated for each substantial work session and containing `Issue: #<n>`
+- `.ai/time/time.csv` updated with a row referencing the issue for each work session
+- `docs/reviews/YYYY-MM-DD_<issue>.md` for completed issues
+
+Docs-only and governance-only issues may mark deployment proof as `N/A`, but they still require green CI with the relevant policy evidence artifacts.
+
 ### Release (artifact publication)
 - Workflow: `.github/workflows/release.yml`
 - On every push to `main`:

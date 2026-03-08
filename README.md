@@ -7,9 +7,12 @@ Incremental Apple Health + HealthKit + Clinical Records system with strict ident
 - `main` stays releasable (trunk-based).
 - TDD for non-trivial logic.
 - Commit messages must include an Issue footer (`Issue: #NN`); CI enforces this.
+- Each issue gets one immutable prompt at `.ai/prompts/issue_<n>.md`; follow-up prompts are append-only.
+- Each work session records a session note under `.ai/sessions/YYYY-MM-DD/session_<n>.md` and appends `.ai/time/time.csv`.
+- Completed issues also add a review artifact under `docs/reviews/`.
+- CI governance checks enforce issue footers, PR issue metadata, audit artifacts, prompt immutability, and managed worktree policy.
 - Tests run in UTC (`TZ=UTC`) to keep deterministic timestamps consistent across environments.
 - Codex audit artifacts live in `.ai/` (no secrets).
-- Every session is logged in `.ai/time/time.csv`.
 
 ## Repo layout (initial)
 - `docs/`: architecture + threat model + core domain docs

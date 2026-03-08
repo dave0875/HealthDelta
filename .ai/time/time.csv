@@ -119,3 +119,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,175,UNASSIGNED,20,codex,UNASSIGNED,"Implement operator share-safe bundle pipeline with NDJSON validation artifacts and bundle verification"
 2026-03-08,175,UNASSIGNED,35,codex,UNASSIGNED,"Wire run-all bundle-out flow, validation artifacts, operator tests, and runbook updates for verified share bundle pipeline"
 2026-03-08,214,UNASSIGNED,10,codex,UNASSIGNED,"Fix follow-up report test expectation to respect top_n=5 after reviewing failed Actions run 22829447109"
+2026-03-08,176,UNASSIGNED,25,codex,UNASSIGNED,"Audit governance and runbook docs, reconcile stale plan entries, and document CI enforcement points plus required .ai artifacts"
