@@ -5,7 +5,7 @@ This runbook describes the preferred one-command “operator path” for HealthD
 ## Command
 
 ```bash
-healthdelta run all --input <export_dir_or_export.zip> [--out <base_out>] [--state <state_dir>] [--since last|<run_id>] [--mode local|share]
+healthdelta run all --input <export_dir_or_export.zip> [--out <base_out>] [--state <state_dir>] [--since last|<run_id>] [--mode local|share] [--bundle-out <path>.tar.gz]
 ```
 
 Defaults:
@@ -13,11 +13,16 @@ Defaults:
 - `--state <base_out>/state`
 - `--since last`
 - `--mode share`
+- `--bundle-out` disabled by default
 
 Notes:
 - Runs are local-only: no network access, no uploads.
 - `share` mode is the default and is the recommended operator workflow.
 - Doctor’s Note is generated automatically by default; use `--skip-note` to disable.
+- When `--bundle-out` is provided in `share` mode, the operator flow also:
+  - runs `healthdelta export validate` on the generated NDJSON
+  - writes validation artifacts under `<run_id>/validation/`
+  - builds a share bundle and verifies it before returning success
 
 ## Output layout
 
@@ -28,6 +33,7 @@ For a created run, outputs are written under:
   staging/
   deid/              (share mode)
   ndjson/
+  validation/        (share mode bundle flow)
   duckdb/run.duckdb
   reports/
   note/
@@ -67,6 +73,12 @@ First run (share-safe defaults):
 
 ```bash
 healthdelta run all --input /path/to/apple_health_export_dir --out data
+```
+
+First run plus verified share bundle:
+
+```bash
+healthdelta run all --input /path/to/apple_health_export_dir --out data --bundle-out data/share_bundle.tar.gz
 ```
 
 Rerun with unchanged input (no-op):

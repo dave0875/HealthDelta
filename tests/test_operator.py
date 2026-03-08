@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,6 +73,80 @@ def _stdout_kv(stdout: str) -> dict[str, str]:
 
 
 class TestOperatorAll(unittest.TestCase):
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_run_all_share_mode_can_build_verified_bundle_with_validation_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            input_dir = root / "export"
+            input_dir.mkdir(parents=True, exist_ok=True)
+
+            (input_dir / "export.xml").write_text(EXPORT_XML, encoding="utf-8")
+            (input_dir / "export_cda.xml").write_text(EXPORT_CDA, encoding="utf-8")
+
+            clinical_dir = input_dir / "clinical-records"
+            clinical_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(
+                clinical_dir / "patient.json",
+                {"resourceType": "Patient", "id": "p1", "name": [{"text": "Doe, John"}], "birthDate": "1980-01-02"},
+            )
+            _write_json(
+                clinical_dir / "obs.json",
+                {
+                    "resourceType": "Observation",
+                    "id": "o1",
+                    "subject": {"reference": "Patient/p1"},
+                    "effectiveDateTime": "2020-01-01T01:02:03Z",
+                    "valueQuantity": {"value": 72, "unit": "count/min"},
+                },
+            )
+
+            base_out = root / "out"
+            bundle_path = root / "share_bundle.tar.gz"
+
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "run",
+                    "all",
+                    "--input",
+                    str(input_dir),
+                    "--out",
+                    str(base_out),
+                    "--bundle-out",
+                    str(bundle_path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            kv = _stdout_kv(run.stdout)
+            self.assertEqual(kv.get("status"), "created")
+            run_id = kv.get("run_id")
+            self.assertIsInstance(run_id, str)
+            self.assertTrue(run_id)
+
+            run_root = base_out / run_id
+            validation_log = run_root / "validation" / "ndjson_validate.log"
+            self.assertTrue(validation_log.exists(), msg=f"missing {validation_log}")
+            self.assertIn("ok", validation_log.read_text(encoding="utf-8"))
+
+            self.assertTrue(bundle_path.is_file(), msg=f"missing {bundle_path}")
+
+            verify = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "share", "verify", "--bundle", str(bundle_path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(verify.returncode, 0, msg=f"stdout={verify.stdout}\nstderr={verify.stderr}")
+
+            with tarfile.open(bundle_path, mode="r:gz") as tf:
+                names = tf.getnames()
+                self.assertIn(f"{run_id}/validation/ndjson_validate.log", names)
+                self.assertIn(f"{run_id}/registry/bundle_manifest.csv", names)
+
     @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
     def test_run_all_share_mode_creates_artifacts_and_is_noop_when_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as td:

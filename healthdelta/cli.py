@@ -142,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     run_all.add_argument("--mode", default="share", choices=["local", "share"], help="Run mode (default: share)")
     run_all.add_argument("--note", default=None, help="Optional run note (stored in run registry)")
     run_all.add_argument("--skip-note", action="store_true", help="Skip doctor note generation")
+    run_all.add_argument("--bundle-out", default=None, help="Optional output .tar.gz path for a verified share bundle (share mode only)")
 
     export = sub.add_parser("export", help="Export canonical, share-safe datasets")
     export_sub = export.add_subparsers(dest="export_command", required=True)
@@ -311,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=args.mode,
                 note=args.note,
                 skip_note=bool(args.skip_note),
+                bundle_out=args.bundle_out,
             )
         elif args.command == "share" and args.share_command == "bundle":
             build_share_bundle(run_dir=args.run, out_path=args.out)

@@ -7,8 +7,10 @@ from healthdelta.duckdb_tools import build_duckdb
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_validate import validate_ndjson_dir
 from healthdelta.reporting import build_report
 from healthdelta.note import build_doctor_note
+from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
 from healthdelta.state import (
     compute_input_fingerprint,
     compute_run_id,
@@ -29,6 +31,7 @@ def _artifact_paths(*, base_out: Path, run_id: str, include_deid: bool) -> dict[
         "identity_dir": "state/identity",
         "deid_dir": f"{run_id}/deid" if include_deid else None,
         "ndjson_dir": f"{run_id}/ndjson",
+        "validation_dir": f"{run_id}/validation",
         "duckdb_db": f"{run_id}/duckdb/run.duckdb",
         "reports_dir": f"{run_id}/reports",
         "note_dir": f"{run_id}/note",
@@ -49,6 +52,7 @@ def _print_summary(*, run_id: str, base_out: Path, state_dir: Path, artifacts: d
         "identity_dir",
         "deid_dir",
         "ndjson_dir",
+        "validation_dir",
         "duckdb_db",
         "reports_dir",
         "note_dir",
@@ -68,9 +72,12 @@ def run_all(
     mode: str = "share",
     note: str | None = None,
     skip_note: bool = False,
+    bundle_out: str | None = None,
 ) -> int:
     if mode not in {"local", "share"}:
         raise ValueError("--mode must be one of: local, share")
+    if bundle_out is not None and mode != "share":
+        raise ValueError("--bundle-out is only supported in --mode share")
 
     base = Path(base_out)
     state = Path(state_dir) if state_dir is not None else base / "state"
@@ -108,6 +115,7 @@ def run_all(
     identity_dir = state / "identity"
     deid_dir = run_root / "deid"
     ndjson_dir = run_root / "ndjson"
+    validation_dir = run_root / "validation"
     duckdb_dir = run_root / "duckdb"
     reports_dir = run_root / "reports"
     note_dir = run_root / "note"
@@ -117,6 +125,7 @@ def run_all(
     identity_dir.mkdir(parents=True, exist_ok=True)
     deid_dir.mkdir(parents=True, exist_ok=True)
     ndjson_dir.mkdir(parents=True, exist_ok=True)
+    validation_dir.mkdir(parents=True, exist_ok=True)
     duckdb_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
     note_dir.mkdir(parents=True, exist_ok=True)
@@ -141,6 +150,7 @@ def run_all(
         "identity_dir": "state/identity",
         "deid_dir": f"{run_id}/deid" if include_deid else None,
         "ndjson_dir": f"{run_id}/ndjson",
+        "validation_dir": f"{run_id}/validation",
         "duckdb_db": f"{run_id}/duckdb/run.duckdb",
         "reports_dir": f"{run_id}/reports",
         "note_dir": f"{run_id}/note",
@@ -165,6 +175,18 @@ def run_all(
             export_ndjson(input_dir=str(staging_dir), out_dir=str(ndjson_dir), mode="local")
         update_run_artifacts(str(state), run_id, {"ndjson_dir": f"{run_id}/ndjson"})
 
+    def step_validate_ndjson() -> None:
+        errors = validate_ndjson_dir(input_dir=str(ndjson_dir))
+        log_lines: list[str]
+        if errors:
+            log_lines = [f"ERROR {e.format()}" for e in errors] + [f"errors={len(errors)}"]
+        else:
+            log_lines = ["ok"]
+        (validation_dir / "ndjson_validate.log").write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        update_run_artifacts(str(state), run_id, {"validation_dir": f"{run_id}/validation"})
+        if errors:
+            raise ValueError("NDJSON validation failed; see validation/ndjson_validate.log")
+
     def step_duckdb() -> None:
         build_duckdb(input_dir=str(ndjson_dir), db_path=str(duckdb_path), replace=True)
         update_run_artifacts(str(state), run_id, {"duckdb_db": f"{run_id}/duckdb/run.duckdb"})
@@ -185,6 +207,13 @@ def run_all(
             },
         )
 
+    def step_bundle() -> None:
+        assert bundle_out is not None
+        build_share_bundle(run_dir=str(run_root), out_path=bundle_out)
+        errors = verify_share_bundle(bundle_path=bundle_out)
+        if errors:
+            raise ValueError("share bundle verification failed: " + "; ".join(errors))
+
     steps: list[tuple[str, callable]] = [
         ("Stage input", step_stage_input),
         ("Build identity", step_identity),
@@ -194,12 +223,15 @@ def run_all(
     steps.extend(
         [
             ("Export NDJSON", step_export_ndjson),
+            ("Validate NDJSON", step_validate_ndjson),
             ("Build DuckDB", step_duckdb),
             ("Generate reports", step_reports),
         ]
     )
     if not skip_note:
         steps.append(("Generate doctor note", step_note))
+    if bundle_out is not None:
+        steps.append(("Build verified share bundle", step_bundle))
 
     total_steps = len(steps)
     for i, (name, fn) in enumerate(steps, start=1):

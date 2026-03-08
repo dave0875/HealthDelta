@@ -25,6 +25,9 @@ Plus a share-safe run registry snippet:
 Plus a deterministic integrity manifest:
 - `<run_id>/registry/bundle_manifest.csv` with `path,size,sha256` for all archived regular files (excluding the manifest itself)
 
+When the bundle is produced via `healthdelta run all --bundle-out ...`, the archive also includes:
+- `<run_id>/validation/ndjson_validate.log` from `healthdelta export validate`
+
 ## What is excluded
 
 - `staging/` and any raw inputs

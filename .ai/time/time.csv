@@ -116,4 +116,6 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,214,UNASSIGNED,15,codex,UNASSIGNED,"Fix pushed CI regression in test_reports top_record_types assertion after reviewing failed Actions run 22829122993"
 2026-03-08,213,UNASSIGNED,30,codex,UNASSIGNED,"Reconcile docs/plan.md with live GitHub issue state and current open roadmap issues"
 2026-03-08,174,UNASSIGNED,20,codex,UNASSIGNED,"Verify existing incremental HealthKit anchor implementation, add missing audit artifacts, and close Issue #174"
+2026-03-08,175,UNASSIGNED,20,codex,UNASSIGNED,"Implement operator share-safe bundle pipeline with NDJSON validation artifacts and bundle verification"
+2026-03-08,175,UNASSIGNED,35,codex,UNASSIGNED,"Wire run-all bundle-out flow, validation artifacts, operator tests, and runbook updates for verified share bundle pipeline"
 2026-03-08,214,UNASSIGNED,10,codex,UNASSIGNED,"Fix follow-up report test expectation to respect top_n=5 after reviewing failed Actions run 22829447109"
