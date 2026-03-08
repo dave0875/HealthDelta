@@ -57,7 +57,14 @@ class TestReports(unittest.TestCase):
             )
             _write_text(
                 ndjson / "medications.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n',
+                "\n".join(
+                    [
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_request.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_statement.json","event_time":"2020-01-03T08:30:00Z","run_id":"run-1","event_key":"m2","resource_type":"MedicationStatement","source_id":"MedicationStatement/m2","status":"active"}',
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_dispense.json","event_time":"2020-01-03T09:45:00Z","run_id":"run-1","event_key":"m3","resource_type":"MedicationDispense","source_id":"MedicationDispense/m3","status":"completed"}',
+                    ]
+                )
+                + "\n",
             )
             _write_text(
                 ndjson / "conditions.ndjson",
@@ -140,7 +147,7 @@ class TestReports(unittest.TestCase):
             summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["tables"]["observations"]["total_rows"], 4)
             self.assertEqual(summary["tables"]["documents"]["total_rows"], 1)
-            self.assertEqual(summary["tables"]["medications"]["total_rows"], 1)
+            self.assertEqual(summary["tables"]["medications"]["total_rows"], 3)
             self.assertEqual(summary["tables"]["conditions"]["total_rows"], 2)
             self.assertEqual(summary["tables"]["encounters"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["procedures"]["total_rows"], 1)
@@ -154,13 +161,31 @@ class TestReports(unittest.TestCase):
             self.assertIn("person-1", per_person)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["observations"], 4)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["documents"], 1)
-            self.assertEqual(per_person["person-1"]["rows_by_table"]["medications"], 1)
+            self.assertEqual(per_person["person-1"]["rows_by_table"]["medications"], 3)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["conditions"], 2)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["encounters"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["procedures"], 1)
             self.assertEqual(per_person["person-1"]["rows_by_table"]["diagnostic_reports"], 1)
             self.assertEqual(per_person["person-1"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(per_person["person-1"]["max_event_time"], "2020-01-08T09:00:00Z")
+            self.assertEqual(
+                per_person["person-1"]["top_record_types"],
+                [
+                    "conditions:AllergyIntolerance",
+                    "conditions:Condition",
+                    "diagnostic_reports:DiagnosticReport",
+                    "documents:DocumentReference",
+                    "encounters:Encounter",
+                    "medications:MedicationDispense",
+                    "medications:MedicationRequest",
+                    "medications:MedicationStatement",
+                    "observations:Immunization",
+                    "observations:Observation",
+                    "observations:hk:HKQuantityTypeIdentifierHeartRate",
+                    "observations:lab:8867-4",
+                    "procedures:Procedure",
+                ],
+            )
 
             by_source = _read_csv(out_dir / "coverage_by_source.csv")
             # Stable expectations: stream+source rows
@@ -169,7 +194,7 @@ class TestReports(unittest.TestCase):
                 ("observations", "healthkit"): "1",
                 ("observations", "fhir"): "2",
                 ("documents", "fhir"): "1",
-                ("medications", "fhir"): "1",
+                ("medications", "fhir"): "3",
                 ("conditions", "fhir"): "2",
                 ("encounters", "fhir"): "1",
                 ("procedures", "fhir"): "1",

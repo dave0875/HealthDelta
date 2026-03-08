@@ -19,7 +19,7 @@ The exporter never uploads data; it reads local files only.
 Written under `--out`:
 - `observations.ndjson` (always)
 - `documents.ndjson` (always)
-- `medications.ndjson` (only if MedicationRequest records are present)
+- `medications.ndjson` (only if FHIR medication resources are present)
 - `conditions.ndjson` (only if Condition records are present)
 
 NDJSON is one JSON object per line (newline-terminated).
@@ -52,8 +52,14 @@ Fields that MUST NOT appear in NDJSON:
   - `Observation` → `observations.ndjson`
   - `DocumentReference` → `documents.ndjson`
   - `MedicationRequest` → `medications.ndjson`
+  - `MedicationStatement` → `medications.ndjson`
+  - `MedicationDispense` → `medications.ndjson`
   - `Condition` → `conditions.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
+- `event_time` selection for medication rows:
+  - `MedicationRequest`: `authoredOn`
+  - `MedicationStatement`: `effectiveDateTime`, else `effectivePeriod.start`, else `effectivePeriod.end`
+  - `MedicationDispense`: `whenHandedOver`, else `whenPrepared`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

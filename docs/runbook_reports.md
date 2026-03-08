@@ -47,11 +47,10 @@ Global (per table):
 Per person:
 - rows per table
 - min/max `event_time` across all tables (when present)
-- top record types (derived from existing type/code fields)
+- top record types (derived from existing type/code fields, including medication `resource_type` values such as `MedicationRequest`, `MedicationStatement`, and `MedicationDispense`)
 
 ## Privacy guarantees and limitations
 
 - Reports only key by `canonical_person_id` and do not include patient names, DOB, MRNs, or raw patient identifiers.
 - If future schemas include free-text fields, reports must exclude them by default.
 - Record types/codes included in “top record types” are sourced from structured fields like `hk_type`, `resource_type`, and `code`.
-

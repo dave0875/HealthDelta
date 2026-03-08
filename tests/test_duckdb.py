@@ -52,9 +52,13 @@ class TestDuckdbLoader(unittest.TestCase):
             )
             _write_text(ndjson / "documents.ndjson", documents)
 
-            medications = (
-                '{"schema_version":2,"record_key":"m1","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}\n'
-            )
+            medications = "\n".join(
+                [
+                    '{"schema_version":2,"record_key":"m1","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_request.json","event_time":"2020-01-03T00:00:00Z","run_id":"run-1","event_key":"m1","resource_type":"MedicationRequest","source_id":"MedicationRequest/m1","status":"active"}',
+                    '{"schema_version":2,"record_key":"m2","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_statement.json","event_time":"2020-01-03T08:30:00Z","run_id":"run-1","event_key":"m2","resource_type":"MedicationStatement","source_id":"MedicationStatement/m2","status":"active"}',
+                    '{"schema_version":2,"record_key":"m3","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/med_dispense.json","event_time":"2020-01-03T09:45:00Z","run_id":"run-1","event_key":"m3","resource_type":"MedicationDispense","source_id":"MedicationDispense/m3","status":"completed"}',
+                ]
+            ) + "\n"
             _write_text(ndjson / "medications.ndjson", medications)
 
             conditions = (
@@ -194,8 +198,34 @@ class TestDuckdbLoader(unittest.TestCase):
             rows = list(csv.DictReader(q5.stdout.splitlines()))
             self.assertEqual(rows[0]["n"], "1")
 
+            q6 = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT resource_type, COUNT(*) AS n FROM medications GROUP BY resource_type ORDER BY resource_type;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q6.returncode, 0, msg=f"stdout={q6.stdout}\nstderr={q6.stderr}")
+            rows = list(csv.DictReader(q6.stdout.splitlines()))
+            self.assertEqual(
+                rows,
+                [
+                    {"resource_type": "MedicationDispense", "n": "1"},
+                    {"resource_type": "MedicationRequest", "n": "1"},
+                    {"resource_type": "MedicationStatement", "n": "1"},
+                ],
+            )
+
             # Ensure the loader did not introduce PII into query output.
-            combined_out = q1.stdout + q2.stdout + q3.stdout + q4.stdout + q5.stdout
+            combined_out = q1.stdout + q2.stdout + q3.stdout + q4.stdout + q5.stdout + q6.stdout
             self.assertNotIn(pii_name, combined_out)
             self.assertNotIn(pii_dob, combined_out)
             self.assertNotIn(pii_patient_id, combined_out)

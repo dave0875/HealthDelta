@@ -97,7 +97,7 @@ Additional columns:
 
 Additional columns:
 - `source_id` (VARCHAR)
-- `resource_type` (VARCHAR)
+- `resource_type` (VARCHAR; for example `MedicationRequest`, `MedicationStatement`, `MedicationDispense`)
 - `status` (VARCHAR)
 
 ### `conditions` (if present)
