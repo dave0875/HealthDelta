@@ -85,7 +85,7 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/175
 - Issue #176 - Governance and runbook audit (closed)
   - https://github.com/dave0875/HealthDelta/issues/176
-- Issue #178 - Hospital records coverage inventory + roadmap slice (open)
+- Issue #178 - Hospital records coverage inventory + roadmap slice (closed)
   - https://github.com/dave0875/HealthDelta/issues/178
   - Prioritized next clinical-record targets from the current coverage slice:
     - Issue #187 - Clinical records Encounter mapping v1
