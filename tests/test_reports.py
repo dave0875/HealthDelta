@@ -415,6 +415,18 @@ class TestReports(unittest.TestCase):
             integrity = summary.get("reference_integrity")
             self.assertIsInstance(integrity, dict)
             self.assertEqual(integrity.get("unresolved_reference_rows_total"), 4)
+            clinical = integrity.get("clinical_rows_by_resource_type")
+            self.assertEqual(
+                clinical,
+                {
+                    "Encounter": {"missing_reference_kind": "Encounter.subject", "rows": 2},
+                    "Immunization": {"missing_reference_kind": "Immunization.patient", "rows": 1},
+                    "Procedure": {"missing_reference_kind": "Procedure.subject", "rows": 1},
+                },
+            )
+            md = (out_dir / "summary.md").read_text(encoding="utf-8")
+            self.assertIn("## Clinical Unresolved Reference Breakdown", md)
+            self.assertIn("Encounter -> Encounter.subject: 2", md)
 
 
 if __name__ == "__main__":

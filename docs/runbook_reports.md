@@ -56,6 +56,11 @@ Clinical coverage:
 - CDA section counts using structured fields such as `section_code`, `section_display`, and `section_title`
 - zero-count outputs when no clinical rows are present
 
+Unresolved reference audit:
+- `summary.json` `reference_integrity.clinical_rows_by_resource_type` breaks unresolved clinical rows down by `resource_type`
+- each resource-type row records the deterministic missing reference kind label (for example `Encounter.subject` or `Immunization.patient`)
+- `summary.md` includes a `Clinical Unresolved Reference Breakdown` section with the same share-safe counts
+
 ## Privacy guarantees and limitations
 
 - Reports only key by `canonical_person_id` and do not include patient names, DOB, MRNs, or raw patient identifiers.

@@ -277,6 +277,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
 
         # Unresolved reference integrity by resource type
         unresolved_by_type: dict[str, int] = {}
+        unresolved_clinical_by_resource_type: dict[str, dict[str, object]] = {}
         unresolved_total = 0
         with progress.phase("report: unresolved reference integrity"):
             task_ref = progress.task("report: unresolved reference scan", total=len(streams), unit="tables")
@@ -293,6 +294,11 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 ):
                     label = _reference_type_label(stream=table, resource_type=resource_type if isinstance(resource_type, str) else None)
                     unresolved_by_type[label] = int(unresolved_by_type.get(label, 0)) + int(n)
+                    if isinstance(resource_type, str) and resource_type.strip():
+                        unresolved_clinical_by_resource_type[resource_type] = {
+                            "missing_reference_kind": label,
+                            "rows": int(unresolved_clinical_by_resource_type.get(resource_type, {}).get("rows", 0)) + int(n),
+                        }
                     unresolved_total += int(n)
                 task_ref.advance(1)
 
@@ -619,6 +625,9 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             "reference_integrity": {
                 "unresolved_reference_rows_total": unresolved_total,
                 "rows_by_reference_type": {k: unresolved_by_type[k] for k in sorted(unresolved_by_type)},
+                "clinical_rows_by_resource_type": {
+                    k: unresolved_clinical_by_resource_type[k] for k in sorted(unresolved_clinical_by_resource_type)
+                },
             },
             "notes": {
                 "privacy": "Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.",
@@ -692,6 +701,15 @@ def _render_markdown(summary: dict[str, object]) -> str:
         for key in sorted(by_type.keys()):
             lines.append(f"- unresolved.{key}: {by_type[key]}")
     lines.append("")
+    clinical_by_type = reference_integrity.get("clinical_rows_by_resource_type")
+    if isinstance(clinical_by_type, dict) and clinical_by_type:
+        lines.append("## Clinical Unresolved Reference Breakdown")
+        for key in sorted(clinical_by_type.keys()):
+            row = clinical_by_type.get(key)
+            if not isinstance(row, dict):
+                continue
+            lines.append(f"- {key} -> {row.get('missing_reference_kind')}: {row.get('rows', 0)}")
+        lines.append("")
 
     lines.append("## Notes")
     notes = summary.get("notes")
