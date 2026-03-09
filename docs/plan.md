@@ -94,7 +94,7 @@ Next roadmap focus (post-MMF)
     - Issue #190 - Clinical records DocumentReference mapping v1
     - Issue #191 - Clinical records CarePlan + Goal mapping v1
     - Issue #192 - Clinical records ServiceRequest mapping v1
-- Issue #179 - Hospital records coverage report artifacts (open)
+- Issue #179 - Hospital records coverage report artifacts (closed)
   - https://github.com/dave0875/HealthDelta/issues/179
 - Issue #180 - Clinical records export profile inventory artifact (open)
   - https://github.com/dave0875/HealthDelta/issues/180
