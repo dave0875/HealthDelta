@@ -5,7 +5,7 @@ import json
 import os
 import re
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,7 @@ from healthdelta.ingest import ingest_to_staging
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.qa import answer_question
 from healthdelta.risk_flags import build_risk_flags
+from healthdelta.time_utils import UTC
 from healthdelta.trends import build_trend_analysis
 from healthdelta.upload_plane import UploadPlane, UploadPlaneError
 from healthdelta.version import get_build_info
