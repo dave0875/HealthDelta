@@ -12,7 +12,7 @@ from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report
 from healthdelta.operator import run_all as run_all_operator
 from healthdelta.note import build_doctor_note
-from healthdelta.profile import build_export_profile
+from healthdelta.profile import build_export_profile, build_coverage_matrix
 from healthdelta.state import register_existing_run_dir
 from healthdelta.share_bundle import build_share_bundle, verify_share_bundle
 from healthdelta.version import get_build_info
@@ -158,6 +158,10 @@ def main(argv: list[str] | None = None) -> int:
     export_profile.add_argument("--sample-json", type=int, default=200, help="Deterministic sample size for clinical JSON (0=all)")
     export_profile.add_argument("--top-files", type=int, default=20, help="Number of largest files to list (default: 20)")
 
+    export_coverage = export_sub.add_parser("coverage", help="Build a share-safe clinical coverage matrix from an unpacked export directory")
+    export_coverage.add_argument("--input", required=True, help="Path to an unpacked export directory")
+    export_coverage.add_argument("--out", required=True, help="Output directory for coverage matrix artifacts")
+
     export_validate = export_sub.add_parser("validate", help="Validate canonical NDJSON streams (share-safe, deterministic)")
     export_validate.add_argument("--input", required=True, help="Directory containing canonical NDJSON streams")
     export_validate.add_argument("--banned-token", action="append", default=[], help="Fail if token is found (repeatable; test fixtures only)")
@@ -272,6 +276,9 @@ def main(argv: list[str] | None = None) -> int:
             build_export_profile(
                 input_dir=args.input, out_dir=args.out, sample_json=int(args.sample_json), top_files=int(args.top_files)
             )
+            rc = 0
+        elif args.command == "export" and args.export_command == "coverage":
+            build_coverage_matrix(input_dir=args.input, out_dir=args.out)
             rc = 0
         elif args.command == "export" and args.export_command == "validate":
             errors = validate_ndjson_dir(

@@ -15,6 +15,21 @@ from healthdelta.export_layout import resolve_export_layout
 from healthdelta.progress import progress
 
 
+FHIR_CANONICAL_MAPPING_RESOURCE_TYPES: tuple[str, ...] = (
+    "Observation",
+    "DocumentReference",
+    "MedicationRequest",
+    "MedicationStatement",
+    "MedicationDispense",
+    "Condition",
+    "AllergyIntolerance",
+    "Immunization",
+    "Encounter",
+    "Procedure",
+    "DiagnosticReport",
+)
+
+
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent)) as tf:
@@ -607,3 +622,97 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         task_md = progress.task("profile: write markdown", total=1, unit="files")
         _write_text_atomic(out / "profile.md", "\n".join(md_lines) + "\n")
         task_md.advance(1)
+
+
+def build_coverage_matrix(*, input_dir: str, out_dir: str) -> None:
+    with progress.phase("coverage: init"):
+        input_root = Path(input_dir)
+        if not input_root.is_dir():
+            raise ValueError("--input must be an unpacked export directory")
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+
+    with progress.phase("coverage: resolve layout"):
+        layout = resolve_export_layout(input_root)
+        export_root = input_root if layout.export_root_rel == "." else (input_root / layout.export_root_rel)
+        clinical_dir = export_root / layout.clinical_dir_rel if isinstance(layout.clinical_dir_rel, str) else export_root / "clinical-records"
+        export_cda = export_root / layout.export_cda_rel if isinstance(layout.export_cda_rel, str) else export_root / "export_cda.xml"
+
+    with progress.phase("coverage: scan clinical JSON"):
+        fhir_counts, fhir_meta, _schema, _sensitive = _count_clinical_resource_types(clinical_dir, sample_json=0)
+    with progress.phase("coverage: scan CDA sections"):
+        cda_sections = _count_cda_sections(export_cda) if export_cda.exists() else []
+
+    mapped = set(FHIR_CANONICAL_MAPPING_RESOURCE_TYPES)
+    rows_unsorted = []
+    for resource_type, count in fhir_counts:
+        rows_unsorted.append(
+            {
+                "resourceType": resource_type,
+                "count": int(count),
+                "has_canonical_mapping": resource_type in mapped,
+            }
+        )
+    rows = sorted(rows_unsorted, key=lambda row: (row["has_canonical_mapping"], -int(row["count"]), row["resourceType"]))
+
+    top_unmapped = [row for row in rows if not row["has_canonical_mapping"]]
+    coverage = {
+        "schema_version": 1,
+        "summary": {
+            "clinical_json_total_files": fhir_meta["total_files"],
+            "clinical_json_sampled_files": fhir_meta["sampled_files"],
+            "mapped_resource_type_count": sum(1 for row in rows if row["has_canonical_mapping"]),
+            "unmapped_resource_type_count": sum(1 for row in rows if not row["has_canonical_mapping"]),
+        },
+        "resource_types": rows,
+        "cda_sections": cda_sections,
+        "top_unmapped_resource_types": top_unmapped[:10],
+        "canonical_mapping_resource_types": sorted(mapped),
+        "notes": {
+            "privacy": "Share-safe: counts and structured resource/section labels only.",
+            "determinism": "Stable ordering and formatting for identical export fixtures.",
+        },
+    }
+
+    with progress.phase("coverage: write artifacts"):
+        task = progress.task("coverage: write artifacts", total=2, unit="files")
+        _write_json(out / "coverage_matrix.json", coverage)
+        task.advance(1)
+        lines = [
+            "# Clinical Coverage Matrix",
+            "",
+            "## Summary",
+            f"- clinical_json_total_files: {fhir_meta['total_files']}",
+            f"- mapped_resource_type_count: {coverage['summary']['mapped_resource_type_count']}",
+            f"- unmapped_resource_type_count: {coverage['summary']['unmapped_resource_type_count']}",
+            "",
+            "## Resource Types",
+        ]
+        if rows:
+            for row in rows:
+                lines.append(
+                    f"- {row['resourceType']}: count={row['count']} mapped={'yes' if row['has_canonical_mapping'] else 'no'}"
+                )
+        else:
+            lines.append("- none")
+        lines.append("")
+        lines.append("## Top Unmapped Resources")
+        if top_unmapped:
+            for row in top_unmapped[:10]:
+                lines.append(f"- {row['resourceType']}: {row['count']}")
+        else:
+            lines.append("- none")
+        lines.append("")
+        lines.append("## CDA Sections")
+        if cda_sections:
+            for row in cda_sections:
+                label_parts = [row.get("section_title"), row.get("section_display"), row.get("section_code")]
+                label = " | ".join(part for part in label_parts if isinstance(part, str) and part)
+                lines.append(f"- {label}: {row['count']}")
+        else:
+            lines.append("- none")
+        lines.append("")
+        lines.append("## Privacy")
+        lines.append("- Share-safe: only aggregate counts and structured labels are emitted.")
+        _write_text_atomic(out / "coverage_matrix.md", "\n".join(lines) + "\n")
+        task.advance(1)

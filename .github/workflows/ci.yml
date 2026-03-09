@@ -92,6 +92,14 @@ jobs:
             --sample-json 3 \
             --top-files 5 > artifacts/linux/profile_smoke.log 2>&1
 
+      - name: Run clinical coverage matrix smoke (artifact evidence)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/linux/coverage
+          python3 -m healthdelta export coverage \
+            --input tests/fixtures/profile_export \
+            --out artifacts/linux/coverage > artifacts/linux/coverage_smoke.log 2>&1
+
       - name: Run backend vertical-slice smoke (artifact evidence)
         run: |
           set -euo pipefail
@@ -137,8 +145,12 @@ jobs:
             artifacts/linux/profile_smoke.log
             artifacts/linux/profile/profile.json
             artifacts/linux/profile/profile.md
+            artifacts/linux/profile/clinical_inventory.json
             artifacts/linux/profile/clinical_schema_keys.csv
             artifacts/linux/profile/sensitive_field_map.json
+            artifacts/linux/coverage_smoke.log
+            artifacts/linux/coverage/coverage_matrix.json
+            artifacts/linux/coverage/coverage_matrix.md
             artifacts/linux/backend_slice/smoke.log
             artifacts/linux/backend_slice/summary_response.json
             artifacts/linux/safety/safety_report.json

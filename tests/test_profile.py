@@ -227,6 +227,44 @@ class TestExportProfile(unittest.TestCase):
             self.assertEqual(inventory["summary"]["clinical_json_total_files"], 0)
             self.assertEqual(inventory["summary"]["cda_section_total"], 0)
 
+    def test_export_coverage_writes_share_safe_matrix(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "coverage"
+            cmd = [
+                sys.executable,
+                "-m",
+                "healthdelta",
+                "export",
+                "coverage",
+                "--input",
+                str(FIXTURE_DIR),
+                "--out",
+                str(out),
+            ]
+            run1 = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(run1.returncode, 0, msg=f"stdout={run1.stdout}\nstderr={run1.stderr}")
+            j1 = (out / "coverage_matrix.json").read_bytes()
+            m1 = (out / "coverage_matrix.md").read_bytes()
+            run2 = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(run2.returncode, 0, msg=f"stdout={run2.stdout}\nstderr={run2.stderr}")
+            self.assertEqual((out / "coverage_matrix.json").read_bytes(), j1)
+            self.assertEqual((out / "coverage_matrix.md").read_bytes(), m1)
+
+            matrix = json.loads(j1.decode("utf-8"))
+            self.assertEqual(
+                matrix["resource_types"],
+                [
+                    {"count": 1, "has_canonical_mapping": False, "resourceType": "Patient"},
+                    {"count": 1, "has_canonical_mapping": True, "resourceType": "DocumentReference"},
+                    {"count": 1, "has_canonical_mapping": True, "resourceType": "Observation"},
+                ],
+            )
+            self.assertEqual(matrix["top_unmapped_resource_types"], [{"count": 1, "has_canonical_mapping": False, "resourceType": "Patient"}])
+            self.assertEqual(matrix["cda_sections"][0]["section_title"], "Vital Signs")
+            md = m1.decode("utf-8")
+            self.assertIn("## Top Unmapped Resources", md)
+            self.assertIn("Patient: 1", md)
+
 
 if __name__ == "__main__":
     unittest.main()
