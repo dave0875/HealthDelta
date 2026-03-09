@@ -17,6 +17,7 @@ Only these subtrees under `<base_out>/<run_id>/` (when present):
 - `ndjson/`
 - `duckdb/`
 - `reports/`
+- `profile/`
 - `note/`
 
 Plus a share-safe run registry snippet:
@@ -27,6 +28,13 @@ Plus a deterministic integrity manifest:
 
 When the bundle is produced via `healthdelta run all --bundle-out ...`, the archive also includes:
 - `<run_id>/validation/ndjson_validate.log` from `healthdelta export validate`
+
+Hospital-record evidence artifacts:
+- `<run_id>/reports/coverage.json`
+- `<run_id>/reports/coverage.md`
+- `<run_id>/profile/clinical_inventory.json`
+
+If the originating run/report/profile outputs contain zero-count clinical artifacts, the bundle includes those zero-count files unchanged.
 
 ## What is excluded
 

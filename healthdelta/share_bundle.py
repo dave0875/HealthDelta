@@ -14,7 +14,7 @@ from healthdelta.state import load_registry
 from healthdelta.progress import progress
 
 
-_ALLOWLIST_DIRS: tuple[str, ...] = ("deid", "ndjson", "duckdb", "reports", "note", "validation")
+_ALLOWLIST_DIRS: tuple[str, ...] = ("deid", "ndjson", "duckdb", "reports", "profile", "note", "validation")
 _REGISTRY_DIR = "registry"
 _RUN_ENTRY_JSON = "run_entry.json"
 _BUNDLE_MANIFEST_CSV = "bundle_manifest.csv"

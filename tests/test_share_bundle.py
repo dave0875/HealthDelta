@@ -27,6 +27,9 @@ class TestShareBundle(unittest.TestCase):
             _write(run_root / "ndjson" / "observations.ndjson", '{"canonical_person_id":"p1","source":"fhir","source_file":"x","event_time":"t","run_id":"r"}\n')
             _write(run_root / "duckdb" / "run.duckdb", "DUCKDB_BYTES")
             _write(run_root / "reports" / "summary.json", "{}\n")
+            _write(run_root / "reports" / "coverage.json", '{"resource_types":{},"cda_sections":[]}\n')
+            _write(run_root / "reports" / "coverage.md", "# Coverage Report\n")
+            _write(run_root / "profile" / "clinical_inventory.json", '{"fhir_resource_types":[],"cda_sections":[]}\n')
             _write(run_root / "note" / "doctor_note.txt", "HealthDelta Summary\n")
             _write(run_root / "deid" / "source" / "export.xml", "DEID_XML\n")
 
@@ -96,6 +99,9 @@ class TestShareBundle(unittest.TestCase):
                 self.assertIn(f"{run_id}/ndjson/observations.ndjson", names)
                 self.assertIn(f"{run_id}/duckdb/run.duckdb", names)
                 self.assertIn(f"{run_id}/reports/summary.json", names)
+                self.assertIn(f"{run_id}/reports/coverage.json", names)
+                self.assertIn(f"{run_id}/reports/coverage.md", names)
+                self.assertIn(f"{run_id}/profile/clinical_inventory.json", names)
                 self.assertIn(f"{run_id}/note/doctor_note.txt", names)
                 self.assertIn(f"{run_id}/deid/source/export.xml", names)
                 self.assertIn(f"{run_id}/registry/run_entry.json", names)
@@ -119,6 +125,9 @@ class TestShareBundle(unittest.TestCase):
                     f"{run_id}/ndjson/observations.ndjson",
                     f"{run_id}/duckdb/run.duckdb",
                     f"{run_id}/reports/summary.json",
+                    f"{run_id}/reports/coverage.json",
+                    f"{run_id}/reports/coverage.md",
+                    f"{run_id}/profile/clinical_inventory.json",
                     f"{run_id}/note/doctor_note.txt",
                     f"{run_id}/registry/run_entry.json",
                     f"{run_id}/registry/validation_log.txt",
@@ -126,6 +135,36 @@ class TestShareBundle(unittest.TestCase):
                 for req in required:
                     self.assertIn(req, by_path)
                     self.assertEqual(len(by_path[req]["sha256"]), 64)
+
+    def test_share_bundle_includes_zero_count_clinical_evidence_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            base_out = root / "out"
+            run_id = "runzero"
+            run_root = base_out / run_id
+            run_root.mkdir(parents=True, exist_ok=True)
+
+            _write(run_root / "ndjson" / "observations.ndjson", "")
+            _write(run_root / "duckdb" / "run.duckdb", "DUCKDB_BYTES")
+            _write(run_root / "reports" / "summary.json", "{}\n")
+            _write(run_root / "reports" / "coverage.json", '{"resource_types":{"observations":[],"documents":[],"medications":[],"conditions":[],"encounters":[],"procedures":[],"diagnostic_reports":[]},"cda_sections":[]}\n')
+            _write(run_root / "reports" / "coverage.md", "No clinical record rows were present.\n")
+            _write(run_root / "profile" / "clinical_inventory.json", '{"fhir_resource_types":[],"cda_sections":[],"summary":{"clinical_json_total_files":0,"cda_section_total":0}}\n')
+
+            bundle = root / "zero.tar.gz"
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "share", "bundle", "--run", str(run_root), "--out", str(bundle)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 0, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+
+            with tarfile.open(bundle, mode="r:gz") as tf:
+                cov = json.loads(tf.extractfile(f"{run_id}/reports/coverage.json").read().decode("utf-8"))
+                inv = json.loads(tf.extractfile(f"{run_id}/profile/clinical_inventory.json").read().decode("utf-8"))
+                self.assertEqual(cov["cda_sections"], [])
+                self.assertEqual(inv["fhir_resource_types"], [])
+                self.assertEqual(inv["summary"]["clinical_json_total_files"], 0)
 
     def test_share_verify_rejects_disallowed_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
