@@ -534,6 +534,10 @@ def _fhir_event_time(resource: dict) -> str | None:
             end = period.get("end")
             if isinstance(end, str):
                 return _normalize_time(end)
+    if rt == "ImagingStudy":
+        started = resource.get("started")
+        if isinstance(started, str):
+            return _normalize_time(started)
     if rt == "Provenance":
         recorded = resource.get("recorded")
         if isinstance(recorded, str):
@@ -544,6 +548,7 @@ def _fhir_event_time(resource: dict) -> str | None:
 def _export_fhir_streams(
     ctx: ExportContext,
 ) -> tuple[
+    list[dict],
     list[dict],
     list[dict],
     list[dict],
@@ -576,6 +581,7 @@ def _export_fhir_streams(
     organizations: list[dict] = []
     practitioners: list[dict] = []
     locations: list[dict] = []
+    imaging_studies: list[dict] = []
     provenance_rows: list[dict] = []
     observation_keys: dict[str, str] = {}
     source_record_keys: dict[str, str] = {}
@@ -1370,6 +1376,65 @@ def _export_fhir_streams(
             base["record_key"] = base["event_key"]
             locations.append(base)
             register_source_record_key(base)
+        elif rt == "ImagingStudy":
+            if rid:
+                base["record_id"] = rid
+                base["imaging_study_id"] = rid
+            base["record_type"] = "ImagingStudy"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            status = res.get("status")
+            if isinstance(status, str) and status.strip():
+                base["status"] = status.strip()
+            started = res.get("started")
+            if isinstance(started, str) and started.strip():
+                base["started"] = _normalize_time(started)
+            series = res.get("series")
+            if isinstance(series, list):
+                summaries: list[dict[str, object]] = []
+                for item in series:
+                    if not isinstance(item, dict):
+                        continue
+                    row: dict[str, object] = {}
+                    modality = item.get("modality")
+                    if isinstance(modality, dict):
+                        system = modality.get("system")
+                        code = modality.get("code")
+                        if isinstance(system, str) and system.strip():
+                            row["modality_system"] = system.strip()
+                        if isinstance(code, str) and code.strip():
+                            row["modality_code"] = code.strip()
+                    body_site = item.get("bodySite")
+                    if isinstance(body_site, dict):
+                        system = body_site.get("system")
+                        code = body_site.get("code")
+                        if isinstance(system, str) and system.strip():
+                            row["body_site_system"] = system.strip()
+                        if isinstance(code, str) and code.strip():
+                            row["body_site_code"] = code.strip()
+                    instances = item.get("instance")
+                    if isinstance(instances, list):
+                        row["instance_count"] = len([inst for inst in instances if isinstance(inst, dict)])
+                    if row:
+                        summaries.append(row)
+                if summaries:
+                    base["series_summary"] = sorted(
+                        summaries,
+                        key=lambda item: (
+                            str(item.get("modality_system") or ""),
+                            str(item.get("modality_code") or ""),
+                            str(item.get("body_site_system") or ""),
+                            str(item.get("body_site_code") or ""),
+                            int(item.get("instance_count") or 0),
+                        ),
+                    )
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            imaging_studies.append(base)
+            register_source_record_key(base)
         elif rt == "Provenance":
             if rid:
                 base["record_id"] = rid
@@ -1478,6 +1543,7 @@ def _export_fhir_streams(
         organizations,
         practitioners,
         locations,
+        imaging_studies,
         provenance_rows,
     )
 
@@ -1645,6 +1711,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_organizations,
             fhir_practitioners,
             fhir_locations,
+            fhir_imaging_studies,
             fhir_provenance,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
@@ -1665,6 +1732,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     organizations = [*fhir_organizations]
     practitioners = [*fhir_practitioners]
     locations = [*fhir_locations]
+    imaging_studies = [*fhir_imaging_studies]
     provenance_rows = [*fhir_provenance]
 
     def dedupe(rows: list[dict]) -> list[dict]:
@@ -1713,6 +1781,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         organizations = sort_rows(dedupe(organizations))
         practitioners = sort_rows(dedupe(practitioners))
         locations = sort_rows(dedupe(locations))
+        imaging_studies = sort_rows(dedupe(imaging_studies))
         provenance_rows = sort_rows(dedupe(provenance_rows))
 
     with progress.phase("export: write ndjson"):
@@ -1744,5 +1813,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "practitioners.ndjson", practitioners)
         if locations:
             _write_ndjson(out_root / "locations.ndjson", locations)
+        if imaging_studies:
+            _write_ndjson(out_root / "imaging_studies.ndjson", imaging_studies)
         if provenance_rows:
             _write_ndjson(out_root / "provenance.ndjson", provenance_rows)

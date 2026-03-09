@@ -29,6 +29,7 @@ Written under `--out`:
 - `organizations.ndjson` (only if FHIR Organization resources are present)
 - `practitioners.ndjson` (only if FHIR Practitioner resources are present)
 - `locations.ndjson` (only if FHIR Location resources are present)
+- `imaging_studies.ndjson` (only if FHIR ImagingStudy resources are present)
 - `provenance.ndjson` (only if FHIR Provenance resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
@@ -75,6 +76,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Organization` → `organizations.ndjson`
   - `Practitioner` → `practitioners.ndjson`
   - `Location` → `locations.ndjson`
+  - `ImagingStudy` → `imaging_studies.ndjson`
   - `Provenance` → `provenance.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
@@ -89,6 +91,7 @@ Fields that MUST NOT appear in NDJSON:
   - `CarePlan`: `period.start`, else `period.end`, else `created`
   - `ServiceRequest`: `authoredOn`
   - `Coverage`: `period.start`, else `period.end`
+  - `ImagingStudy`: `started`
   - `Provenance`: `recorded`
 
 ### Observation fields
@@ -303,6 +306,15 @@ Canonical `Location` rows include, when present:
 - `address_city`
 - `address_state`
 - `address_postal_code`
+
+Canonical `ImagingStudy` rows include, when present:
+- `record_id`
+- `record_type`
+- `imaging_study_id`
+- `subject_reference`
+- `status`
+- `started`
+- `series_summary`
 
 Canonical `Provenance` rows include, when present:
 - `record_id`

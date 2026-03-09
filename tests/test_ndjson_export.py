@@ -287,6 +287,20 @@ FHIR_PROVENANCE = {
     "agent": [{"who": {"reference": "Practitioner/prac1"}}],
     "target": [{"reference": "Observation/o1"}, {"reference": "DocumentReference/d1"}],
 }
+FHIR_IMAGING_STUDY = {
+    "resourceType": "ImagingStudy",
+    "id": "img1",
+    "status": "available",
+    "subject": {"reference": "Patient/p1"},
+    "started": "2020-01-13T15:00:00Z",
+    "series": [
+        {
+            "modality": {"system": "http://dicom.nema.org/resources/ontology/DCM", "code": "MR"},
+            "bodySite": {"system": "http://snomed.info/sct", "code": "12738006"},
+            "instance": [{}, {}],
+        }
+    ],
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -653,6 +667,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "practitioner.json", FHIR_PRACTITIONER)
             _write_json(clinical_dir / "location.json", FHIR_LOCATION)
             _write_json(clinical_dir / "provenance.json", FHIR_PROVENANCE)
+            _write_json(clinical_dir / "imaging_study.json", FHIR_IMAGING_STUDY)
 
             base_dir = root / "out"
 
@@ -719,6 +734,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "practitioners.ndjson",
                 out_local / "locations.ndjson",
                 out_local / "provenance.ndjson",
+                out_local / "imaging_studies.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -740,6 +756,7 @@ class TestNdjsonExport(unittest.TestCase):
             practitioners = _read_ndjson(out_local / "practitioners.ndjson")
             locations = _read_ndjson(out_local / "locations.ndjson")
             provenance_rows = _read_ndjson(out_local / "provenance.ndjson")
+            imaging_studies = _read_ndjson(out_local / "imaging_studies.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -758,6 +775,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(practitioners), 1)
             self.assertEqual(len(locations), 1)
             self.assertEqual(len(provenance_rows), 1)
+            self.assertEqual(len(imaging_studies), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -878,6 +896,25 @@ class TestNdjsonExport(unittest.TestCase):
                 ["DocumentReference/d1", "Observation/o1"],
             )
             self.assertEqual(len(provenance_rows[0].get("target_record_keys", [])), 2)
+
+            self.assertEqual(imaging_studies[0].get("record_id"), "img1")
+            self.assertEqual(imaging_studies[0].get("record_type"), "ImagingStudy")
+            self.assertEqual(imaging_studies[0].get("imaging_study_id"), "img1")
+            self.assertEqual(imaging_studies[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(imaging_studies[0].get("status"), "available")
+            self.assertEqual(imaging_studies[0].get("started"), "2020-01-13T15:00:00Z")
+            self.assertEqual(
+                imaging_studies[0].get("series_summary"),
+                [
+                    {
+                        "body_site_code": "12738006",
+                        "body_site_system": "http://snomed.info/sct",
+                        "instance_count": 2,
+                        "modality_code": "MR",
+                        "modality_system": "http://dicom.nema.org/resources/ontology/DCM",
+                    }
+                ],
+            )
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
@@ -1030,7 +1067,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *binaries, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *provenance_rows]:
+            for row in [*observations, *documents, *binaries, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *imaging_studies, *provenance_rows]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)
