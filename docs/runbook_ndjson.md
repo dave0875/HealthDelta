@@ -60,6 +60,22 @@ Fields that MUST NOT appear in NDJSON:
   - `MedicationRequest`: `authoredOn`
   - `MedicationStatement`: `effectiveDateTime`, else `effectivePeriod.start`, else `effectivePeriod.end`
   - `MedicationDispense`: `whenHandedOver`, else `whenPrepared`
+  - `Condition`: `recordedDate`, else `onsetDateTime`
+
+### Condition fields
+
+Canonical `Condition` rows include, when present:
+- `code_system`
+- `code`
+- `display`
+- `clinical_status`
+- `verification_status`
+- `onset_time`
+
+Missing Condition fields are emitted with deterministic null/empty behavior in the row JSON and counted in a share-safe stderr warning summary:
+- `warnings.condition_missing.code=<n>`
+- `warnings.condition_missing.clinical_status=<n>`
+- `warnings.condition_missing.verification_status=<n>`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

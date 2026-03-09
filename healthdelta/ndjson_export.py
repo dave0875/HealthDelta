@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -308,6 +309,21 @@ def _extract_fhir_reference_id(ref: str, resource_type: str) -> str | None:
     return None
 
 
+def _first_fhir_coding_value(codable: object, field: str) -> str | None:
+    if not isinstance(codable, dict):
+        return None
+    coding = codable.get("coding")
+    if not isinstance(coding, list):
+        return None
+    for item in coding:
+        if not isinstance(item, dict):
+            continue
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _walk_source_fhir_files(ctx: ExportContext) -> Iterable[tuple[str, dict]]:
     for rel in ctx.clinical_json_rels:
         p = ctx.root_dir / rel
@@ -482,6 +498,7 @@ def _export_fhir_streams(
     diagnostic_reports: list[dict] = []
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
+    condition_warning_counts: dict[str, int] = {}
 
     task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
     for rel in ctx.clinical_json_rels:
@@ -594,6 +611,22 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            if rt == "Condition":
+                base["code_system"] = _first_fhir_coding_value(res.get("code"), "system")
+                base["code"] = _first_fhir_coding_value(res.get("code"), "code")
+                display = _first_fhir_coding_value(res.get("code"), "display")
+                if display is None and isinstance(res.get("code"), dict):
+                    text = res["code"].get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
+                base["clinical_status"] = _first_fhir_coding_value(res.get("clinicalStatus"), "code")
+                base["verification_status"] = _first_fhir_coding_value(res.get("verificationStatus"), "code")
+                onset = res.get("onsetDateTime")
+                base["onset_time"] = _normalize_time(onset) if isinstance(onset, str) else None
+                for key in ["code", "clinical_status", "verification_status"]:
+                    if base.get(key) is None:
+                        condition_warning_counts[key] = int(condition_warning_counts.get(key, 0)) + 1
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             conds.append(base)
@@ -716,6 +749,10 @@ def _export_fhir_streams(
             json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         )
         report["record_key"] = report["event_key"]
+
+    if condition_warning_counts:
+        for key in sorted(condition_warning_counts):
+            sys.stderr.write(f"warnings.condition_missing.{key}={condition_warning_counts[key]}\n")
 
     return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
 

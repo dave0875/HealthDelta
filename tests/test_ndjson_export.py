@@ -58,7 +58,18 @@ FHIR_COND = {
     "id": "c1",
     "subject": {"reference": "Patient/p1"},
     "recordedDate": "2020-01-04T00:00:00Z",
-    "code": {"text": "Hypertension"},
+    "onsetDateTime": "2019-12-31T00:00:00Z",
+    "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}]},
+    "verificationStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed"}]},
+    "code": {
+        "coding": [{"system": "http://snomed.info/sct", "code": "38341003", "display": "Hypertensive disorder"}],
+        "text": "Hypertension",
+    },
+}
+FHIR_COND_MISSING = {
+    "resourceType": "Condition",
+    "id": "c2",
+    "subject": {"reference": "Patient/p1"},
 }
 FHIR_ALLERGY = {
     "resourceType": "AllergyIntolerance",
@@ -405,6 +416,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "med_statement.json", FHIR_MED_STATEMENT)
             _write_json(clinical_dir / "med_dispense.json", FHIR_MED_DISPENSE)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
+            _write_json(clinical_dir / "cond_missing.json", FHIR_COND_MISSING)
             _write_json(clinical_dir / "allergy.json", FHIR_ALLERGY)
             _write_json(clinical_dir / "immunization.json", FHIR_IMMUNIZATION)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
@@ -485,7 +497,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(observations), 4)
             self.assertEqual(len(documents), 1)
             self.assertEqual(len(meds), 3)
-            self.assertEqual(len(conds), 2)
+            self.assertEqual(len(conds), 3)
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 1)
             self.assertEqual(len(reports), 2)
@@ -499,6 +511,24 @@ class TestNdjsonExport(unittest.TestCase):
             allergy_rows = [c for c in conds if c.get("resource_type") == "AllergyIntolerance"]
             self.assertEqual(len(allergy_rows), 1)
             self.assertEqual(allergy_rows[0].get("event_time"), "2020-01-04T07:00:00Z")
+            condition_rows = [c for c in conds if c.get("resource_type") == "Condition"]
+            self.assertEqual(len(condition_rows), 2)
+            cond_by_id = {c.get("source_id"): c for c in condition_rows}
+            self.assertEqual(cond_by_id["Condition/c1"].get("code_system"), "http://snomed.info/sct")
+            self.assertEqual(cond_by_id["Condition/c1"].get("code"), "38341003")
+            self.assertEqual(cond_by_id["Condition/c1"].get("display"), "Hypertensive disorder")
+            self.assertEqual(cond_by_id["Condition/c1"].get("clinical_status"), "active")
+            self.assertEqual(cond_by_id["Condition/c1"].get("verification_status"), "confirmed")
+            self.assertEqual(cond_by_id["Condition/c1"].get("onset_time"), "2019-12-31T00:00:00Z")
+            self.assertIsNone(cond_by_id["Condition/c2"].get("code_system"))
+            self.assertIsNone(cond_by_id["Condition/c2"].get("code"))
+            self.assertIsNone(cond_by_id["Condition/c2"].get("display"))
+            self.assertIsNone(cond_by_id["Condition/c2"].get("clinical_status"))
+            self.assertIsNone(cond_by_id["Condition/c2"].get("verification_status"))
+            self.assertIsNone(cond_by_id["Condition/c2"].get("onset_time"))
+            self.assertIn("warnings.condition_missing.code=1", exp1.stderr)
+            self.assertIn("warnings.condition_missing.clinical_status=1", exp1.stderr)
+            self.assertIn("warnings.condition_missing.verification_status=1", exp1.stderr)
 
             imm_rows = [o for o in observations if o.get("resource_type") == "Immunization"]
             self.assertEqual(len(imm_rows), 1)
