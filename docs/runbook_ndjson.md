@@ -19,6 +19,7 @@ The exporter never uploads data; it reads local files only.
 Written under `--out`:
 - `observations.ndjson` (always)
 - `documents.ndjson` (always)
+- `binaries.ndjson` (only if FHIR Binary resources are present)
 - `medications.ndjson` (only if FHIR medication resources are present)
 - `conditions.ndjson` (only if Condition records are present)
 - `goals.ndjson` (only if FHIR Goal resources are present)
@@ -59,6 +60,7 @@ Fields that MUST NOT appear in NDJSON:
 - Exports only:
   - `Observation` → `observations.ndjson`
   - `DocumentReference` → `documents.ndjson`
+  - `Binary` → `binaries.ndjson`
   - `MedicationRequest` → `medications.ndjson`
   - `MedicationStatement` → `medications.ndjson`
   - `MedicationDispense` → `medications.ndjson`
@@ -188,6 +190,7 @@ Canonical `DiagnosticReport` rows include, when present:
 - `display`
 - `status`
 - `result_observation_record_keys`
+- `presented_forms`
 
 ### DocumentReference fields
 
@@ -204,7 +207,24 @@ Canonical `DocumentReference` rows include, when present:
 
 Attachment export is share-safe:
 - only structured metadata such as `content_type`, `title`, `size`, and `hash` may be emitted
-- attachment payload fields such as raw `data` and `url` are excluded
+- attachment payload fields such as raw `data` are excluded
+- when an attachment `url` references `Binary/<id>`, the exporter keeps only the structured `binary_id`
+
+### Binary fields
+
+Canonical `Binary` rows include, when present:
+- `record_id`
+- `record_type`
+- `binary_id`
+- `content_type`
+- `security_context_reference`
+- `content_size_bytes`
+- `content_sha256`
+- `data_present`
+
+Binary export is share-safe:
+- raw Binary payload bytes are not emitted
+- only stable metadata, derived size/hash values, and structured linkage fields are exported
 
 ### Goal and CarePlan fields
 

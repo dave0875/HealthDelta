@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import sys
@@ -558,9 +559,11 @@ def _export_fhir_streams(
     list[dict],
     list[dict],
     list[dict],
+    list[dict],
 ]:
     observations: list[dict] = []
     documents: list[dict] = []
+    binaries: list[dict] = []
     meds: list[dict] = []
     conds: list[dict] = []
     encounters: list[dict] = []
@@ -792,6 +795,9 @@ def _export_fhir_streams(
                     hash_value = attachment.get("hash")
                     if isinstance(hash_value, str) and hash_value.strip():
                         row["hash"] = hash_value.strip()
+                    binary_id = _extract_fhir_reference_id(attachment.get("url"), "Binary")
+                    if binary_id:
+                        row["binary_id"] = binary_id
                     if row:
                         attachments.append(row)
                 if attachments:
@@ -810,6 +816,35 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             documents.append(base)
+            register_source_record_key(base)
+        elif rt == "Binary":
+            if rid:
+                base["record_id"] = rid
+                base["binary_id"] = rid
+            base["record_type"] = "Binary"
+            base["event_time"] = base.get("event_time") or ""
+            content_type = res.get("contentType")
+            if isinstance(content_type, str) and content_type.strip():
+                base["content_type"] = content_type.strip()
+            security_context = res.get("securityContext")
+            if isinstance(security_context, dict):
+                security_context_reference = security_context.get("reference")
+                if isinstance(security_context_reference, str) and security_context_reference.strip():
+                    base["security_context_reference"] = security_context_reference.strip()
+            data = res.get("data")
+            if isinstance(data, str) and data.strip():
+                try:
+                    decoded = base64.b64decode(data.encode("utf-8"), validate=True)
+                except Exception:
+                    decoded = data.encode("utf-8")
+                base["content_size_bytes"] = len(decoded)
+                base["content_sha256"] = _sha256_bytes(decoded)
+                base["data_present"] = True
+            else:
+                base["data_present"] = False
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            binaries.append(base)
             register_source_record_key(base)
         elif rt in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:
             status = res.get("status")
@@ -1052,6 +1087,41 @@ def _export_fhir_streams(
                     base["result_observation_record_keys"] = resolved
                 else:
                     pending_report_links.append((base, result_refs))
+            presented_form = res.get("presentedForm")
+            if isinstance(presented_form, list):
+                attachments: list[dict[str, object]] = []
+                for item in presented_form:
+                    if not isinstance(item, dict):
+                        continue
+                    row: dict[str, object] = {}
+                    content_type = item.get("contentType")
+                    if isinstance(content_type, str) and content_type.strip():
+                        row["content_type"] = content_type.strip()
+                    title = item.get("title")
+                    if isinstance(title, str) and title.strip():
+                        row["title"] = title.strip()
+                    size = item.get("size")
+                    if isinstance(size, int):
+                        row["size"] = size
+                    hash_value = item.get("hash")
+                    if isinstance(hash_value, str) and hash_value.strip():
+                        row["hash"] = hash_value.strip()
+                    binary_id = _extract_fhir_reference_id(item.get("url"), "Binary")
+                    if binary_id:
+                        row["binary_id"] = binary_id
+                    if row:
+                        attachments.append(row)
+                if attachments:
+                    base["presented_forms"] = sorted(
+                        attachments,
+                        key=lambda item: (
+                            str(item.get("content_type") or ""),
+                            str(item.get("title") or ""),
+                            int(item.get("size") or 0),
+                            str(item.get("hash") or ""),
+                            str(item.get("binary_id") or ""),
+                        ),
+                    )
             diagnostic_reports.append(base)
         elif rt == "Goal":
             if rid:
@@ -1395,6 +1465,7 @@ def _export_fhir_streams(
     return (
         observations,
         documents,
+        binaries,
         meds,
         conds,
         encounters,
@@ -1561,6 +1632,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         (
             fhir_obs,
             fhir_docs,
+            fhir_binaries,
             fhir_meds,
             fhir_conds,
             fhir_encounters,
@@ -1580,6 +1652,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
 
     observations = [*healthkit_obs, *fhir_obs, *cda_obs]
     documents = [*fhir_docs]
+    binaries = [*fhir_binaries]
     meds = [*fhir_meds]
     conds = [*fhir_conds]
     encounters = [*fhir_encounters, *cda_encounters]
@@ -1627,6 +1700,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     with progress.phase("export: dedupe + sort"):
         observations = sort_rows(dedupe(observations))
         documents = sort_rows(dedupe(documents))
+        binaries = sort_rows(dedupe(binaries))
         meds = sort_rows(dedupe(meds))
         conds = sort_rows(dedupe(conds))
         encounters = sort_rows(dedupe(encounters))
@@ -1644,6 +1718,8 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
         _write_ndjson(out_root / "documents.ndjson", documents)
+        if binaries:
+            _write_ndjson(out_root / "binaries.ndjson", binaries)
         if meds:
             _write_ndjson(out_root / "medications.ndjson", meds)
         if conds:

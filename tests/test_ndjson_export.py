@@ -62,10 +62,17 @@ FHIR_DOC = {
                 "size": 12345,
                 "hash": "YWJjMTIz",
                 "data": "VGhpcyBzaG91bGQgbm90IGJlIGV4cG9ydGVk",
-                "url": "https://example.invalid/private.pdf",
+                "url": "Binary/bin1",
             }
         }
     ],
+}
+FHIR_BINARY = {
+    "resourceType": "Binary",
+    "id": "bin1",
+    "contentType": "application/pdf",
+    "securityContext": {"reference": "DocumentReference/d1"},
+    "data": "aGVsbG8gd29ybGQ=",
 }
 FHIR_MED = {
     "resourceType": "MedicationRequest",
@@ -190,6 +197,14 @@ FHIR_DIAG_REPORT = {
         "coding": [{"system": "http://loinc.org", "code": "24323-8", "display": "Basic metabolic 2000 panel - Serum or Plasma"}],
         "text": "Basic metabolic panel",
     },
+    "presentedForm": [
+        {
+            "contentType": "application/pdf",
+            "title": "Lab report attachment",
+            "size": 11,
+            "url": "Binary/bin1",
+        }
+    ],
 }
 FHIR_DIAG_REPORT_MISSING = {
     "resourceType": "DiagnosticReport",
@@ -564,6 +579,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "patient.json", FHIR_PATIENT)
             _write_json(clinical_dir / "obs.json", FHIR_OBS)
             _write_json(clinical_dir / "doc.json", FHIR_DOC)
+            _write_json(clinical_dir / "binary.json", FHIR_BINARY)
             _write_json(clinical_dir / "med.json", FHIR_MED)
             _write_json(clinical_dir / "med_statement.json", FHIR_MED_STATEMENT)
             _write_json(clinical_dir / "med_statement_missing.json", FHIR_MED_MISSING)
@@ -639,6 +655,7 @@ class TestNdjsonExport(unittest.TestCase):
             expected_files = [
                 out_local / "observations.ndjson",
                 out_local / "documents.ndjson",
+                out_local / "binaries.ndjson",
                 out_local / "medications.ndjson",
                 out_local / "conditions.ndjson",
                 out_local / "encounters.ndjson",
@@ -659,6 +676,7 @@ class TestNdjsonExport(unittest.TestCase):
 
             observations = _read_ndjson(out_local / "observations.ndjson")
             documents = _read_ndjson(out_local / "documents.ndjson")
+            binaries = _read_ndjson(out_local / "binaries.ndjson")
             meds = _read_ndjson(out_local / "medications.ndjson")
             conds = _read_ndjson(out_local / "conditions.ndjson")
             encounters = _read_ndjson(out_local / "encounters.ndjson")
@@ -676,6 +694,7 @@ class TestNdjsonExport(unittest.TestCase):
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
             self.assertEqual(len(documents), 1)
+            self.assertEqual(len(binaries), 1)
             self.assertEqual(len(meds), 4)
             self.assertEqual(len(conds), 4)
             self.assertEqual(len(encounters), 1)
@@ -711,6 +730,7 @@ class TestNdjsonExport(unittest.TestCase):
                 [
                     {
                         "content_type": "application/pdf",
+                        "binary_id": "bin1",
                         "hash": "YWJjMTIz",
                         "size": 12345,
                         "title": "Discharge Summary PDF",
@@ -719,6 +739,15 @@ class TestNdjsonExport(unittest.TestCase):
             )
             self.assertNotIn("data", json.dumps(documents[0], sort_keys=True))
             self.assertNotIn("url", json.dumps(documents[0], sort_keys=True))
+
+            self.assertEqual(binaries[0].get("record_id"), "bin1")
+            self.assertEqual(binaries[0].get("record_type"), "Binary")
+            self.assertEqual(binaries[0].get("binary_id"), "bin1")
+            self.assertEqual(binaries[0].get("content_type"), "application/pdf")
+            self.assertEqual(binaries[0].get("content_size_bytes"), 11)
+            self.assertEqual(binaries[0].get("security_context_reference"), "DocumentReference/d1")
+            self.assertTrue(binaries[0].get("data_present"))
+            self.assertNotIn('"data":', json.dumps(binaries[0], sort_keys=True))
 
             self.assertEqual(goals[0].get("record_id"), "g1")
             self.assertEqual(goals[0].get("record_type"), "Goal")
@@ -891,6 +920,17 @@ class TestNdjsonExport(unittest.TestCase):
                 "Basic metabolic 2000 panel - Serum or Plasma",
             )
             self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("status"), "final")
+            self.assertEqual(
+                report_by_id["DiagnosticReport/dr1"].get("presented_forms"),
+                [
+                    {
+                        "binary_id": "bin1",
+                        "content_type": "application/pdf",
+                        "size": 11,
+                        "title": "Lab report attachment",
+                    }
+                ],
+            )
             self.assertIsNone(report_by_id["DiagnosticReport/dr2"].get("status"))
 
             fhir_obs = [o for o in observations if o.get("resource_type") == "Observation" and o.get("source") == "fhir"]
@@ -940,7 +980,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *provenance_rows]:
+            for row in [*observations, *documents, *binaries, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *provenance_rows]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HealthDelta Binary NDJSON Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_key",
+    "canonical_person_id",
+    "source",
+    "source_file",
+    "event_time",
+    "run_id",
+    "record_id",
+    "record_type",
+    "binary_id",
+    "content_type",
+    "data_present"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "record_key": { "type": "string" },
+    "canonical_person_id": { "type": "string" },
+    "source": { "type": "string" },
+    "source_file": { "type": "string" },
+    "event_time": { "type": "string" },
+    "run_id": { "type": "string" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "binary_id": { "type": "string" },
+    "content_type": { "type": "string" },
+    "security_context_reference": { "type": "string" },
+    "content_size_bytes": { "type": "integer" },
+    "content_sha256": { "type": "string" },
+    "data_present": {}
+  },
+  "additionalProperties": true
+}

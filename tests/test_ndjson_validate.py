@@ -16,6 +16,7 @@ class TestNdjsonValidate(unittest.TestCase):
         expected = {
             "observations.schema.json",
             "documents.schema.json",
+            "binaries.schema.json",
             "medications.schema.json",
             "conditions.schema.json",
             "encounters.schema.json",
@@ -179,6 +180,25 @@ class TestNdjsonValidate(unittest.TestCase):
             self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
             self.assertIn("missing_required_key", r.stderr)
             self.assertIn("document_reference_id", r.stderr)
+
+    def test_validate_binaries_requires_binary_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "binaries.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/bin.json","event_time":"","run_id":"r1","resource_type":"Binary","source_id":"Binary/bin1"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("binary_id", r.stderr)
 
     def test_validate_careplans_requires_careplan_contract_fields(self) -> None:
         with tempfile.TemporaryDirectory() as td:
