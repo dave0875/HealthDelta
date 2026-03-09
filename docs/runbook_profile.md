@@ -26,6 +26,7 @@ Written under `--out`:
 - `profile.json`: machine-readable summary.
 - `profile.md`: human-readable one-screen summary + sections.
 - `clinical_coverage_inventory.json`: share-safe inventory of sampled FHIR resourceTypes and CDA sections with observed counts.
+- `clinical_inventory.json`: stable compatibility alias for the clinical coverage inventory artifact, containing the same share-safe counts by FHIR resourceType and CDA section.
 - `files_top.csv`: largest files (size + relative path).
 - `counts_by_ext.csv`: file extension counts.
 - `healthkit_record_types.csv`: HealthKit `Record` `type=` counts (when `export.xml` exists).

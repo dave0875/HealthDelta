@@ -465,6 +465,29 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
             },
         )
         task.advance(1)
+        _write_json(
+            out / "clinical_inventory.json",
+            {
+                "schema_version": 1,
+                "profile_id": profile_id,
+                "summary": {
+                    "clinical_json_total_files": fhir_meta["total_files"],
+                    "clinical_json_sampled_files": fhir_meta["sampled_files"],
+                    "has_export_cda_xml": export_cda.exists(),
+                    "cda_section_total": sum(int(row["count"]) for row in cda_sections),
+                },
+                "fhir_resource_types": [{"resourceType": t, "count": n} for t, n in fhir_counts],
+                "cda_sections": cda_sections,
+                "privacy": {
+                    "share_safe": True,
+                    "notes": [
+                        "Only aggregate counts and schema-level identifiers are emitted",
+                        "No names, dates of birth, identifiers, timestamps, or free-text payload fragments are included",
+                    ],
+                },
+            },
+        )
+        task.advance(1)
 
         _write_csv(
             out / "files_top.csv",

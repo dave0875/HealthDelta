@@ -44,6 +44,7 @@ class TestExportProfile(unittest.TestCase):
                 out / "profile.json",
                 out / "profile.md",
                 out / "clinical_coverage_inventory.json",
+                out / "clinical_inventory.json",
                 out / "files_top.csv",
                 out / "counts_by_ext.csv",
                 out / "healthkit_record_types.csv",
@@ -86,8 +87,10 @@ class TestExportProfile(unittest.TestCase):
             self.assertEqual(prof["summary"]["clinical_json_sampled_files"], 2)
 
             inventory = json.loads((out / "clinical_coverage_inventory.json").read_text(encoding="utf-8"))
+            inventory_alias = json.loads((out / "clinical_inventory.json").read_text(encoding="utf-8"))
             self.assertEqual(inventory["schema_version"], 1)
             self.assertEqual(inventory["profile_id"], prof["profile_id"])
+            self.assertEqual(inventory_alias, inventory)
             self.assertEqual(
                 inventory["fhir_resource_types"],
                 [
@@ -191,6 +194,38 @@ class TestExportProfile(unittest.TestCase):
             self.assertIn("`healthdelta run all --input <export_dir> --out data --mode share`", md)
             for banned in ["John Doe", "1980-01-02", "19800102"]:
                 self.assertNotIn(banned, combined)
+
+    def test_export_profile_writes_zero_clinical_inventory_when_no_clinical_records_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            export_dir = root / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            (export_dir / "export.xml").write_text("<?xml version=\"1.0\" encoding=\"UTF-8\"?><HealthData></HealthData>\n", encoding="utf-8")
+            out = root / "out"
+
+            cmd = [
+                sys.executable,
+                "-m",
+                "healthdelta",
+                "export",
+                "profile",
+                "--input",
+                str(export_dir),
+                "--out",
+                str(out),
+                "--sample-json",
+                "10",
+                "--top-files",
+                "10",
+            ]
+            run = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            inventory = json.loads((out / "clinical_inventory.json").read_text(encoding="utf-8"))
+            self.assertEqual(inventory["fhir_resource_types"], [])
+            self.assertEqual(inventory["cda_sections"], [])
+            self.assertEqual(inventory["summary"]["clinical_json_total_files"], 0)
+            self.assertEqual(inventory["summary"]["cda_section_total"], 0)
 
 
 if __name__ == "__main__":
