@@ -9,7 +9,12 @@
     "source",
     "source_file",
     "event_time",
-    "run_id"
+    "run_id",
+    "record_id",
+    "record_type",
+    "diagnostic_report_id",
+    "subject_reference",
+    "status"
   ],
   "properties": {
     "schema_version": { "type": "integer", "const": 2 },
@@ -18,7 +23,17 @@
     "source": { "type": "string" },
     "source_file": { "type": "string" },
     "event_time": { "type": "string" },
-    "run_id": { "type": "string" }
+    "run_id": { "type": "string" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "diagnostic_report_id": { "type": "string" },
+    "subject_reference": { "type": "string" },
+    "status": { "type": "string" },
+    "effective_start": { "type": "string" },
+    "effective_end": { "type": "string" },
+    "code_system": { "type": "string" },
+    "code": { "type": "string" },
+    "display": { "type": "string" }
   },
   "additionalProperties": true
 }

@@ -168,14 +168,17 @@ FHIR_DIAG_REPORT = {
     "id": "dr1",
     "status": "final",
     "subject": {"reference": "Patient/p1"},
-    "issued": "2020-01-07T08:00:00Z",
+    "effectivePeriod": {"start": "2020-01-07T07:30:00Z", "end": "2020-01-07T08:00:00Z"},
+    "issued": "2020-01-07T08:05:00Z",
     "result": [{"reference": "Observation/o1"}],
-    "code": {"text": "Basic metabolic panel"},
+    "code": {
+        "coding": [{"system": "http://loinc.org", "code": "24323-8", "display": "Basic metabolic 2000 panel - Serum or Plasma"}],
+        "text": "Basic metabolic panel",
+    },
 }
 FHIR_DIAG_REPORT_MISSING = {
     "resourceType": "DiagnosticReport",
     "id": "dr2",
-    "status": "final",
     "subject": {"reference": "Patient/p1"},
     "issued": "2020-01-07T09:00:00Z",
     "result": [{"reference": "Observation/missing"}],
@@ -655,6 +658,20 @@ class TestNdjsonExport(unittest.TestCase):
             report_by_id = {r.get("source_id"): r for r in reports}
             self.assertIn("DiagnosticReport/dr1", report_by_id)
             self.assertIn("DiagnosticReport/dr2", report_by_id)
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("record_id"), "dr1")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("record_type"), "DiagnosticReport")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("diagnostic_report_id"), "dr1")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("subject_reference"), "Patient/p1")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("effective_start"), "2020-01-07T07:30:00Z")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("effective_end"), "2020-01-07T08:00:00Z")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("code_system"), "http://loinc.org")
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("code"), "24323-8")
+            self.assertEqual(
+                report_by_id["DiagnosticReport/dr1"].get("display"),
+                "Basic metabolic 2000 panel - Serum or Plasma",
+            )
+            self.assertEqual(report_by_id["DiagnosticReport/dr1"].get("status"), "final")
+            self.assertIsNone(report_by_id["DiagnosticReport/dr2"].get("status"))
 
             fhir_obs = [o for o in observations if o.get("resource_type") == "Observation" and o.get("source") == "fhir"]
             self.assertTrue(fhir_obs)

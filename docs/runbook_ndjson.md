@@ -152,6 +152,21 @@ Canonical `Encounter` rows include, when present:
 - `period_start`
 - `period_end`
 - `status`
+
+### DiagnosticReport fields
+
+Canonical `DiagnosticReport` rows include, when present:
+- `record_id`
+- `record_type`
+- `diagnostic_report_id`
+- `subject_reference`
+- `effective_start`
+- `effective_end`
+- `code_system`
+- `code`
+- `display`
+- `status`
+- `result_observation_record_keys`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

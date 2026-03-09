@@ -838,11 +838,28 @@ def _export_fhir_streams(
             base["record_key"] = base["event_key"]
             procedures.append(base)
         elif rt == "DiagnosticReport":
+            if rid:
+                base["record_id"] = rid
+                base["diagnostic_report_id"] = rid
+            base["record_type"] = "DiagnosticReport"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
             code = res.get("code")
             if isinstance(code, dict):
+                base["code_system"] = _first_fhir_coding_value(code, "system")
+                base["code"] = _first_fhir_coding_value(code, "code")
+                display = _first_fhir_coding_value(code, "display")
+                if display is None:
+                    text = code.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
                 coding = code.get("coding")
                 if isinstance(coding, list):
                     codings = []
@@ -855,6 +872,18 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            effective = res.get("effectivePeriod")
+            if isinstance(effective, dict):
+                start = effective.get("start")
+                end = effective.get("end")
+                base["effective_start"] = _normalize_time(start) if isinstance(start, str) else None
+                base["effective_end"] = _normalize_time(end) if isinstance(end, str) else None
+            else:
+                effective_dt = res.get("effectiveDateTime")
+                normalized = _normalize_time(effective_dt) if isinstance(effective_dt, str) else None
+                if normalized is not None:
+                    base["effective_start"] = normalized
+                    base["effective_end"] = normalized
             result_refs: list[str] = []
             result = res.get("result")
             if isinstance(result, list):

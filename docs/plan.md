@@ -88,9 +88,9 @@ Next roadmap focus (post-MMF)
 - Issue #178 - Hospital records coverage inventory + roadmap slice (closed)
   - https://github.com/dave0875/HealthDelta/issues/178
   - Prioritized next clinical-record targets from the current coverage slice:
-    - Issue #187 - Clinical records Encounter mapping v1
-    - Issue #188 - Clinical records Observation mapping v1
-    - Issue #189 - Clinical records DiagnosticReport mapping v1
+    - Issue #187 - Clinical records Encounter mapping v1 (closed)
+    - Issue #188 - Clinical records Observation mapping v1 (closed)
+    - Issue #189 - Clinical records DiagnosticReport mapping v1 (closed)
     - Issue #190 - Clinical records DocumentReference mapping v1
     - Issue #191 - Clinical records CarePlan + Goal mapping v1
     - Issue #192 - Clinical records ServiceRequest mapping v1
@@ -108,7 +108,10 @@ Next roadmap focus (post-MMF)
   - Issue #184 - FHIR Condition mapping v1 (closed)
   - Issue #185 - FHIR Medication + Allergy mapping v1 (closed)
   - Issue #186 - FHIR Immunization + Procedure mapping v1 (closed)
-  - Issues #187-#193 (FHIR and clinical-record resource coverage)
+  - Issue #187 - Clinical records Encounter mapping v1 (closed)
+  - Issue #188 - Clinical records Observation mapping v1 (closed)
+  - Issue #189 - Clinical records DiagnosticReport mapping v1 (closed)
+  - Issues #190-#193 (FHIR and clinical-record resource coverage)
   - Issues #200-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)
