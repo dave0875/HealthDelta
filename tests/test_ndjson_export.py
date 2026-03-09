@@ -313,6 +313,18 @@ FHIR_SPECIMEN = {
     },
     "identifier": [{"system": "urn:lab:specimen", "value": "SP-001"}],
 }
+FHIR_DEVICE = {
+    "resourceType": "Device",
+    "id": "dev1",
+    "patient": {"reference": "Patient/p1"},
+    "status": "active",
+    "manufacturer": "Acme Devices",
+    "type": {
+        "coding": [{"system": "http://snomed.info/sct", "code": "86184003", "display": "Electrocardiographic monitor"}],
+        "text": "ECG monitor",
+    },
+    "identifier": [{"system": "urn:device:udi", "value": "UDI-001"}],
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -681,6 +693,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "provenance.json", FHIR_PROVENANCE)
             _write_json(clinical_dir / "imaging_study.json", FHIR_IMAGING_STUDY)
             _write_json(clinical_dir / "specimen.json", FHIR_SPECIMEN)
+            _write_json(clinical_dir / "device.json", FHIR_DEVICE)
 
             base_dir = root / "out"
 
@@ -749,6 +762,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "provenance.ndjson",
                 out_local / "imaging_studies.ndjson",
                 out_local / "specimens.ndjson",
+                out_local / "devices.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -772,6 +786,7 @@ class TestNdjsonExport(unittest.TestCase):
             provenance_rows = _read_ndjson(out_local / "provenance.ndjson")
             imaging_studies = _read_ndjson(out_local / "imaging_studies.ndjson")
             specimens = _read_ndjson(out_local / "specimens.ndjson")
+            devices = _read_ndjson(out_local / "devices.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -792,6 +807,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(provenance_rows), 1)
             self.assertEqual(len(imaging_studies), 1)
             self.assertEqual(len(specimens), 1)
+            self.assertEqual(len(devices), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -946,6 +962,20 @@ class TestNdjsonExport(unittest.TestCase):
                 [{"system": "urn:lab:specimen", "value": "SP-001"}],
             )
 
+            self.assertEqual(devices[0].get("record_id"), "dev1")
+            self.assertEqual(devices[0].get("record_type"), "Device")
+            self.assertEqual(devices[0].get("device_id"), "dev1")
+            self.assertEqual(devices[0].get("patient_reference"), "Patient/p1")
+            self.assertEqual(devices[0].get("status"), "active")
+            self.assertEqual(devices[0].get("type_system"), "http://snomed.info/sct")
+            self.assertEqual(devices[0].get("type_code"), "86184003")
+            self.assertEqual(devices[0].get("display"), "Electrocardiographic monitor")
+            self.assertEqual(devices[0].get("manufacturer"), "Acme Devices")
+            self.assertEqual(
+                devices[0].get("identifiers"),
+                [{"system": "urn:device:udi", "value": "UDI-001"}],
+            )
+
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
             self.assertEqual(proc_by_id["Procedure/pr1"].get("event_time"), "2020-01-06T09:30:00Z")
@@ -1097,7 +1127,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *binaries, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *imaging_studies, *specimens, *provenance_rows]:
+            for row in [*observations, *documents, *binaries, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations, *imaging_studies, *specimens, *devices, *provenance_rows]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

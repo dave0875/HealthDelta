@@ -31,6 +31,7 @@ class TestNdjsonValidate(unittest.TestCase):
             "locations.schema.json",
             "imaging_studies.schema.json",
             "specimens.schema.json",
+            "devices.schema.json",
             "provenance.schema.json",
         }
         self.assertTrue(root.exists(), msg=f"missing schema dir: {root}")
@@ -391,6 +392,25 @@ class TestNdjsonValidate(unittest.TestCase):
             )
             self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
             self.assertIn("specimen_id", r.stderr)
+
+    def test_validate_devices_requires_device_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "devices.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/device.json","event_time":"","run_id":"r1","resource_type":"Device","source_id":"Device/dev1","status":"active"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("device_id", r.stderr)
 
 
 if __name__ == "__main__":

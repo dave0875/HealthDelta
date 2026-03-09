@@ -31,6 +31,7 @@ Written under `--out`:
 - `locations.ndjson` (only if FHIR Location resources are present)
 - `imaging_studies.ndjson` (only if FHIR ImagingStudy resources are present)
 - `specimens.ndjson` (only if FHIR Specimen resources are present)
+- `devices.ndjson` (only if FHIR Device resources are present)
 - `provenance.ndjson` (only if FHIR Provenance resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
@@ -79,6 +80,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Location` → `locations.ndjson`
   - `ImagingStudy` → `imaging_studies.ndjson`
   - `Specimen` → `specimens.ndjson`
+  - `Device` → `devices.ndjson`
   - `Provenance` → `provenance.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
@@ -329,6 +331,18 @@ Canonical `Specimen` rows include, when present:
 - `type_system`
 - `type_code`
 - `display`
+- `identifiers`
+
+Canonical `Device` rows include, when present:
+- `record_id`
+- `record_type`
+- `device_id`
+- `patient_reference`
+- `status`
+- `type_system`
+- `type_code`
+- `display`
+- `manufacturer`
 - `identifiers`
 
 Canonical `Provenance` rows include, when present:

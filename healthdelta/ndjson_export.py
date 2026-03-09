@@ -583,6 +583,7 @@ def _export_fhir_streams(
     list[dict],
     list[dict],
     list[dict],
+    list[dict],
 ]:
     observations: list[dict] = []
     documents: list[dict] = []
@@ -601,6 +602,7 @@ def _export_fhir_streams(
     locations: list[dict] = []
     imaging_studies: list[dict] = []
     specimens: list[dict] = []
+    devices: list[dict] = []
     provenance_rows: list[dict] = []
     observation_keys: dict[str, str] = {}
     source_record_keys: dict[str, str] = {}
@@ -1498,6 +1500,40 @@ def _export_fhir_streams(
             base["record_key"] = base["event_key"]
             specimens.append(base)
             register_source_record_key(base)
+        elif rt == "Device":
+            if rid:
+                base["record_id"] = rid
+                base["device_id"] = rid
+            base["record_type"] = "Device"
+            base["event_time"] = base.get("event_time") or ""
+            patient = res.get("patient")
+            if isinstance(patient, dict):
+                patient_reference = patient.get("reference")
+                if isinstance(patient_reference, str) and patient_reference.strip():
+                    base["patient_reference"] = patient_reference.strip()
+            status = res.get("status")
+            if isinstance(status, str) and status.strip():
+                base["status"] = status.strip()
+            device_type = res.get("type")
+            if isinstance(device_type, dict):
+                base["type_system"] = _first_fhir_coding_value(device_type, "system")
+                base["type_code"] = _first_fhir_coding_value(device_type, "code")
+                display = _first_fhir_coding_value(device_type, "display")
+                if display is None:
+                    text = device_type.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
+            manufacturer = res.get("manufacturer")
+            if isinstance(manufacturer, str) and manufacturer.strip():
+                base["manufacturer"] = manufacturer.strip()
+            identifiers = _extract_identifier_pairs(res.get("identifier"))
+            if identifiers:
+                base["identifiers"] = [{"system": system, "value": value} for system, value in identifiers]
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            devices.append(base)
+            register_source_record_key(base)
         elif rt == "Provenance":
             if rid:
                 base["record_id"] = rid
@@ -1608,6 +1644,7 @@ def _export_fhir_streams(
         locations,
         imaging_studies,
         specimens,
+        devices,
         provenance_rows,
     )
 
@@ -1777,6 +1814,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_locations,
             fhir_imaging_studies,
             fhir_specimens,
+            fhir_devices,
             fhir_provenance,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
@@ -1799,6 +1837,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     locations = [*fhir_locations]
     imaging_studies = [*fhir_imaging_studies]
     specimens = [*fhir_specimens]
+    devices = [*fhir_devices]
     provenance_rows = [*fhir_provenance]
 
     def dedupe(rows: list[dict]) -> list[dict]:
@@ -1849,6 +1888,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         locations = sort_rows(dedupe(locations))
         imaging_studies = sort_rows(dedupe(imaging_studies))
         specimens = sort_rows(dedupe(specimens))
+        devices = sort_rows(dedupe(devices))
         provenance_rows = sort_rows(dedupe(provenance_rows))
 
     with progress.phase("export: write ndjson"):
@@ -1884,5 +1924,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "imaging_studies.ndjson", imaging_studies)
         if specimens:
             _write_ndjson(out_root / "specimens.ndjson", specimens)
+        if devices:
+            _write_ndjson(out_root / "devices.ndjson", devices)
         if provenance_rows:
             _write_ndjson(out_root / "provenance.ndjson", provenance_rows)

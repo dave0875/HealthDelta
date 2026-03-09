@@ -144,3 +144,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,206,UNASSIGNED,30,codex,UNASSIGNED,"Add share-safe clinical_records_v1 fixture pack and use it in NDJSON mapping tests"
 2026-03-09,210,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical ImagingStudy NDJSON export plus validation-safe schema coverage"
 2026-03-09,211,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Specimen NDJSON export plus validation-safe schema coverage"
+2026-03-09,212,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Device NDJSON export plus validation-safe schema coverage"
