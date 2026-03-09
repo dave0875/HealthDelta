@@ -98,7 +98,7 @@ def _clinical_required_keys(rel_path: str, obj: dict) -> tuple[str, ...]:
         return ()
 
     if stream == "observations" and resource_type == "Observation":
-        return ("record_id", "record_type", "observation_id", "subject_reference", "code_system")
+        return ("record_id", "record_type", "observation_id", "subject_reference")
     if stream == "observations" and resource_type == "Immunization":
         return ("source_id", "resource_type", "status")
     if stream == "medications" and resource_type in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:

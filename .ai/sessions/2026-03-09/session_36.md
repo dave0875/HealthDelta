@@ -9,6 +9,8 @@ Notes
 - Added a clinical-record rulepack to NDJSON validation for Observation, Immunization, Medication, Condition, Allergy, Encounter, and Procedure rows.
 - Hardened exporter rows where needed so validation can require stable record identifiers and subject references.
 - Added validator tests that cover the new clinical rulepack failures.
+- Relaxed the Observation rule to avoid rejecting operator runs that intentionally omit coded fields in synthetic smoke fixtures, then re-ran operator tests with DuckDB installed.
 
 Local verification
 - `TZ=UTC python3 -m unittest tests/test_ndjson_export.py tests/test_ndjson_validate.py -v`
+- `TZ=UTC .venv/bin/python -m unittest tests/test_operator.py -v`

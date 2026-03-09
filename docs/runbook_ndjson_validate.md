@@ -24,7 +24,7 @@ Optional (test-fixture guardrails):
   - `event_time`
   - `run_id`
 - Clinical-record rulepack checks also require stable mapping keys for covered resource types:
-  - `Observation` rows: `record_id`, `record_type`, `observation_id`, `subject_reference`, `code_system`
+  - `Observation` rows: `record_id`, `record_type`, `observation_id`, `subject_reference`
   - `Immunization` rows: `source_id`, `resource_type`, `status`
   - medication rows: `record_id`, `record_type`, `subject_reference`, `source_id`
   - condition/allergy rows: `record_id`, `record_type`, `subject_reference`, `source_id`
