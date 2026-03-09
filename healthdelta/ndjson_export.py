@@ -483,12 +483,36 @@ def _fhir_event_time(resource: dict) -> str | None:
         issued = resource.get("issued")
         if isinstance(issued, str):
             return _normalize_time(issued)
+    if rt == "Goal":
+        start_date = resource.get("startDate")
+        if isinstance(start_date, str):
+            return _normalize_time(start_date)
+        targets = resource.get("target")
+        if isinstance(targets, list):
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                due_date = target.get("dueDate")
+                if isinstance(due_date, str):
+                    return _normalize_time(due_date)
+    if rt == "CarePlan":
+        period = resource.get("period")
+        if isinstance(period, dict):
+            start = period.get("start")
+            if isinstance(start, str):
+                return _normalize_time(start)
+            end = period.get("end")
+            if isinstance(end, str):
+                return _normalize_time(end)
+        created = resource.get("created")
+        if isinstance(created, str):
+            return _normalize_time(created)
     return None
 
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
@@ -496,6 +520,8 @@ def _export_fhir_streams(
     encounters: list[dict] = []
     procedures: list[dict] = []
     diagnostic_reports: list[dict] = []
+    goals: list[dict] = []
+    careplans: list[dict] = []
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
@@ -960,6 +986,80 @@ def _export_fhir_streams(
                 else:
                     pending_report_links.append((base, result_refs))
             diagnostic_reports.append(base)
+        elif rt == "Goal":
+            if rid:
+                base["record_id"] = rid
+                base["goal_id"] = rid
+            base["record_type"] = "Goal"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            status = res.get("lifecycleStatus")
+            if isinstance(status, str):
+                base["status"] = status
+            start_date = res.get("startDate")
+            if isinstance(start_date, str) and start_date.strip():
+                base["start_date"] = start_date.strip()
+            targets = res.get("target")
+            if isinstance(targets, list):
+                for target in targets:
+                    if not isinstance(target, dict):
+                        continue
+                    due_date = target.get("dueDate")
+                    if isinstance(due_date, str) and due_date.strip():
+                        base["target_due_date"] = due_date.strip()
+                        break
+            description = res.get("description")
+            if isinstance(description, dict):
+                text = description.get("text")
+                if isinstance(text, str) and text.strip():
+                    base["description"] = text.strip()
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            goals.append(base)
+        elif rt == "CarePlan":
+            if rid:
+                base["record_id"] = rid
+                base["careplan_id"] = rid
+            base["record_type"] = "CarePlan"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            status = res.get("status")
+            if isinstance(status, str):
+                base["status"] = status
+            intent = res.get("intent")
+            if isinstance(intent, str):
+                base["intent"] = intent
+            period = res.get("period")
+            if isinstance(period, dict):
+                start = period.get("start")
+                end = period.get("end")
+                base["period_start"] = _normalize_time(start) if isinstance(start, str) else None
+                base["period_end"] = _normalize_time(end) if isinstance(end, str) else None
+            goal_refs = res.get("goal")
+            if isinstance(goal_refs, list):
+                goal_ids = sorted(
+                    {
+                        goal_id
+                        for item in goal_refs
+                        if isinstance(item, dict)
+                        for goal_id in [_extract_fhir_reference_id(item.get("reference"), "Goal")]
+                        if goal_id
+                    }
+                )
+                if goal_ids:
+                    base["goal_ids"] = goal_ids
+            title = res.get("title")
+            if isinstance(title, str) and title.strip():
+                base["title"] = title.strip()
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            careplans.append(base)
         task_files.advance(1)
 
     if pending_report_links:
@@ -996,7 +1096,7 @@ def _export_fhir_streams(
         for key in sorted(procedure_warning_counts):
             sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
-    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
+    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans
 
 
 def _xml_child_text(el: ET.Element, name: str) -> str | None:
@@ -1154,6 +1254,8 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_encounters,
             fhir_procedures,
             fhir_reports,
+            fhir_goals,
+            fhir_careplans,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs, cda_encounters = _export_cda_streams(ctx)
@@ -1165,6 +1267,8 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     encounters = [*fhir_encounters, *cda_encounters]
     procedures = [*fhir_procedures]
     diagnostic_reports = [*fhir_reports]
+    goals = [*fhir_goals]
+    careplans = [*fhir_careplans]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -1204,6 +1308,8 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         encounters = sort_rows(dedupe(encounters))
         procedures = sort_rows(dedupe(procedures))
         diagnostic_reports = sort_rows(dedupe(diagnostic_reports))
+        goals = sort_rows(dedupe(goals))
+        careplans = sort_rows(dedupe(careplans))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -1218,3 +1324,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "procedures.ndjson", procedures)
         if diagnostic_reports:
             _write_ndjson(out_root / "diagnostic_reports.ndjson", diagnostic_reports)
+        if goals:
+            _write_ndjson(out_root / "goals.ndjson", goals)
+        if careplans:
+            _write_ndjson(out_root / "careplans.ndjson", careplans)

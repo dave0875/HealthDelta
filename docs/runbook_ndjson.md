@@ -21,6 +21,8 @@ Written under `--out`:
 - `documents.ndjson` (always)
 - `medications.ndjson` (only if FHIR medication resources are present)
 - `conditions.ndjson` (only if Condition records are present)
+- `goals.ndjson` (only if FHIR Goal resources are present)
+- `careplans.ndjson` (only if FHIR CarePlan resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
 
@@ -58,6 +60,8 @@ Fields that MUST NOT appear in NDJSON:
   - `AllergyIntolerance` → `conditions.ndjson`
   - `Immunization` → `observations.ndjson`
   - `Procedure` → `procedures.ndjson`
+  - `Goal` → `goals.ndjson`
+  - `CarePlan` → `careplans.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
   - `MedicationRequest`: `authoredOn`
@@ -67,6 +71,8 @@ Fields that MUST NOT appear in NDJSON:
   - `AllergyIntolerance`: `onsetDateTime`, else `recordedDate`
   - `Immunization`: `occurrenceDateTime`
   - `Procedure`: `performedDateTime`, else `performedPeriod.start`, else `performedPeriod.end`
+  - `Goal`: `startDate`, else first `target.dueDate`
+  - `CarePlan`: `period.start`, else `period.end`, else `created`
 
 ### Observation fields
 
@@ -184,6 +190,30 @@ Canonical `DocumentReference` rows include, when present:
 Attachment export is share-safe:
 - only structured metadata such as `content_type`, `title`, `size`, and `hash` may be emitted
 - attachment payload fields such as raw `data` and `url` are excluded
+
+### Goal and CarePlan fields
+
+Canonical `Goal` rows include, when present:
+- `record_id`
+- `record_type`
+- `goal_id`
+- `subject_reference`
+- `status`
+- `start_date`
+- `target_due_date`
+- `description`
+
+Canonical `CarePlan` rows include, when present:
+- `record_id`
+- `record_type`
+- `careplan_id`
+- `subject_reference`
+- `status`
+- `intent`
+- `period_start`
+- `period_end`
+- `goal_ids`
+- `title`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

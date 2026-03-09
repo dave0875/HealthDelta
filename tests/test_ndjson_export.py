@@ -199,6 +199,25 @@ FHIR_DIAG_REPORT_MISSING = {
     "result": [{"reference": "Observation/missing"}],
     "code": {"text": "Missing results"},
 }
+FHIR_GOAL = {
+    "resourceType": "Goal",
+    "id": "g1",
+    "lifecycleStatus": "active",
+    "subject": {"reference": "Patient/p1"},
+    "startDate": "2020-01-09",
+    "target": [{"dueDate": "2020-03-01"}],
+    "description": {"text": "Lower blood pressure"},
+}
+FHIR_CAREPLAN = {
+    "resourceType": "CarePlan",
+    "id": "cp1",
+    "status": "active",
+    "intent": "plan",
+    "subject": {"reference": "Patient/p1"},
+    "period": {"start": "2020-01-10T00:00:00Z", "end": "2020-02-10T00:00:00Z"},
+    "goal": [{"reference": "Goal/g1"}],
+    "title": "Hypertension management",
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -507,6 +526,8 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "procedure_missing.json", FHIR_PROC_MISSING)
             _write_json(clinical_dir / "diag_report.json", FHIR_DIAG_REPORT)
             _write_json(clinical_dir / "diag_report_missing.json", FHIR_DIAG_REPORT_MISSING)
+            _write_json(clinical_dir / "goal.json", FHIR_GOAL)
+            _write_json(clinical_dir / "careplan.json", FHIR_CAREPLAN)
 
             base_dir = root / "out"
 
@@ -564,6 +585,8 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "encounters.ndjson",
                 out_local / "procedures.ndjson",
                 out_local / "diagnostic_reports.ndjson",
+                out_local / "goals.ndjson",
+                out_local / "careplans.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -576,6 +599,8 @@ class TestNdjsonExport(unittest.TestCase):
             encounters = _read_ndjson(out_local / "encounters.ndjson")
             procedures = _read_ndjson(out_local / "procedures.ndjson")
             reports = _read_ndjson(out_local / "diagnostic_reports.ndjson")
+            goals = _read_ndjson(out_local / "goals.ndjson")
+            careplans = _read_ndjson(out_local / "careplans.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -585,6 +610,8 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 2)
             self.assertEqual(len(reports), 2)
+            self.assertEqual(len(goals), 1)
+            self.assertEqual(len(careplans), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -615,6 +642,26 @@ class TestNdjsonExport(unittest.TestCase):
             )
             self.assertNotIn("data", json.dumps(documents[0], sort_keys=True))
             self.assertNotIn("url", json.dumps(documents[0], sort_keys=True))
+
+            self.assertEqual(goals[0].get("record_id"), "g1")
+            self.assertEqual(goals[0].get("record_type"), "Goal")
+            self.assertEqual(goals[0].get("goal_id"), "g1")
+            self.assertEqual(goals[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(goals[0].get("status"), "active")
+            self.assertEqual(goals[0].get("start_date"), "2020-01-09")
+            self.assertEqual(goals[0].get("target_due_date"), "2020-03-01")
+            self.assertEqual(goals[0].get("description"), "Lower blood pressure")
+
+            self.assertEqual(careplans[0].get("record_id"), "cp1")
+            self.assertEqual(careplans[0].get("record_type"), "CarePlan")
+            self.assertEqual(careplans[0].get("careplan_id"), "cp1")
+            self.assertEqual(careplans[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(careplans[0].get("status"), "active")
+            self.assertEqual(careplans[0].get("intent"), "plan")
+            self.assertEqual(careplans[0].get("period_start"), "2020-01-10T00:00:00Z")
+            self.assertEqual(careplans[0].get("period_end"), "2020-02-10T00:00:00Z")
+            self.assertEqual(careplans[0].get("goal_ids"), ["g1"])
+            self.assertEqual(careplans[0].get("title"), "Hypertension management")
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
@@ -756,7 +803,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

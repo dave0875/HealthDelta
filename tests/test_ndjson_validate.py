@@ -21,6 +21,8 @@ class TestNdjsonValidate(unittest.TestCase):
             "encounters.schema.json",
             "procedures.schema.json",
             "diagnostic_reports.schema.json",
+            "goals.schema.json",
+            "careplans.schema.json",
         }
         self.assertTrue(root.exists(), msg=f"missing schema dir: {root}")
         got = {p.name for p in root.glob("*.schema.json")}
@@ -171,6 +173,44 @@ class TestNdjsonValidate(unittest.TestCase):
             self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
             self.assertIn("missing_required_key", r.stderr)
             self.assertIn("document_reference_id", r.stderr)
+
+    def test_validate_careplans_requires_careplan_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "careplans.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/cp.json","event_time":"2020-01-10T00:00:00Z","run_id":"r1","resource_type":"CarePlan","source_id":"CarePlan/cp1","status":"active"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("careplan_id", r.stderr)
+
+    def test_validate_goals_requires_goal_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "goals.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/g.json","event_time":"2020-01-09","run_id":"r1","resource_type":"Goal","source_id":"Goal/g1","status":"active"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("goal_id", r.stderr)
 
 
 if __name__ == "__main__":
