@@ -29,6 +29,8 @@ class TestShareBundle(unittest.TestCase):
             _write(run_root / "reports" / "summary.json", "{}\n")
             _write(run_root / "reports" / "coverage.json", '{"resource_types":{},"cda_sections":[]}\n')
             _write(run_root / "reports" / "coverage.md", "# Coverage Report\n")
+            _write(run_root / "reports" / "clinical_evidence_manifest.json", '{"summary":{"clinical_rows_total":0},"mapping_coverage":[],"redaction_status":{"attachment_payloads_excluded":true}}\n')
+            _write(run_root / "reports" / "clinical_evidence_manifest.md", "# Clinical Evidence Manifest\n")
             _write(run_root / "profile" / "clinical_inventory.json", '{"fhir_resource_types":[],"cda_sections":[]}\n')
             _write(run_root / "note" / "doctor_note.txt", "HealthDelta Summary\n")
             _write(run_root / "deid" / "source" / "export.xml", "DEID_XML\n")
@@ -101,6 +103,8 @@ class TestShareBundle(unittest.TestCase):
                 self.assertIn(f"{run_id}/reports/summary.json", names)
                 self.assertIn(f"{run_id}/reports/coverage.json", names)
                 self.assertIn(f"{run_id}/reports/coverage.md", names)
+                self.assertIn(f"{run_id}/reports/clinical_evidence_manifest.json", names)
+                self.assertIn(f"{run_id}/reports/clinical_evidence_manifest.md", names)
                 self.assertIn(f"{run_id}/profile/clinical_inventory.json", names)
                 self.assertIn(f"{run_id}/note/doctor_note.txt", names)
                 self.assertIn(f"{run_id}/deid/source/export.xml", names)
@@ -127,6 +131,8 @@ class TestShareBundle(unittest.TestCase):
                     f"{run_id}/reports/summary.json",
                     f"{run_id}/reports/coverage.json",
                     f"{run_id}/reports/coverage.md",
+                    f"{run_id}/reports/clinical_evidence_manifest.json",
+                    f"{run_id}/reports/clinical_evidence_manifest.md",
                     f"{run_id}/profile/clinical_inventory.json",
                     f"{run_id}/note/doctor_note.txt",
                     f"{run_id}/registry/run_entry.json",
@@ -149,6 +155,8 @@ class TestShareBundle(unittest.TestCase):
             _write(run_root / "reports" / "summary.json", "{}\n")
             _write(run_root / "reports" / "coverage.json", '{"resource_types":{"observations":[],"documents":[],"medications":[],"conditions":[],"encounters":[],"procedures":[],"diagnostic_reports":[]},"cda_sections":[]}\n')
             _write(run_root / "reports" / "coverage.md", "No clinical record rows were present.\n")
+            _write(run_root / "reports" / "clinical_evidence_manifest.json", '{"summary":{"clinical_rows_total":0},"mapping_coverage":[],"redaction_status":{"attachment_payloads_excluded":true}}\n')
+            _write(run_root / "reports" / "clinical_evidence_manifest.md", "# Clinical Evidence Manifest\n")
             _write(run_root / "profile" / "clinical_inventory.json", '{"fhir_resource_types":[],"cda_sections":[],"summary":{"clinical_json_total_files":0,"cda_section_total":0}}\n')
 
             bundle = root / "zero.tar.gz"
@@ -161,8 +169,10 @@ class TestShareBundle(unittest.TestCase):
 
             with tarfile.open(bundle, mode="r:gz") as tf:
                 cov = json.loads(tf.extractfile(f"{run_id}/reports/coverage.json").read().decode("utf-8"))
+                manifest = json.loads(tf.extractfile(f"{run_id}/reports/clinical_evidence_manifest.json").read().decode("utf-8"))
                 inv = json.loads(tf.extractfile(f"{run_id}/profile/clinical_inventory.json").read().decode("utf-8"))
                 self.assertEqual(cov["cda_sections"], [])
+                self.assertEqual(manifest["summary"]["clinical_rows_total"], 0)
                 self.assertEqual(inv["fhir_resource_types"], [])
                 self.assertEqual(inv["summary"]["clinical_json_total_files"], 0)
 

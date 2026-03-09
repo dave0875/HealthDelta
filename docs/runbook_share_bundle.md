@@ -32,6 +32,8 @@ When the bundle is produced via `healthdelta run all --bundle-out ...`, the arch
 Hospital-record evidence artifacts:
 - `<run_id>/reports/coverage.json`
 - `<run_id>/reports/coverage.md`
+- `<run_id>/reports/clinical_evidence_manifest.json`
+- `<run_id>/reports/clinical_evidence_manifest.md`
 - `<run_id>/profile/clinical_inventory.json`
 
 If the originating run/report/profile outputs contain zero-count clinical artifacts, the bundle includes those zero-count files unchanged.

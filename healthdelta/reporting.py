@@ -490,7 +490,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 task_people.advance(batch)
 
         with progress.phase("report: write artifacts"):
-            task_write = progress.task("report: write artifacts", total=8, unit="files")
+            task_write = progress.task("report: write artifacts", total=10, unit="files")
 
             # CSV: coverage_by_person.csv
             header = [
@@ -637,6 +637,66 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             coverage_lines.append("- Share-safe: only aggregate counts and structured resource/section labels are emitted.")
             coverage_lines.append("- No names, DOB, identifiers, timestamps, or note text are included.")
             _write_text_atomic(out / "coverage.md", "\n".join(coverage_lines) + "\n")
+            task_write.advance(1)
+
+            manifest_rows: list[dict[str, object]] = []
+            for stream in sorted(coverage_resource_types):
+                for row in coverage_resource_types[stream]:
+                    manifest_rows.append(
+                        {
+                            "stream": stream,
+                            "resource_type": row["resource_type"],
+                            "rows": row["rows"],
+                        }
+                    )
+            manifest = {
+                "schema_version": 1,
+                "mode": mode,
+                "summary": {
+                    "clinical_rows_total": sum(int(row["rows"]) for row in manifest_rows),
+                    "resource_type_count": len(manifest_rows),
+                    "unresolved_reference_rows_total": unresolved_total,
+                },
+                "mapping_coverage": manifest_rows,
+                "redaction_status": {
+                    "patient_identifiers_excluded": True,
+                    "free_text_excluded": True,
+                    "binary_payloads_excluded": True,
+                    "attachment_payloads_excluded": True,
+                },
+                "notes": {
+                    "privacy": "Share-safe evidence only; aggregate counts and structured labels without PHI.",
+                    "bundle_ready": True,
+                },
+            }
+            _write_json(out / "clinical_evidence_manifest.json", manifest)
+            task_write.advance(1)
+
+            manifest_lines = [
+                "# Clinical Evidence Manifest",
+                "",
+                f"- clinical_rows_total: {manifest['summary']['clinical_rows_total']}",
+                f"- resource_type_count: {manifest['summary']['resource_type_count']}",
+                f"- unresolved_reference_rows_total: {manifest['summary']['unresolved_reference_rows_total']}",
+                "",
+                "## Mapping Coverage",
+            ]
+            if manifest_rows:
+                for row in manifest_rows:
+                    manifest_lines.append(f"- {row['stream']}.{row['resource_type']}: {row['rows']}")
+            else:
+                manifest_lines.append("- none")
+            manifest_lines.extend(
+                [
+                    "",
+                    "## Redaction Status",
+                    "- attachment_payloads_excluded: true",
+                    "- binary_payloads_excluded: true",
+                    "- free_text_excluded: true",
+                    "- patient_identifiers_excluded: true",
+                ]
+            )
+            _write_text_atomic(out / "clinical_evidence_manifest.md", "\n".join(manifest_lines) + "\n")
             task_write.advance(1)
 
         summary = {

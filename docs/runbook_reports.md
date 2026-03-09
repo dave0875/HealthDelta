@@ -27,6 +27,8 @@ Written under `--out`:
 - `summary.md`: human-readable summary (stable Markdown).
 - `coverage.json`: machine-readable clinical coverage summary by stream `resource_type` plus CDA section counts.
 - `coverage.md`: human-readable clinical coverage summary with explicit zero-count output when no clinical rows are present.
+- `clinical_evidence_manifest.json`: machine-readable share-safe evidence manifest summarizing clinical row counts, mapping coverage, unresolved-reference totals, and redaction status.
+- `clinical_evidence_manifest.md`: human-readable share-safe evidence manifest for bundle review.
 - `coverage_by_person.csv`: rows per stream per `canonical_person_id`, plus min/max `event_time` across tables.
 - `coverage_by_source.csv`: counts by `(stream, source)` for all tables.
 - `timeline_daily_counts.csv`: daily counts by `(day, stream, source)` for rows with non-null `event_time`.
@@ -56,6 +58,12 @@ Clinical coverage:
 - observation counts by `code_system`
 - CDA section counts using structured fields such as `section_code`, `section_display`, and `section_title`
 - zero-count outputs when no clinical rows are present
+
+Evidence manifest:
+- total clinical rows across mapped resource types
+- per-stream/per-resource-type mapping coverage rows
+- unresolved-reference totals
+- explicit redaction-status flags confirming payload and identifier exclusions
 
 Unresolved reference audit:
 - `summary.json` `reference_integrity.clinical_rows_by_resource_type` breaks unresolved clinical rows down by `resource_type`

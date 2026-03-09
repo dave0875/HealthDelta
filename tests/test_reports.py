@@ -133,6 +133,8 @@ class TestReports(unittest.TestCase):
                 out_dir / "summary.md",
                 out_dir / "coverage.json",
                 out_dir / "coverage.md",
+                out_dir / "clinical_evidence_manifest.json",
+                out_dir / "clinical_evidence_manifest.md",
                 out_dir / "coverage_by_person.csv",
                 out_dir / "coverage_by_source.csv",
                 out_dir / "coverage_by_source_system.csv",
@@ -147,9 +149,12 @@ class TestReports(unittest.TestCase):
             before_md = (out_dir / "summary.md").read_bytes()
             before_cov_json = (out_dir / "coverage.json").read_bytes()
             before_cov_md = (out_dir / "coverage.md").read_bytes()
+            before_manifest_json = (out_dir / "clinical_evidence_manifest.json").read_bytes()
+            before_manifest_md = (out_dir / "clinical_evidence_manifest.md").read_bytes()
 
             summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
             coverage = json.loads((out_dir / "coverage.json").read_text(encoding="utf-8"))
+            manifest = json.loads((out_dir / "clinical_evidence_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["tables"]["observations"]["total_rows"], 4)
             self.assertEqual(summary["tables"]["documents"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["medications"]["total_rows"], 3)
@@ -191,6 +196,13 @@ class TestReports(unittest.TestCase):
             self.assertIn("CDAObservation", coverage_md)
             self.assertIn("http://loinc.org", coverage_md)
             self.assertIn("Vital Signs", coverage_md)
+            self.assertEqual(manifest["summary"]["unresolved_reference_rows_total"], 0)
+            self.assertTrue(manifest["redaction_status"]["attachment_payloads_excluded"])
+            self.assertTrue(manifest["redaction_status"]["binary_payloads_excluded"])
+            manifest_md = (out_dir / "clinical_evidence_manifest.md").read_text(encoding="utf-8")
+            self.assertIn("## Mapping Coverage", manifest_md)
+            self.assertIn("## Redaction Status", manifest_md)
+            self.assertIn("observations.CDAObservation: 1", manifest_md)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-08T09:00:00Z")
@@ -280,6 +292,8 @@ class TestReports(unittest.TestCase):
             self.assertEqual((out_dir / "summary.md").read_bytes(), before_md)
             self.assertEqual((out_dir / "coverage.json").read_bytes(), before_cov_json)
             self.assertEqual((out_dir / "coverage.md").read_bytes(), before_cov_md)
+            self.assertEqual((out_dir / "clinical_evidence_manifest.json").read_bytes(), before_manifest_json)
+            self.assertEqual((out_dir / "clinical_evidence_manifest.md").read_bytes(), before_manifest_md)
 
     @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
     def test_report_build_writes_zero_coverage_artifacts_when_clinical_records_missing(self) -> None:
@@ -330,6 +344,7 @@ class TestReports(unittest.TestCase):
             self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
 
             coverage = json.loads((out_dir / "coverage.json").read_text(encoding="utf-8"))
+            manifest = json.loads((out_dir / "clinical_evidence_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(
                 coverage["resource_types"],
                 {
@@ -344,6 +359,8 @@ class TestReports(unittest.TestCase):
             )
             self.assertEqual(coverage["cda_sections"], [])
             self.assertIn("No clinical record rows were present.", (out_dir / "coverage.md").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["summary"]["clinical_rows_total"], 0)
+            self.assertEqual(manifest["mapping_coverage"], [])
 
     @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
     def test_report_build_writes_unresolved_reference_integrity_report(self) -> None:
