@@ -11,7 +11,9 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 
 ## Benchmark workflow (Issue #162)
 - Workflow: `.github/workflows/orin_backend_benchmark.yml`
-- Trigger: manual dispatch (`workflow_dispatch`)
+- Trigger:
+  - weekly schedule every Monday at `13:00 UTC`
+  - manual dispatch (`workflow_dispatch`)
 - Runner: ORIN self-hosted GitHub Actions runner (`self-hosted`, `linux`, `orin`)
 - Inputs:
   - `base_url` (default `http://127.0.0.1:8080`)
@@ -23,6 +25,10 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
   - `benchmark_report.md` (operator-readable summary)
 - Regression policy thresholds are defined in `deploy/orin/benchmark_thresholds.json`.
 - CI fails with explicit metric diagnostics when observed values exceed thresholds.
+- Fetch the latest artifact from GitHub Actions:
+  - open the latest `ORIN Backend Benchmark` run
+  - download artifact `orin-backend-benchmark`
+  - inspect `benchmark_results.json` and `benchmark_report.md`
 
 ## Planning artifact linkage
 - Model/runtime planning matrix for ORIN MMF workloads: `docs/orin_model_runtime_matrix.md` (Issue #122).

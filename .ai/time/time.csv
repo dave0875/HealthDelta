@@ -148,3 +148,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,207,UNASSIGNED,45,codex,UNASSIGNED,"Add explicit NDJSON validation rulepack for mapped clinical record resource types"
 2026-03-09,207,UNASSIGNED,15,codex,UNASSIGNED,"Fix CI regression in operator validation by relaxing Observation rulepack requirements and rerun operator tests"
 2026-03-09,208,UNASSIGNED,45,codex,UNASSIGNED,"Add clinical evidence manifest artifacts to report outputs and share bundles"
+2026-03-09,209,UNASSIGNED,45,codex,UNASSIGNED,"Add scheduled ORIN benchmark cadence, runbook updates, and workflow proof"

@@ -28,6 +28,8 @@ on:
         required: true
         default: "3"
         type: string
+  schedule:
+    - cron: "0 13 * * 1"
 
 concurrency:
   group: orin-backend-benchmark
