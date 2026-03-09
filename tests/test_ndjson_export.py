@@ -245,6 +245,13 @@ FHIR_COVERAGE = {
     "period": {"start": "2020-01-12T00:00:00Z", "end": "2021-01-12T00:00:00Z"},
     "payor": [{"reference": "Organization/org1"}],
 }
+FHIR_ORGANIZATION = {
+    "resourceType": "Organization",
+    "id": "org1",
+    "name": "Example Hospital",
+    "type": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/organization-type", "code": "prov", "display": "Healthcare Provider"}]}],
+    "address": [{"city": "Boston", "state": "MA", "postalCode": "02110"}],
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -557,6 +564,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "careplan.json", FHIR_CAREPLAN)
             _write_json(clinical_dir / "service_request.json", FHIR_SERVICE_REQUEST)
             _write_json(clinical_dir / "coverage.json", FHIR_COVERAGE)
+            _write_json(clinical_dir / "organization.json", FHIR_ORGANIZATION)
 
             base_dir = root / "out"
 
@@ -618,6 +626,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "careplans.ndjson",
                 out_local / "service_requests.ndjson",
                 out_local / "coverages.ndjson",
+                out_local / "organizations.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -634,6 +643,7 @@ class TestNdjsonExport(unittest.TestCase):
             careplans = _read_ndjson(out_local / "careplans.ndjson")
             service_requests = _read_ndjson(out_local / "service_requests.ndjson")
             coverages = _read_ndjson(out_local / "coverages.ndjson")
+            organizations = _read_ndjson(out_local / "organizations.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -647,6 +657,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(careplans), 1)
             self.assertEqual(len(service_requests), 1)
             self.assertEqual(len(coverages), 1)
+            self.assertEqual(len(organizations), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -721,6 +732,16 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(coverages[0].get("period_start"), "2020-01-12T00:00:00Z")
             self.assertEqual(coverages[0].get("period_end"), "2021-01-12T00:00:00Z")
             self.assertEqual(coverages[0].get("payor_references"), ["Organization/org1"])
+
+            self.assertEqual(organizations[0].get("record_id"), "org1")
+            self.assertEqual(organizations[0].get("record_type"), "Organization")
+            self.assertEqual(organizations[0].get("organization_id"), "org1")
+            self.assertEqual(organizations[0].get("name"), "Example Hospital")
+            self.assertEqual(organizations[0].get("type_system"), "http://terminology.hl7.org/CodeSystem/organization-type")
+            self.assertEqual(organizations[0].get("type_code"), "prov")
+            self.assertEqual(organizations[0].get("address_city"), "Boston")
+            self.assertEqual(organizations[0].get("address_state"), "MA")
+            self.assertEqual(organizations[0].get("address_postal_code"), "02110")
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
@@ -862,7 +883,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

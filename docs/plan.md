@@ -116,7 +116,8 @@ Next roadmap focus (post-MMF)
   - Issue #191 - Clinical records CarePlan + Goal mapping v1 (closed)
   - Issue #192 - Clinical records ServiceRequest mapping v1 (closed)
   - Issue #193 - Clinical records Coverage mapping v1 (closed)
-  - Issues #200-#212 (clinical-record mapping and evidence expansion)
+  - Issue #200 - Clinical records Organization mapping v1 (closed)
+  - Issues #201-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)
 

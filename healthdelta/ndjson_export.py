@@ -534,7 +534,7 @@ def _fhir_event_time(resource: dict) -> str | None:
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
@@ -546,6 +546,7 @@ def _export_fhir_streams(
     careplans: list[dict] = []
     service_requests: list[dict] = []
     coverages: list[dict] = []
+    organizations: list[dict] = []
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
@@ -1173,6 +1174,36 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             coverages.append(base)
+        elif rt == "Organization":
+            if rid:
+                base["record_id"] = rid
+                base["organization_id"] = rid
+            base["record_type"] = "Organization"
+            name = res.get("name")
+            if isinstance(name, str) and name.strip():
+                base["name"] = name.strip()
+            org_type = res.get("type")
+            if isinstance(org_type, list) and org_type:
+                first = org_type[0]
+                if isinstance(first, dict):
+                    base["type_system"] = _first_fhir_coding_value(first, "system")
+                    base["type_code"] = _first_fhir_coding_value(first, "code")
+            address = res.get("address")
+            if isinstance(address, list) and address:
+                first_address = address[0]
+                if isinstance(first_address, dict):
+                    city = first_address.get("city")
+                    state = first_address.get("state")
+                    postal_code = first_address.get("postalCode")
+                    if isinstance(city, str) and city.strip():
+                        base["address_city"] = city.strip()
+                    if isinstance(state, str) and state.strip():
+                        base["address_state"] = state.strip()
+                    if isinstance(postal_code, str) and postal_code.strip():
+                        base["address_postal_code"] = postal_code.strip()
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            organizations.append(base)
         task_files.advance(1)
 
     if pending_report_links:
@@ -1209,7 +1240,7 @@ def _export_fhir_streams(
         for key in sorted(procedure_warning_counts):
             sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
-    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages
+    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages, organizations
 
 
 def _xml_child_text(el: ET.Element, name: str) -> str | None:
@@ -1371,6 +1402,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_careplans,
             fhir_service_requests,
             fhir_coverages,
+            fhir_organizations,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs, cda_encounters = _export_cda_streams(ctx)
@@ -1386,6 +1418,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     careplans = [*fhir_careplans]
     service_requests = [*fhir_service_requests]
     coverages = [*fhir_coverages]
+    organizations = [*fhir_organizations]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -1429,6 +1462,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         careplans = sort_rows(dedupe(careplans))
         service_requests = sort_rows(dedupe(service_requests))
         coverages = sort_rows(dedupe(coverages))
+        organizations = sort_rows(dedupe(organizations))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -1451,3 +1485,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "service_requests.ndjson", service_requests)
         if coverages:
             _write_ndjson(out_root / "coverages.ndjson", coverages)
+        if organizations:
+            _write_ndjson(out_root / "organizations.ndjson", organizations)

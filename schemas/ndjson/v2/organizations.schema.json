@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HealthDelta Organization NDJSON Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_key",
+    "canonical_person_id",
+    "source",
+    "source_file",
+    "event_time",
+    "run_id",
+    "record_id",
+    "record_type",
+    "organization_id",
+    "name"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "record_key": { "type": "string" },
+    "canonical_person_id": { "type": "string" },
+    "source": { "type": "string" },
+    "source_file": { "type": "string" },
+    "event_time": { "type": "string" },
+    "run_id": { "type": "string" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "organization_id": { "type": "string" },
+    "name": { "type": "string" },
+    "type_system": { "type": "string" },
+    "type_code": { "type": "string" },
+    "address_city": { "type": "string" },
+    "address_state": { "type": "string" },
+    "address_postal_code": { "type": "string" }
+  },
+  "additionalProperties": true
+}
