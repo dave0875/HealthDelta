@@ -1,0 +1,9 @@
+{
+  "resourceType": "Binary",
+  "id": "bin-fixture",
+  "contentType": "application/pdf",
+  "securityContext": {
+    "reference": "DocumentReference/doc-fixture"
+  },
+  "data": "c3ludGhldGljLXBkZg=="
+}

@@ -1,0 +1,20 @@
+{
+  "resourceType": "Provenance",
+  "id": "prov-fixture",
+  "recorded": "2020-02-01T13:00:00Z",
+  "agent": [
+    {
+      "who": {
+        "reference": "Practitioner/prac-fixture"
+      }
+    }
+  ],
+  "target": [
+    {
+      "reference": "Observation/obs-fixture"
+    },
+    {
+      "reference": "DocumentReference/doc-fixture"
+    }
+  ]
+}

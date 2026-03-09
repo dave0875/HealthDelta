@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -379,6 +380,55 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 class TestNdjsonExport(unittest.TestCase):
+    def test_export_ndjson_uses_clinical_records_fixture_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_dir = root / "staging" / "run-fixture-pack"
+            clinical_dir = run_dir / "source" / "clinical-records"
+            fixture_dir = Path(__file__).resolve().parent / "fixtures" / "clinical_records_v1"
+            shutil.copytree(fixture_dir, clinical_dir)
+
+            _write_json(
+                run_dir / "layout.json",
+                {
+                    "run_id": "run-fixture-pack",
+                    "clinical_json": sorted(str(path.relative_to(run_dir)).replace("\\", "/") for path in clinical_dir.glob("*.json")),
+                },
+            )
+
+            out_local = root / "ndjson_local"
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "export",
+                    "ndjson",
+                    "--input",
+                    str(run_dir),
+                    "--out",
+                    str(out_local),
+                    "--mode",
+                    "local",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            documents = _read_ndjson(out_local / "documents.ndjson")
+            binaries = _read_ndjson(out_local / "binaries.ndjson")
+            observations = _read_ndjson(out_local / "observations.ndjson")
+            provenance_rows = _read_ndjson(out_local / "provenance.ndjson")
+
+            self.assertEqual(len(documents), 1)
+            self.assertEqual(len(binaries), 1)
+            self.assertEqual(len(observations), 1)
+            self.assertEqual(len(provenance_rows), 1)
+            self.assertEqual(documents[0]["attachments"][0]["binary_id"], "bin-fixture")
+            self.assertEqual(binaries[0]["security_context_reference"], "DocumentReference/doc-fixture")
+            self.assertEqual(provenance_rows[0]["target_references"], ["DocumentReference/doc-fixture", "Observation/obs-fixture"])
+
     def test_export_ndjson_cda_discharge_sections_and_encounter_rows(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

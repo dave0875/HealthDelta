@@ -1,0 +1,28 @@
+{
+  "resourceType": "DocumentReference",
+  "id": "doc-fixture",
+  "status": "current",
+  "subject": {
+    "reference": "Patient/p-fixture"
+  },
+  "date": "2020-02-01T12:00:00Z",
+  "type": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "34108-1",
+        "display": "Outpatient Note"
+      }
+    ]
+  },
+  "content": [
+    {
+      "attachment": {
+        "contentType": "application/pdf",
+        "title": "Synthetic attachment",
+        "size": 12,
+        "url": "Binary/bin-fixture"
+      }
+    }
+  ]
+}

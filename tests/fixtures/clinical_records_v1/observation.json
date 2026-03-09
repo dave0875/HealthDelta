@@ -1,0 +1,22 @@
+{
+  "resourceType": "Observation",
+  "id": "obs-fixture",
+  "status": "final",
+  "subject": {
+    "reference": "Patient/p-fixture"
+  },
+  "effectiveDateTime": "2020-02-01T10:00:00Z",
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "718-7",
+        "display": "Hemoglobin"
+      }
+    ]
+  },
+  "valueQuantity": {
+    "value": 13.2,
+    "unit": "g/dL"
+  }
+}
