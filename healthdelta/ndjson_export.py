@@ -499,6 +499,8 @@ def _export_fhir_streams(
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
+    medication_warning_counts: dict[str, int] = {}
+    allergy_warning_counts: dict[str, int] = {}
 
     task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
     for rel in ctx.clinical_json_rels:
@@ -593,6 +595,20 @@ def _export_fhir_streams(
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
+            med = res.get("medicationCodeableConcept")
+            if isinstance(med, dict):
+                base["code_system"] = _first_fhir_coding_value(med, "system")
+                base["code"] = _first_fhir_coding_value(med, "code")
+                display = _first_fhir_coding_value(med, "display")
+                if display is None:
+                    text = med.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
+            if base.get("code") is None:
+                medication_warning_counts["code"] = int(medication_warning_counts.get("code", 0)) + 1
+            if base.get("status") is None:
+                medication_warning_counts["status"] = int(medication_warning_counts.get("status", 0)) + 1
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             meds.append(base)
@@ -627,6 +643,20 @@ def _export_fhir_streams(
                 for key in ["code", "clinical_status", "verification_status"]:
                     if base.get(key) is None:
                         condition_warning_counts[key] = int(condition_warning_counts.get(key, 0)) + 1
+            elif rt == "AllergyIntolerance":
+                base["code_system"] = _first_fhir_coding_value(res.get("code"), "system")
+                base["code"] = _first_fhir_coding_value(res.get("code"), "code")
+                display = _first_fhir_coding_value(res.get("code"), "display")
+                if display is None and isinstance(res.get("code"), dict):
+                    text = res["code"].get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
+                base["status"] = _first_fhir_coding_value(res.get("clinicalStatus"), "code")
+                if base.get("code") is None:
+                    allergy_warning_counts["code"] = int(allergy_warning_counts.get("code", 0)) + 1
+                if base.get("status") is None:
+                    allergy_warning_counts["status"] = int(allergy_warning_counts.get("status", 0)) + 1
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             conds.append(base)
@@ -753,6 +783,12 @@ def _export_fhir_streams(
     if condition_warning_counts:
         for key in sorted(condition_warning_counts):
             sys.stderr.write(f"warnings.condition_missing.{key}={condition_warning_counts[key]}\n")
+    if medication_warning_counts:
+        for key in sorted(medication_warning_counts):
+            sys.stderr.write(f"warnings.medication_missing.{key}={medication_warning_counts[key]}\n")
+    if allergy_warning_counts:
+        for key in sorted(allergy_warning_counts):
+            sys.stderr.write(f"warnings.allergy_missing.{key}={allergy_warning_counts[key]}\n")
 
     return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
 

@@ -127,3 +127,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,182,UNASSIGNED,20,codex,UNASSIGNED,"Include clinical coverage evidence artifacts in share bundles and cover manifest inclusion plus zero-count cases"
 2026-03-08,183,UNASSIGNED,35,codex,UNASSIGNED,"Add export coverage matrix command, fixture-based gap report artifacts, and CI upload evidence for coverage_matrix outputs"
 2026-03-08,184,UNASSIGNED,35,codex,UNASSIGNED,"Add full Condition field mapping plus deterministic missing-field warning summary to NDJSON export"
+2026-03-08,185,UNASSIGNED,35,codex,UNASSIGNED,"Add medication and allergy field mapping with complete/missing-field coverage in NDJSON export"

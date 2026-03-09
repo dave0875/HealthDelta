@@ -38,6 +38,10 @@ FHIR_MED = {
     "status": "active",
     "subject": {"reference": "Patient/p1"},
     "authoredOn": "2020-01-03T00:00:00Z",
+    "medicationCodeableConcept": {
+        "coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "860975", "display": "metformin 500 MG"}],
+        "text": "Metformin",
+    },
 }
 FHIR_MED_STATEMENT = {
     "resourceType": "MedicationStatement",
@@ -45,6 +49,15 @@ FHIR_MED_STATEMENT = {
     "status": "active",
     "subject": {"reference": "Patient/p1"},
     "effectiveDateTime": "2020-01-03T06:00:00Z",
+    "medicationCodeableConcept": {
+        "coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "617314", "display": "aspirin 81 MG"}],
+        "text": "Aspirin",
+    },
+}
+FHIR_MED_MISSING = {
+    "resourceType": "MedicationStatement",
+    "id": "ms2",
+    "subject": {"reference": "Patient/p1"},
 }
 FHIR_MED_DISPENSE = {
     "resourceType": "MedicationDispense",
@@ -52,6 +65,10 @@ FHIR_MED_DISPENSE = {
     "status": "completed",
     "subject": {"reference": "Patient/p1"},
     "whenHandedOver": "2020-01-03T12:00:00Z",
+    "medicationCodeableConcept": {
+        "coding": [{"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "1049502", "display": "insulin glargine"}],
+        "text": "Insulin glargine",
+    },
 }
 FHIR_COND = {
     "resourceType": "Condition",
@@ -76,7 +93,16 @@ FHIR_ALLERGY = {
     "id": "a1",
     "subject": {"reference": "Patient/p1"},
     "onsetDateTime": "2020-01-04T07:00:00Z",
-    "code": {"text": "Peanut allergy"},
+    "clinicalStatus": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical", "code": "active"}]},
+    "code": {
+        "coding": [{"system": "http://snomed.info/sct", "code": "91935009", "display": "Allergy to peanuts"}],
+        "text": "Peanut allergy",
+    },
+}
+FHIR_ALLERGY_MISSING = {
+    "resourceType": "AllergyIntolerance",
+    "id": "a2",
+    "subject": {"reference": "Patient/p1"},
 }
 FHIR_IMMUNIZATION = {
     "resourceType": "Immunization",
@@ -414,10 +440,12 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "doc.json", FHIR_DOC)
             _write_json(clinical_dir / "med.json", FHIR_MED)
             _write_json(clinical_dir / "med_statement.json", FHIR_MED_STATEMENT)
+            _write_json(clinical_dir / "med_statement_missing.json", FHIR_MED_MISSING)
             _write_json(clinical_dir / "med_dispense.json", FHIR_MED_DISPENSE)
             _write_json(clinical_dir / "cond.json", FHIR_COND)
             _write_json(clinical_dir / "cond_missing.json", FHIR_COND_MISSING)
             _write_json(clinical_dir / "allergy.json", FHIR_ALLERGY)
+            _write_json(clinical_dir / "allergy_missing.json", FHIR_ALLERGY_MISSING)
             _write_json(clinical_dir / "immunization.json", FHIR_IMMUNIZATION)
             _write_json(clinical_dir / "encounter.json", FHIR_ENCOUNTER)
             _write_json(clinical_dir / "procedure.json", FHIR_PROC)
@@ -496,8 +524,8 @@ class TestNdjsonExport(unittest.TestCase):
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (1)
             self.assertEqual(len(observations), 4)
             self.assertEqual(len(documents), 1)
-            self.assertEqual(len(meds), 3)
-            self.assertEqual(len(conds), 3)
+            self.assertEqual(len(meds), 4)
+            self.assertEqual(len(conds), 4)
             self.assertEqual(len(encounters), 1)
             self.assertEqual(len(procedures), 1)
             self.assertEqual(len(reports), 2)
@@ -509,8 +537,9 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(procedures[0].get("event_time"), "2020-01-06T09:30:00Z")
 
             allergy_rows = [c for c in conds if c.get("resource_type") == "AllergyIntolerance"]
-            self.assertEqual(len(allergy_rows), 1)
-            self.assertEqual(allergy_rows[0].get("event_time"), "2020-01-04T07:00:00Z")
+            self.assertEqual(len(allergy_rows), 2)
+            allergy_by_id = {c.get("source_id"): c for c in allergy_rows}
+            self.assertEqual(allergy_by_id["AllergyIntolerance/a1"].get("event_time"), "2020-01-04T07:00:00Z")
             condition_rows = [c for c in conds if c.get("resource_type") == "Condition"]
             self.assertEqual(len(condition_rows), 2)
             cond_by_id = {c.get("source_id"): c for c in condition_rows}
@@ -529,6 +558,29 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertIn("warnings.condition_missing.code=1", exp1.stderr)
             self.assertIn("warnings.condition_missing.clinical_status=1", exp1.stderr)
             self.assertIn("warnings.condition_missing.verification_status=1", exp1.stderr)
+
+            med_by_id = {m.get("source_id"): m for m in meds}
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("code_system"), "http://www.nlm.nih.gov/research/umls/rxnorm")
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("code"), "860975")
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("display"), "metformin 500 MG")
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("status"), "active")
+            self.assertIsNone(med_by_id["MedicationStatement/ms2"].get("code_system"))
+            self.assertIsNone(med_by_id["MedicationStatement/ms2"].get("code"))
+            self.assertIsNone(med_by_id["MedicationStatement/ms2"].get("display"))
+            self.assertIsNone(med_by_id["MedicationStatement/ms2"].get("status"))
+            self.assertIn("warnings.medication_missing.code=1", exp1.stderr)
+            self.assertIn("warnings.medication_missing.status=1", exp1.stderr)
+
+            self.assertEqual(allergy_by_id["AllergyIntolerance/a1"].get("code_system"), "http://snomed.info/sct")
+            self.assertEqual(allergy_by_id["AllergyIntolerance/a1"].get("code"), "91935009")
+            self.assertEqual(allergy_by_id["AllergyIntolerance/a1"].get("display"), "Allergy to peanuts")
+            self.assertEqual(allergy_by_id["AllergyIntolerance/a1"].get("status"), "active")
+            self.assertIsNone(allergy_by_id["AllergyIntolerance/a2"].get("code_system"))
+            self.assertIsNone(allergy_by_id["AllergyIntolerance/a2"].get("code"))
+            self.assertIsNone(allergy_by_id["AllergyIntolerance/a2"].get("display"))
+            self.assertIsNone(allergy_by_id["AllergyIntolerance/a2"].get("status"))
+            self.assertIn("warnings.allergy_missing.code=1", exp1.stderr)
+            self.assertIn("warnings.allergy_missing.status=1", exp1.stderr)
 
             imm_rows = [o for o in observations if o.get("resource_type") == "Immunization"]
             self.assertEqual(len(imm_rows), 1)

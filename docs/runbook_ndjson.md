@@ -76,6 +76,26 @@ Missing Condition fields are emitted with deterministic null/empty behavior in t
 - `warnings.condition_missing.code=<n>`
 - `warnings.condition_missing.clinical_status=<n>`
 - `warnings.condition_missing.verification_status=<n>`
+
+### Medication and Allergy fields
+
+Canonical medication rows include, when present:
+- `code_system`
+- `code`
+- `display`
+- `status`
+
+Canonical `AllergyIntolerance` rows include, when present:
+- `code_system`
+- `code`
+- `display`
+- `status`
+
+Missing medication/allergy code or status fields are counted in the share-safe stderr warning summary:
+- `warnings.medication_missing.code=<n>`
+- `warnings.medication_missing.status=<n>`
+- `warnings.allergy_missing.code=<n>`
+- `warnings.allergy_missing.status=<n>`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person
