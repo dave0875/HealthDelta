@@ -20,9 +20,29 @@ FHIR_OBS = {
     "id": "o1",
     "status": "final",
     "subject": {"reference": "Patient/p1"},
-    "effectiveDateTime": "2020-01-01T01:02:03Z",
-    "code": {"text": "Heart rate"},
+    "effectivePeriod": {"start": "2020-01-01T01:02:03Z", "end": "2020-01-01T01:07:03Z"},
+    "encounter": {"reference": "Encounter/e1"},
+    "code": {
+        "coding": [{"system": "http://loinc.org", "code": "8867-4", "display": "Heart rate"}],
+        "text": "Heart rate",
+    },
     "valueQuantity": {"value": 72, "unit": "count/min"},
+    "component": [
+        {
+            "code": {
+                "coding": [{"system": "http://loinc.org", "code": "8480-6", "display": "Systolic blood pressure"}],
+                "text": "Systolic blood pressure",
+            },
+            "valueQuantity": {"value": 120, "unit": "mm[Hg]"},
+        },
+        {
+            "code": {
+                "coding": [{"system": "http://loinc.org", "code": "8462-4", "display": "Diastolic blood pressure"}],
+                "text": "Diastolic blood pressure",
+            },
+            "valueQuantity": {"value": 80, "unit": "mm[Hg]"},
+        },
+    ],
 }
 FHIR_DOC = {
     "resourceType": "DocumentReference",
@@ -638,6 +658,36 @@ class TestNdjsonExport(unittest.TestCase):
 
             fhir_obs = [o for o in observations if o.get("resource_type") == "Observation" and o.get("source") == "fhir"]
             self.assertTrue(fhir_obs)
+            self.assertEqual(fhir_obs[0].get("record_id"), "o1")
+            self.assertEqual(fhir_obs[0].get("record_type"), "Observation")
+            self.assertEqual(fhir_obs[0].get("observation_id"), "o1")
+            self.assertEqual(fhir_obs[0].get("code_system"), "http://loinc.org")
+            self.assertEqual(fhir_obs[0].get("code"), "8867-4")
+            self.assertEqual(fhir_obs[0].get("value"), 72)
+            self.assertEqual(fhir_obs[0].get("unit"), "count/min")
+            self.assertEqual(fhir_obs[0].get("effective_start"), "2020-01-01T01:02:03Z")
+            self.assertEqual(fhir_obs[0].get("effective_end"), "2020-01-01T01:07:03Z")
+            self.assertEqual(fhir_obs[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(fhir_obs[0].get("encounter_id"), "e1")
+            self.assertEqual(
+                fhir_obs[0].get("components"),
+                [
+                    {
+                        "code": "8462-4",
+                        "code_system": "http://loinc.org",
+                        "display": "Diastolic blood pressure",
+                        "unit": "mm[Hg]",
+                        "value": 80,
+                    },
+                    {
+                        "code": "8480-6",
+                        "code_system": "http://loinc.org",
+                        "display": "Systolic blood pressure",
+                        "unit": "mm[Hg]",
+                        "value": 120,
+                    },
+                ],
+            )
             obs_key = fhir_obs[0].get("record_key")
             self.assertIn(obs_key, report_by_id["DiagnosticReport/dr1"].get("result_observation_record_keys", []))
             self.assertNotIn("result_observation_record_keys", report_by_id["DiagnosticReport/dr2"])

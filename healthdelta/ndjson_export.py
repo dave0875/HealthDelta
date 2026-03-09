@@ -546,8 +546,45 @@ def _export_fhir_streams(
         }
 
         if rt == "Observation":
+            if rid:
+                base["record_id"] = rid
+                base["observation_id"] = rid
+            base["record_type"] = "Observation"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            encounter = res.get("encounter")
+            if isinstance(encounter, dict):
+                encounter_reference = encounter.get("reference")
+                if isinstance(encounter_reference, str) and encounter_reference.strip():
+                    encounter_id = _extract_fhir_reference_id(encounter_reference, "Encounter")
+                    if encounter_id:
+                        base["encounter_id"] = encounter_id
+            effective = res.get("effectivePeriod")
+            if isinstance(effective, dict):
+                start = effective.get("start")
+                end = effective.get("end")
+                base["effective_start"] = _normalize_time(start) if isinstance(start, str) else None
+                base["effective_end"] = _normalize_time(end) if isinstance(end, str) else None
+            else:
+                effective_dt = res.get("effectiveDateTime")
+                normalized = _normalize_time(effective_dt) if isinstance(effective_dt, str) else None
+                base["effective_start"] = normalized
+                base["effective_end"] = normalized
             code = res.get("code")
             if isinstance(code, dict):
+                base["code_system"] = _first_fhir_coding_value(code, "system")
+                code_value = _first_fhir_coding_value(code, "code")
+                if code_value is not None:
+                    base["code"] = code_value
+                display = _first_fhir_coding_value(code, "display")
+                if display is None:
+                    text = code.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
                 coding = code.get("coding")
                 if isinstance(coding, list):
                     codings: list[dict[str, str]] = []
@@ -560,6 +597,48 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            components = res.get("component")
+            if isinstance(components, list):
+                component_rows: list[dict[str, object]] = []
+                for component in components:
+                    if not isinstance(component, dict):
+                        continue
+                    row: dict[str, object] = {}
+                    component_code = component.get("code")
+                    if isinstance(component_code, dict):
+                        code_system = _first_fhir_coding_value(component_code, "system")
+                        code_value = _first_fhir_coding_value(component_code, "code")
+                        display = _first_fhir_coding_value(component_code, "display")
+                        if display is None:
+                            text = component_code.get("text")
+                            if isinstance(text, str) and text.strip():
+                                display = text.strip()
+                        if code_system is not None:
+                            row["code_system"] = code_system
+                        if code_value is not None:
+                            row["code"] = code_value
+                        if display is not None:
+                            row["display"] = display
+                    value_quantity = component.get("valueQuantity")
+                    if isinstance(value_quantity, dict):
+                        if "value" in value_quantity:
+                            row["value"] = value_quantity["value"]
+                        unit = value_quantity.get("unit")
+                        if isinstance(unit, str) and unit.strip():
+                            row["unit"] = unit.strip()
+                    if row:
+                        component_rows.append(row)
+                if component_rows:
+                    base["components"] = sorted(
+                        component_rows,
+                        key=lambda item: (
+                            str(item.get("code_system") or ""),
+                            str(item.get("code") or ""),
+                            str(item.get("display") or ""),
+                            str(item.get("value") if item.get("value") is not None else ""),
+                            str(item.get("unit") or ""),
+                        ),
+                    )
             val = res.get("valueQuantity")
             if isinstance(val, dict):
                 if "value" in val:

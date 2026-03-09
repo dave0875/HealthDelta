@@ -147,6 +147,21 @@ def _cda_section_rows(con) -> list[dict[str, object]]:
     return out
 
 
+def _observation_code_system_rows(con) -> list[dict[str, object]]:
+    rows = _rows(
+        con,
+        """
+        SELECT COALESCE(code_system, 'unknown') AS code_system, COUNT(*) AS n
+        FROM observations
+        GROUP BY 1
+        ORDER BY CASE WHEN COALESCE(code_system, 'unknown') = 'unknown' THEN 1 ELSE 0 END,
+                 n DESC,
+                 code_system ASC;
+        """,
+    )
+    return [{"code_system": code_system, "rows": int(n)} for code_system, n in rows if isinstance(code_system, str)]
+
+
 def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
     if mode not in {"local", "share"}:
         raise ValueError("--mode must be one of: local, share")
@@ -190,6 +205,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
             "procedures": [],
         }
         cda_sections: list[dict[str, object]] = []
+        observation_code_systems: list[dict[str, object]] = []
 
         source_bucket = "CASE WHEN source_file LIKE 'ndjson/%' THEN 'ios' ELSE source END"
 
@@ -239,6 +255,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
         with progress.phase("report: coverage artifacts"):
             if "observations" in streams:
                 cda_sections = _cda_section_rows(con)
+                observation_code_systems = _observation_code_system_rows(con)
 
         # Per-person coverage across all available tables
         with progress.phase("report: per-person coverage"):
@@ -318,11 +335,11 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                         con,
                         """
                         SELECT canonical_person_id,
-                               COALESCE(hk_type, resource_type, code, 'unknown') AS record_type,
+                               COALESCE(hk_type, resource_type, record_type, code, 'unknown') AS record_type_label,
                                COUNT(*) AS n
                         FROM observations
-                        GROUP BY canonical_person_id, record_type
-                        ORDER BY canonical_person_id, n DESC, record_type ASC;
+                        GROUP BY canonical_person_id, COALESCE(hk_type, resource_type, record_type, code, 'unknown')
+                        ORDER BY canonical_person_id, n DESC, record_type_label ASC;
                         """,
                     )
                     if isinstance(pid, str) and isinstance(rt, str)
@@ -569,6 +586,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 "mode": mode,
                 "resource_types": coverage_resource_types,
                 "cda_sections": cda_sections,
+                "observation_code_systems": observation_code_systems,
                 "notes": {
                     "privacy": "Share-safe: counts and structured labels only; no patient identifiers or free-text payloads.",
                     "determinism": "Stable ordering and formatting for identical DuckDB inputs.",
@@ -603,7 +621,15 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 coverage_lines.append("- none")
             coverage_lines.append("")
 
-            if not any_resource_rows and not cda_sections:
+            coverage_lines.append("## Observation Code System Coverage")
+            if observation_code_systems:
+                for row in observation_code_systems:
+                    coverage_lines.append(f"- {row['code_system']}: {row['rows']}")
+            else:
+                coverage_lines.append("- none")
+            coverage_lines.append("")
+
+            if not any_resource_rows and not cda_sections and not observation_code_systems:
                 coverage_lines.append("No clinical record rows were present.")
                 coverage_lines.append("")
 

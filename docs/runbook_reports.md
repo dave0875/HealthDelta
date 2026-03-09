@@ -53,6 +53,7 @@ Per person:
 
 Clinical coverage:
 - counts by `resource_type` for each clinical stream present in DuckDB
+- observation counts by `code_system`
 - CDA section counts using structured fields such as `section_code`, `section_display`, and `section_title`
 - zero-count outputs when no clinical rows are present
 

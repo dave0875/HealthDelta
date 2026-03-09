@@ -130,3 +130,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,185,UNASSIGNED,35,codex,UNASSIGNED,"Add medication and allergy field mapping with complete/missing-field coverage in NDJSON export"
 2026-03-08,186,UNASSIGNED,35,codex,UNASSIGNED,"Add immunization and procedure field mapping with complete/missing-field coverage in NDJSON export"
 2026-03-08,187,UNASSIGNED,35,codex,UNASSIGNED,"Add explicit Encounter NDJSON fields and DuckDB encounter_id loading for hospital FHIR exports"
+2026-03-08,188,UNASSIGNED,45,codex,UNASSIGNED,"Add explicit Observation NDJSON fields, encounter linkage, component stability, and code-system coverage reporting"

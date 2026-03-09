@@ -68,6 +68,25 @@ Fields that MUST NOT appear in NDJSON:
   - `Immunization`: `occurrenceDateTime`
   - `Procedure`: `performedDateTime`, else `performedPeriod.start`, else `performedPeriod.end`
 
+### Observation fields
+
+Canonical `Observation` rows include, when present:
+- `record_id`
+- `record_type`
+- `observation_id`
+- `subject_reference`
+- `encounter_id`
+- `effective_start`
+- `effective_end`
+- `code_system`
+- `code`
+- `display`
+- `value`
+- `unit`
+- `components`
+
+Observation `components` are emitted as a stable, share-safe list of structured component summaries ordered deterministically by code and value fields.
+
 ### Condition fields
 
 Canonical `Condition` rows include, when present:

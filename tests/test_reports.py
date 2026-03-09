@@ -43,7 +43,7 @@ class TestReports(unittest.TestCase):
                     [
                         '{"canonical_person_id":"person-1","source":"healthkit","source_system":"ss_healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
                         % (pii_name, pii_dob),
-                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
+                        '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","record_id":"o1","record_type":"Observation","observation_id":"o1","subject_reference":"Patient/p1","encounter_id":"e1","effective_start":"2020-01-01T01:02:03Z","effective_end":"2020-01-01T01:07:03Z","code_system":"http://loinc.org","code":"8867-4","value":72,"unit":"count/min","pii_id":"%s"}'
                         % pii_patient_id,
                         '{"canonical_person_id":"person-1","source":"cda","source_system":"ss_cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","resource_type":"CDAObservation","section_code":"8716-3","section_display":"Vital signs","section_title":"Vital Signs","code":"8867-4","value":"72","unit":"/min"}',
                         '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/immunization.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i1","resource_type":"Immunization","source_id":"Immunization/i1","status":"completed"}',
@@ -168,6 +168,13 @@ class TestReports(unittest.TestCase):
                 ],
             )
             self.assertEqual(
+                coverage["observation_code_systems"],
+                [
+                    {"code_system": "http://loinc.org", "rows": 1},
+                    {"code_system": "unknown", "rows": 3},
+                ],
+            )
+            self.assertEqual(
                 coverage["cda_sections"],
                 [
                     {
@@ -180,7 +187,9 @@ class TestReports(unittest.TestCase):
             )
             coverage_md = (out_dir / "coverage.md").read_text(encoding="utf-8")
             self.assertIn("## Resource Type Coverage", coverage_md)
+            self.assertIn("## Observation Code System Coverage", coverage_md)
             self.assertIn("CDAObservation", coverage_md)
+            self.assertIn("http://loinc.org", coverage_md)
             self.assertIn("Vital Signs", coverage_md)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")

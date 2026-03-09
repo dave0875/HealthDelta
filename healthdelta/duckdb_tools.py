@@ -164,15 +164,25 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                   run_id VARCHAR,
                   event_key VARCHAR,
                   source_id VARCHAR,
+                  record_id VARCHAR,
+                  record_type VARCHAR,
+                  observation_id VARCHAR,
+                  subject_reference VARCHAR,
+                  encounter_id VARCHAR,
+                  effective_start TIMESTAMP,
+                  effective_end TIMESTAMP,
                   hk_type VARCHAR,
                   resource_type VARCHAR,
+                  code_system VARCHAR,
                   code VARCHAR,
+                  display VARCHAR,
                   value VARCHAR,
                   value_num DOUBLE,
                   unit VARCHAR,
                   section_code VARCHAR,
                   section_display VARCHAR,
                   section_title VARCHAR,
+                  components_json VARCHAR,
                   code_coding_json VARCHAR,
                   type_coding_json VARCHAR,
                   status VARCHAR
@@ -218,9 +228,19 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
             _require_columns(con, "observations", ["record_key"])
             _require_columns(con, "documents", ["record_key"])
             _add_column_if_missing(con, "observations", "source_system", "VARCHAR")
+            _add_column_if_missing(con, "observations", "record_id", "VARCHAR")
+            _add_column_if_missing(con, "observations", "record_type", "VARCHAR")
+            _add_column_if_missing(con, "observations", "observation_id", "VARCHAR")
+            _add_column_if_missing(con, "observations", "subject_reference", "VARCHAR")
+            _add_column_if_missing(con, "observations", "encounter_id", "VARCHAR")
+            _add_column_if_missing(con, "observations", "effective_start", "TIMESTAMP")
+            _add_column_if_missing(con, "observations", "effective_end", "TIMESTAMP")
+            _add_column_if_missing(con, "observations", "code_system", "VARCHAR")
+            _add_column_if_missing(con, "observations", "display", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_code", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_display", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_title", "VARCHAR")
+            _add_column_if_missing(con, "observations", "components_json", "VARCHAR")
             _add_column_if_missing(con, "documents", "source_system", "VARCHAR")
             _create_unique_index_if_possible(
                 con, name="observations_record_key_uq", table="observations", column="record_key"
@@ -256,8 +276,41 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
 
                 con.execute(
                     """
-                    INSERT INTO observations
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    INSERT INTO observations (
+                      schema_version,
+                      record_key,
+                      canonical_person_id,
+                      source,
+                      source_system,
+                      source_file,
+                      event_time,
+                      run_id,
+                      event_key,
+                      source_id,
+                      record_id,
+                      record_type,
+                      observation_id,
+                      subject_reference,
+                      encounter_id,
+                      effective_start,
+                      effective_end,
+                      hk_type,
+                      resource_type,
+                      code_system,
+                      code,
+                      display,
+                      value,
+                      value_num,
+                      unit,
+                      section_code,
+                      section_display,
+                      section_title,
+                      components_json,
+                      code_coding_json,
+                      type_coding_json,
+                      status
+                    )
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                     WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
                     """,
                     [
@@ -271,16 +324,26 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         obj.get("run_id") or ios_run_id,
                         event_key,
                         obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                        obj.get("record_id") if isinstance(obj.get("record_id"), str) else None,
+                        obj.get("record_type") if isinstance(obj.get("record_type"), str) else None,
+                        obj.get("observation_id") if isinstance(obj.get("observation_id"), str) else None,
+                        obj.get("subject_reference") if isinstance(obj.get("subject_reference"), str) else None,
+                        obj.get("encounter_id") if isinstance(obj.get("encounter_id"), str) else None,
+                        _parse_event_time(obj.get("effective_start")),
+                        _parse_event_time(obj.get("effective_end")),
                         (obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None)
                         or (obj.get("sample_type") if isinstance(obj.get("sample_type"), str) else None),
                         obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
+                        obj.get("code_system") if isinstance(obj.get("code_system"), str) else None,
                         obj.get("code") if isinstance(obj.get("code"), str) else None,
+                        obj.get("display") if isinstance(obj.get("display"), str) else None,
                         value_str,
                         value_num,
                         obj.get("unit") if isinstance(obj.get("unit"), str) else None,
                         obj.get("section_code") if isinstance(obj.get("section_code"), str) else None,
                         obj.get("section_display") if isinstance(obj.get("section_display"), str) else None,
                         obj.get("section_title") if isinstance(obj.get("section_title"), str) else None,
+                        _stable_json(obj.get("components")),
                         _stable_json(obj.get("code_coding")),
                         _stable_json(obj.get("type_coding")),
                         obj.get("status") if isinstance(obj.get("status"), str) else None,

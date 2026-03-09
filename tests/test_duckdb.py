@@ -39,7 +39,7 @@ class TestDuckdbLoader(unittest.TestCase):
                     '{"schema_version":2,"record_key":"k1","canonical_person_id":"person-1","source":"healthkit","source_system":"ss_healthkit","source_file":"source/export.xml","event_time":"2020-01-01T05:00:00Z","run_id":"run-1","event_key":"k1","hk_type":"HKQuantityTypeIdentifierHeartRate","value":"72","unit":"count/min","pii_name":"%s","dob":"%s"}'
                     % (pii_name, pii_dob),
                     # fhir observation row
-                    '{"schema_version":2,"record_key":"k2","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
+                    '{"schema_version":2,"record_key":"k2","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","record_id":"o1","record_type":"Observation","observation_id":"o1","subject_reference":"Patient/p1","encounter_id":"e1","effective_start":"2020-01-01T01:02:03Z","effective_end":"2020-01-01T01:07:03Z","code_system":"http://loinc.org","code":"8867-4","value":72,"unit":"count/min","pii_id":"%s"}'
                     % pii_patient_id,
                     # cda observation row
                     '{"schema_version":2,"record_key":"k3","canonical_person_id":"person-1","source":"cda","source_system":"ss_cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
@@ -121,6 +121,36 @@ class TestDuckdbLoader(unittest.TestCase):
             rows = list(csv.DictReader(q1.stdout.splitlines()))
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["n"], "3")
+
+            q1b = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT observation_id, encounter_id, code_system, effective_start, effective_end FROM observations WHERE resource_type='Observation' ORDER BY observation_id;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q1b.returncode, 0, msg=f"stdout={q1b.stdout}\nstderr={q1b.stderr}")
+            rows = list(csv.DictReader(q1b.stdout.splitlines()))
+            self.assertEqual(
+                rows,
+                [
+                    {
+                        "observation_id": "o1",
+                        "encounter_id": "e1",
+                        "code_system": "http://loinc.org",
+                        "effective_start": "2020-01-01T01:02:03Z",
+                        "effective_end": "2020-01-01T01:07:03Z",
+                    }
+                ],
+            )
 
             q2 = subprocess.run(
                 [
