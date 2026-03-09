@@ -98,7 +98,7 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/179
 - Issue #180 - Clinical records export profile inventory artifact (closed)
   - https://github.com/dave0875/HealthDelta/issues/180
-- Issue #181 - Clinical records unresolved reference audit (open)
+- Issue #181 - Clinical records unresolved reference audit (closed)
   - https://github.com/dave0875/HealthDelta/issues/181
 - Issue #182 - Share bundle hospital record evidence artifacts (open)
   - https://github.com/dave0875/HealthDelta/issues/182
