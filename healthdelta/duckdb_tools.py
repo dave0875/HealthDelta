@@ -170,6 +170,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                   value VARCHAR,
                   value_num DOUBLE,
                   unit VARCHAR,
+                  section_code VARCHAR,
+                  section_display VARCHAR,
+                  section_title VARCHAR,
                   code_coding_json VARCHAR,
                   type_coding_json VARCHAR,
                   status VARCHAR
@@ -215,6 +218,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
             _require_columns(con, "observations", ["record_key"])
             _require_columns(con, "documents", ["record_key"])
             _add_column_if_missing(con, "observations", "source_system", "VARCHAR")
+            _add_column_if_missing(con, "observations", "section_code", "VARCHAR")
+            _add_column_if_missing(con, "observations", "section_display", "VARCHAR")
+            _add_column_if_missing(con, "observations", "section_title", "VARCHAR")
             _add_column_if_missing(con, "documents", "source_system", "VARCHAR")
             _create_unique_index_if_possible(
                 con, name="observations_record_key_uq", table="observations", column="record_key"
@@ -251,7 +257,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 con.execute(
                     """
                     INSERT INTO observations
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                     WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
                     """,
                     [
@@ -272,6 +278,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         value_str,
                         value_num,
                         obj.get("unit") if isinstance(obj.get("unit"), str) else None,
+                        obj.get("section_code") if isinstance(obj.get("section_code"), str) else None,
+                        obj.get("section_display") if isinstance(obj.get("section_display"), str) else None,
+                        obj.get("section_title") if isinstance(obj.get("section_title"), str) else None,
                         _stable_json(obj.get("code_coding")),
                         _stable_json(obj.get("type_coding")),
                         obj.get("status") if isinstance(obj.get("status"), str) else None,

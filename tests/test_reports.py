@@ -45,7 +45,7 @@ class TestReports(unittest.TestCase):
                         % (pii_name, pii_dob),
                         '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/obs.json","event_time":"2020-01-01T01:02:03Z","run_id":"run-1","event_key":"k2","resource_type":"Observation","source_id":"Observation/o1","value":72,"unit":"count/min","pii_id":"%s"}'
                         % pii_patient_id,
-                        '{"canonical_person_id":"person-1","source":"cda","source_system":"ss_cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","code":"8867-4","value":"72","unit":"/min"}',
+                        '{"canonical_person_id":"person-1","source":"cda","source_system":"ss_cda","source_file":"source/unpacked/export_cda.xml","event_time":"2020-01-01T11:22:33Z","run_id":"run-1","event_key":"k3","resource_type":"CDAObservation","section_code":"8716-3","section_display":"Vital signs","section_title":"Vital Signs","code":"8867-4","value":"72","unit":"/min"}',
                         '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/immunization.json","event_time":"2020-01-08T09:00:00Z","run_id":"run-1","event_key":"i1","resource_type":"Immunization","source_id":"Immunization/i1","status":"completed"}',
                     ]
                 )
@@ -131,6 +131,8 @@ class TestReports(unittest.TestCase):
             expected_paths = [
                 out_dir / "summary.json",
                 out_dir / "summary.md",
+                out_dir / "coverage.json",
+                out_dir / "coverage.md",
                 out_dir / "coverage_by_person.csv",
                 out_dir / "coverage_by_source.csv",
                 out_dir / "coverage_by_source_system.csv",
@@ -143,8 +145,11 @@ class TestReports(unittest.TestCase):
 
             before_json = (out_dir / "summary.json").read_bytes()
             before_md = (out_dir / "summary.md").read_bytes()
+            before_cov_json = (out_dir / "coverage.json").read_bytes()
+            before_cov_md = (out_dir / "coverage.md").read_bytes()
 
             summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            coverage = json.loads((out_dir / "coverage.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["tables"]["observations"]["total_rows"], 4)
             self.assertEqual(summary["tables"]["documents"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["medications"]["total_rows"], 3)
@@ -153,6 +158,30 @@ class TestReports(unittest.TestCase):
             self.assertEqual(summary["tables"]["procedures"]["total_rows"], 1)
             self.assertEqual(summary["tables"]["diagnostic_reports"]["total_rows"], 1)
             self.assertEqual(summary["reference_integrity"]["unresolved_reference_rows_total"], 0)
+            self.assertEqual(
+                coverage["resource_types"]["observations"],
+                [
+                    {"resource_type": "CDAObservation", "rows": 1},
+                    {"resource_type": "Immunization", "rows": 1},
+                    {"resource_type": "Observation", "rows": 1},
+                    {"resource_type": "unknown", "rows": 1},
+                ],
+            )
+            self.assertEqual(
+                coverage["cda_sections"],
+                [
+                    {
+                        "section_code": "8716-3",
+                        "section_display": "Vital signs",
+                        "section_title": "Vital Signs",
+                        "rows": 1,
+                    }
+                ],
+            )
+            coverage_md = (out_dir / "coverage.md").read_text(encoding="utf-8")
+            self.assertIn("## Resource Type Coverage", coverage_md)
+            self.assertIn("CDAObservation", coverage_md)
+            self.assertIn("Vital Signs", coverage_md)
 
             self.assertEqual(summary["tables"]["observations"]["min_event_time"], "2020-01-01T01:02:03Z")
             self.assertEqual(summary["tables"]["observations"]["max_event_time"], "2020-01-08T09:00:00Z")
@@ -240,6 +269,72 @@ class TestReports(unittest.TestCase):
             self.assertEqual(run2.returncode, 0, msg=f"stdout={run2.stdout}\nstderr={run2.stderr}")
             self.assertEqual((out_dir / "summary.json").read_bytes(), before_json)
             self.assertEqual((out_dir / "summary.md").read_bytes(), before_md)
+            self.assertEqual((out_dir / "coverage.json").read_bytes(), before_cov_json)
+            self.assertEqual((out_dir / "coverage.md").read_bytes(), before_cov_md)
+
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_report_build_writes_zero_coverage_artifacts_when_clinical_records_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ndjson = root / "ndjson"
+            ndjson.mkdir(parents=True, exist_ok=True)
+            _write_text(ndjson / "observations.ndjson", "")
+            _write_text(ndjson / "documents.ndjson", "")
+
+            db_path = root / "out.duckdb"
+            build = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "build",
+                    "--input",
+                    str(ndjson),
+                    "--db",
+                    str(db_path),
+                    "--replace",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+
+            out_dir = root / "report"
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "report",
+                    "build",
+                    "--db",
+                    str(db_path),
+                    "--out",
+                    str(out_dir),
+                    "--mode",
+                    "share",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            coverage = json.loads((out_dir / "coverage.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                coverage["resource_types"],
+                {
+                    "conditions": [],
+                    "diagnostic_reports": [],
+                    "documents": [],
+                    "encounters": [],
+                    "medications": [],
+                    "observations": [],
+                    "procedures": [],
+                },
+            )
+            self.assertEqual(coverage["cda_sections"], [])
+            self.assertIn("No clinical record rows were present.", (out_dir / "coverage.md").read_text(encoding="utf-8"))
 
     @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
     def test_report_build_writes_unresolved_reference_integrity_report(self) -> None:

@@ -105,6 +105,48 @@ def _reference_type_label(*, stream: str, resource_type: str | None) -> str:
     return defaults.get(stream, f"{stream}.subject")
 
 
+def _resource_type_rows(con, table: str) -> list[dict[str, object]]:
+    rows = _rows(
+        con,
+        f"""
+        SELECT COALESCE(resource_type, 'unknown') AS resource_type, COUNT(*) AS n
+        FROM {table}
+        GROUP BY 1
+        ORDER BY n DESC, resource_type ASC;
+        """,
+    )
+    return [{"resource_type": resource_type, "rows": int(n)} for resource_type, n in rows if isinstance(resource_type, str)]
+
+
+def _cda_section_rows(con) -> list[dict[str, object]]:
+    rows = _rows(
+        con,
+        """
+        SELECT
+          section_code,
+          section_display,
+          section_title,
+          COUNT(*) AS n
+        FROM observations
+        WHERE source = 'cda'
+          AND (section_code IS NOT NULL OR section_display IS NOT NULL OR section_title IS NOT NULL)
+        GROUP BY 1, 2, 3
+        ORDER BY n DESC, COALESCE(section_code, ''), COALESCE(section_display, ''), COALESCE(section_title, '');
+        """,
+    )
+    out: list[dict[str, object]] = []
+    for section_code, section_display, section_title, n in rows:
+        out.append(
+            {
+                "section_code": section_code if isinstance(section_code, str) else None,
+                "section_display": section_display if isinstance(section_display, str) else None,
+                "section_title": section_title if isinstance(section_title, str) else None,
+                "rows": int(n),
+            }
+        )
+    return out
+
+
 def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
     if mode not in {"local", "share"}:
         raise ValueError("--mode must be one of: local, share")
@@ -138,6 +180,16 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
         tables_summary: dict[str, dict[str, object]] = {}
         coverage_by_source_rows: list[tuple[str, str, int]] = []
         coverage_by_source_system_rows: list[tuple[str, str, int]] = []
+        coverage_resource_types: dict[str, list[dict[str, object]]] = {
+            "conditions": [],
+            "diagnostic_reports": [],
+            "documents": [],
+            "encounters": [],
+            "medications": [],
+            "observations": [],
+            "procedures": [],
+        }
+        cda_sections: list[dict[str, object]] = []
 
         source_bucket = "CASE WHEN source_file LIKE 'ndjson/%' THEN 'ios' ELSE source END"
 
@@ -180,7 +232,13 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                     "rows_by_source": {k: by_source_map[k] for k in sorted(by_source_map)},
                     "rows_by_source_system": {k: by_source_system_map[k] for k in sorted(by_source_system_map)},
                 }
+                if table in coverage_resource_types:
+                    coverage_resource_types[table] = _resource_type_rows(con, table)
                 task.advance(1)
+
+        with progress.phase("report: coverage artifacts"):
+            if "observations" in streams:
+                cda_sections = _cda_section_rows(con)
 
         # Per-person coverage across all available tables
         with progress.phase("report: per-person coverage"):
@@ -409,7 +467,7 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 task_people.advance(batch)
 
         with progress.phase("report: write artifacts"):
-            task_write = progress.task("report: write artifacts", total=6, unit="files")
+            task_write = progress.task("report: write artifacts", total=8, unit="files")
 
             # CSV: coverage_by_person.csv
             header = [
@@ -498,6 +556,55 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                 header=["reference_type", "rows"],
                 rows=[[k, unresolved_by_type[k]] for k in sorted(unresolved_by_type)],
             )
+            task_write.advance(1)
+
+            coverage = {
+                "schema_version": 1,
+                "mode": mode,
+                "resource_types": coverage_resource_types,
+                "cda_sections": cda_sections,
+                "notes": {
+                    "privacy": "Share-safe: counts and structured labels only; no patient identifiers or free-text payloads.",
+                    "determinism": "Stable ordering and formatting for identical DuckDB inputs.",
+                },
+            }
+            _write_json(out / "coverage.json", coverage)
+            task_write.advance(1)
+
+            coverage_lines: list[str] = []
+            coverage_lines.append("# Coverage Report")
+            coverage_lines.append("")
+            coverage_lines.append("## Resource Type Coverage")
+            any_resource_rows = False
+            for table in sorted(coverage_resource_types):
+                coverage_lines.append(f"### {table}")
+                rows_for_table = coverage_resource_types[table]
+                if rows_for_table:
+                    any_resource_rows = True
+                    for row in rows_for_table:
+                        coverage_lines.append(f"- {row['resource_type']}: {row['rows']}")
+                else:
+                    coverage_lines.append("- none")
+                coverage_lines.append("")
+
+            coverage_lines.append("## CDA Section Coverage")
+            if cda_sections:
+                for row in cda_sections:
+                    label_parts = [row.get("section_title"), row.get("section_display"), row.get("section_code")]
+                    label = " | ".join(part for part in label_parts if isinstance(part, str) and part)
+                    coverage_lines.append(f"- {label}: {row['rows']}")
+            else:
+                coverage_lines.append("- none")
+            coverage_lines.append("")
+
+            if not any_resource_rows and not cda_sections:
+                coverage_lines.append("No clinical record rows were present.")
+                coverage_lines.append("")
+
+            coverage_lines.append("## Privacy")
+            coverage_lines.append("- Share-safe: only aggregate counts and structured resource/section labels are emitted.")
+            coverage_lines.append("- No names, DOB, identifiers, timestamps, or note text are included.")
+            _write_text_atomic(out / "coverage.md", "\n".join(coverage_lines) + "\n")
             task_write.advance(1)
 
         summary = {

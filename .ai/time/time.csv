@@ -121,3 +121,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,214,UNASSIGNED,10,codex,UNASSIGNED,"Fix follow-up report test expectation to respect top_n=5 after reviewing failed Actions run 22829447109"
 2026-03-08,176,UNASSIGNED,25,codex,UNASSIGNED,"Audit governance and runbook docs, reconcile stale plan entries, and document CI enforcement points plus required .ai artifacts"
 2026-03-08,178,UNASSIGNED,30,codex,UNASSIGNED,"Add a share-safe clinical coverage inventory artifact to export profile and update the roadmap priorities for hospital records"
+2026-03-08,179,UNASSIGNED,30,codex,UNASSIGNED,"Add deterministic coverage.json and coverage.md report artifacts for hospital-record resource and CDA section coverage"
