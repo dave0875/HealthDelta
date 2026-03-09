@@ -24,6 +24,7 @@ Written under `--out`:
 - `goals.ndjson` (only if FHIR Goal resources are present)
 - `careplans.ndjson` (only if FHIR CarePlan resources are present)
 - `service_requests.ndjson` (only if FHIR ServiceRequest resources are present)
+- `coverages.ndjson` (only if FHIR Coverage resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
 
@@ -64,6 +65,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Goal` → `goals.ndjson`
   - `CarePlan` → `careplans.ndjson`
   - `ServiceRequest` → `service_requests.ndjson`
+  - `Coverage` → `coverages.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
   - `MedicationRequest`: `authoredOn`
@@ -76,6 +78,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Goal`: `startDate`, else first `target.dueDate`
   - `CarePlan`: `period.start`, else `period.end`, else `created`
   - `ServiceRequest`: `authoredOn`
+  - `Coverage`: `period.start`, else `period.end`
 
 ### Observation fields
 
@@ -230,6 +233,19 @@ Canonical `ServiceRequest` rows include, when present:
 - `code`
 - `display`
 - `performer_references`
+
+Canonical `Coverage` rows include, when present:
+- `record_id`
+- `record_type`
+- `coverage_id`
+- `subject_reference`
+- `status`
+- `type_system`
+- `type_code`
+- `subscriber_relationship`
+- `period_start`
+- `period_end`
+- `payor_references`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

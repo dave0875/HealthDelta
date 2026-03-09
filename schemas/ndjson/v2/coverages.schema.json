@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HealthDelta Coverage NDJSON Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_key",
+    "canonical_person_id",
+    "source",
+    "source_file",
+    "event_time",
+    "run_id",
+    "record_id",
+    "record_type",
+    "coverage_id",
+    "subject_reference",
+    "status"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "record_key": { "type": "string" },
+    "canonical_person_id": { "type": "string" },
+    "source": { "type": "string" },
+    "source_file": { "type": "string" },
+    "event_time": { "type": "string" },
+    "run_id": { "type": "string" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "coverage_id": { "type": "string" },
+    "subject_reference": { "type": "string" },
+    "status": { "type": "string" },
+    "type_system": { "type": "string" },
+    "type_code": { "type": "string" },
+    "subscriber_relationship": { "type": "string" },
+    "period_start": { "type": "string" },
+    "period_end": { "type": "string" },
+    "payor_references": { "type": "array" }
+  },
+  "additionalProperties": true
+}

@@ -219,6 +219,11 @@ def _extract_fhir_subject_patient_id(resource: dict) -> str | None:
         ref = subj.get("reference")
         if isinstance(ref, str) and ref.startswith("Patient/"):
             return ref.split("/", 1)[1]
+    beneficiary = resource.get("beneficiary")
+    if isinstance(beneficiary, dict):
+        ref = beneficiary.get("reference")
+        if isinstance(ref, str) and ref.startswith("Patient/"):
+            return ref.split("/", 1)[1]
     patient = resource.get("patient")
     if isinstance(patient, dict):
         ref = patient.get("reference")
@@ -256,6 +261,10 @@ def _extract_fhir_reference_identifier_pairs(resource: dict) -> list[tuple[str, 
         if not isinstance(ref, dict):
             continue
         ident = ref.get("identifier")
+        pairs.extend(_extract_identifier_pairs(ident))
+    beneficiary = resource.get("beneficiary")
+    if isinstance(beneficiary, dict):
+        ident = beneficiary.get("identifier")
         pairs.extend(_extract_identifier_pairs(ident))
     return pairs
 
@@ -511,12 +520,21 @@ def _fhir_event_time(resource: dict) -> str | None:
         authored_on = resource.get("authoredOn")
         if isinstance(authored_on, str):
             return _normalize_time(authored_on)
+    if rt == "Coverage":
+        period = resource.get("period")
+        if isinstance(period, dict):
+            start = period.get("start")
+            if isinstance(start, str):
+                return _normalize_time(start)
+            end = period.get("end")
+            if isinstance(end, str):
+                return _normalize_time(end)
     return None
 
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
@@ -527,6 +545,7 @@ def _export_fhir_streams(
     goals: list[dict] = []
     careplans: list[dict] = []
     service_requests: list[dict] = []
+    coverages: list[dict] = []
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
@@ -1110,6 +1129,50 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             service_requests.append(base)
+        elif rt == "Coverage":
+            if rid:
+                base["record_id"] = rid
+                base["coverage_id"] = rid
+            base["record_type"] = "Coverage"
+            beneficiary = res.get("beneficiary")
+            if isinstance(beneficiary, dict):
+                subject_reference = beneficiary.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            status = res.get("status")
+            if isinstance(status, str):
+                base["status"] = status
+            cov_type = res.get("type")
+            if isinstance(cov_type, dict):
+                base["type_system"] = _first_fhir_coding_value(cov_type, "system")
+                base["type_code"] = _first_fhir_coding_value(cov_type, "code")
+            relationship = res.get("relationship")
+            if isinstance(relationship, dict):
+                relationship_code = _first_fhir_coding_value(relationship, "code")
+                if relationship_code is not None:
+                    base["subscriber_relationship"] = relationship_code
+            period = res.get("period")
+            if isinstance(period, dict):
+                start = period.get("start")
+                end = period.get("end")
+                base["period_start"] = _normalize_time(start) if isinstance(start, str) else None
+                base["period_end"] = _normalize_time(end) if isinstance(end, str) else None
+            payor = res.get("payor")
+            if isinstance(payor, list):
+                payor_references = sorted(
+                    {
+                        reference.strip()
+                        for item in payor
+                        if isinstance(item, dict)
+                        for reference in [item.get("reference")]
+                        if isinstance(reference, str) and reference.strip()
+                    }
+                )
+                if payor_references:
+                    base["payor_references"] = payor_references
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            coverages.append(base)
         task_files.advance(1)
 
     if pending_report_links:
@@ -1146,7 +1209,7 @@ def _export_fhir_streams(
         for key in sorted(procedure_warning_counts):
             sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
-    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests
+    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages
 
 
 def _xml_child_text(el: ET.Element, name: str) -> str | None:
@@ -1307,6 +1370,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_goals,
             fhir_careplans,
             fhir_service_requests,
+            fhir_coverages,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs, cda_encounters = _export_cda_streams(ctx)
@@ -1321,6 +1385,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     goals = [*fhir_goals]
     careplans = [*fhir_careplans]
     service_requests = [*fhir_service_requests]
+    coverages = [*fhir_coverages]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -1363,6 +1428,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         goals = sort_rows(dedupe(goals))
         careplans = sort_rows(dedupe(careplans))
         service_requests = sort_rows(dedupe(service_requests))
+        coverages = sort_rows(dedupe(coverages))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -1383,3 +1449,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "careplans.ndjson", careplans)
         if service_requests:
             _write_ndjson(out_root / "service_requests.ndjson", service_requests)
+        if coverages:
+            _write_ndjson(out_root / "coverages.ndjson", coverages)
