@@ -258,6 +258,12 @@ FHIR_PRACTITIONER = {
     "name": [{"text": "Dr. Avery Stone"}],
     "identifier": [{"system": "http://hl7.org/fhir/sid/us-npi", "value": "9999999999"}],
 }
+FHIR_LOCATION = {
+    "resourceType": "Location",
+    "id": "loc1",
+    "name": "North Wing Clinic",
+    "address": {"city": "Cambridge", "state": "MA", "postalCode": "02139"},
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -572,6 +578,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "coverage.json", FHIR_COVERAGE)
             _write_json(clinical_dir / "organization.json", FHIR_ORGANIZATION)
             _write_json(clinical_dir / "practitioner.json", FHIR_PRACTITIONER)
+            _write_json(clinical_dir / "location.json", FHIR_LOCATION)
 
             base_dir = root / "out"
 
@@ -635,6 +642,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "coverages.ndjson",
                 out_local / "organizations.ndjson",
                 out_local / "practitioners.ndjson",
+                out_local / "locations.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -653,6 +661,7 @@ class TestNdjsonExport(unittest.TestCase):
             coverages = _read_ndjson(out_local / "coverages.ndjson")
             organizations = _read_ndjson(out_local / "organizations.ndjson")
             practitioners = _read_ndjson(out_local / "practitioners.ndjson")
+            locations = _read_ndjson(out_local / "locations.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -668,6 +677,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(coverages), 1)
             self.assertEqual(len(organizations), 1)
             self.assertEqual(len(practitioners), 1)
+            self.assertEqual(len(locations), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -759,6 +769,14 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(practitioners[0].get("name"), "Dr. Avery Stone")
             self.assertEqual(practitioners[0].get("identifier_system"), "http://hl7.org/fhir/sid/us-npi")
             self.assertEqual(practitioners[0].get("identifier_value"), "9999999999")
+
+            self.assertEqual(locations[0].get("record_id"), "loc1")
+            self.assertEqual(locations[0].get("record_type"), "Location")
+            self.assertEqual(locations[0].get("location_id"), "loc1")
+            self.assertEqual(locations[0].get("name"), "North Wing Clinic")
+            self.assertEqual(locations[0].get("address_city"), "Cambridge")
+            self.assertEqual(locations[0].get("address_state"), "MA")
+            self.assertEqual(locations[0].get("address_postal_code"), "02139")
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
@@ -900,7 +918,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests, *coverages, *organizations, *practitioners, *locations]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

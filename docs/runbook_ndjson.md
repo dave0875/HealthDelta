@@ -27,6 +27,7 @@ Written under `--out`:
 - `coverages.ndjson` (only if FHIR Coverage resources are present)
 - `organizations.ndjson` (only if FHIR Organization resources are present)
 - `practitioners.ndjson` (only if FHIR Practitioner resources are present)
+- `locations.ndjson` (only if FHIR Location resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
 
@@ -70,6 +71,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Coverage` → `coverages.ndjson`
   - `Organization` → `organizations.ndjson`
   - `Practitioner` → `practitioners.ndjson`
+  - `Location` → `locations.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
   - `MedicationRequest`: `authoredOn`
@@ -269,6 +271,15 @@ Canonical `Practitioner` rows include, when present:
 - `name`
 - `identifier_system`
 - `identifier_value`
+
+Canonical `Location` rows include, when present:
+- `record_id`
+- `record_type`
+- `location_id`
+- `name`
+- `address_city`
+- `address_state`
+- `address_postal_code`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person
