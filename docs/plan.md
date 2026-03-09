@@ -105,7 +105,8 @@ Next roadmap focus (post-MMF)
 - Issue #183 - Clinical records coverage matrix + gap report (closed)
   - https://github.com/dave0875/HealthDelta/issues/183
 - Open mapping wave:
-  - Issues #184-#193 (FHIR and clinical-record resource coverage)
+  - Issue #184 - FHIR Condition mapping v1 (closed)
+  - Issues #185-#193 (FHIR and clinical-record resource coverage)
   - Issues #200-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)
