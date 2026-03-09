@@ -106,7 +106,8 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/183
 - Open mapping wave:
   - Issue #184 - FHIR Condition mapping v1 (closed)
-  - Issues #185-#193 (FHIR and clinical-record resource coverage)
+  - Issue #185 - FHIR Medication + Allergy mapping v1 (closed)
+  - Issues #186-#193 (FHIR and clinical-record resource coverage)
   - Issues #200-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)
