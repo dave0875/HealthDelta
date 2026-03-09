@@ -333,6 +333,10 @@ def _first_fhir_coding_value(codable: object, field: str) -> str | None:
     return None
 
 
+def _sorted_string_list(values: list[str]) -> list[str]:
+    return sorted({value.strip() for value in values if isinstance(value, str) and value.strip()})
+
+
 def _walk_source_fhir_files(ctx: ExportContext) -> Iterable[tuple[str, dict]]:
     for rel in ctx.clinical_json_rels:
         p = ctx.root_dir / rel
@@ -529,12 +533,32 @@ def _fhir_event_time(resource: dict) -> str | None:
             end = period.get("end")
             if isinstance(end, str):
                 return _normalize_time(end)
+    if rt == "Provenance":
+        recorded = resource.get("recorded")
+        if isinstance(recorded, str):
+            return _normalize_time(recorded)
     return None
 
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+    list[dict],
+]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
@@ -549,8 +573,11 @@ def _export_fhir_streams(
     organizations: list[dict] = []
     practitioners: list[dict] = []
     locations: list[dict] = []
+    provenance_rows: list[dict] = []
     observation_keys: dict[str, str] = {}
+    source_record_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
+    pending_provenance_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
     medication_warning_counts: dict[str, int] = {}
     allergy_warning_counts: dict[str, int] = {}
@@ -597,6 +624,12 @@ def _export_fhir_streams(
             "resource_type": rt,
             "source_id": f"{rt}/{rid}" if rid else None,
         }
+
+        def register_source_record_key(row: dict) -> None:
+            source_id = row.get("source_id")
+            record_key = row.get("record_key")
+            if isinstance(source_id, str) and source_id and isinstance(record_key, str) and record_key:
+                source_record_keys[source_id] = record_key
 
         if rt == "Observation":
             if rid:
@@ -704,6 +737,7 @@ def _export_fhir_streams(
             if rid and isinstance(base.get("record_key"), str):
                 observation_keys[rid] = base["record_key"]
                 observation_keys[f"Observation/{rid}"] = base["record_key"]
+            register_source_record_key(base)
         elif rt == "DocumentReference":
             if rid:
                 base["record_id"] = rid
@@ -776,6 +810,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             documents.append(base)
+            register_source_record_key(base)
         elif rt in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:
             status = res.get("status")
             if isinstance(status, str):
@@ -797,6 +832,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             meds.append(base)
+            register_source_record_key(base)
         elif rt in {"Condition", "AllergyIntolerance"}:
             code = res.get("code")
             if isinstance(code, dict):
@@ -845,6 +881,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             conds.append(base)
+            register_source_record_key(base)
         elif rt == "Immunization":
             status = res.get("status")
             if isinstance(status, str):
@@ -878,6 +915,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             observations.append(base)
+            register_source_record_key(base)
         elif rt == "Encounter":
             if rid:
                 base["record_id"] = rid
@@ -908,6 +946,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             encounters.append(base)
+            register_source_record_key(base)
         elif rt == "Procedure":
             status = res.get("status")
             if isinstance(status, str):
@@ -941,6 +980,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             procedures.append(base)
+            register_source_record_key(base)
         elif rt == "DiagnosticReport":
             if rid:
                 base["record_id"] = rid
@@ -1046,6 +1086,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             goals.append(base)
+            register_source_record_key(base)
         elif rt == "CarePlan":
             if rid:
                 base["record_id"] = rid
@@ -1087,6 +1128,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             careplans.append(base)
+            register_source_record_key(base)
         elif rt == "ServiceRequest":
             if rid:
                 base["record_id"] = rid
@@ -1132,6 +1174,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             service_requests.append(base)
+            register_source_record_key(base)
         elif rt == "Coverage":
             if rid:
                 base["record_id"] = rid
@@ -1176,6 +1219,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             coverages.append(base)
+            register_source_record_key(base)
         elif rt == "Organization":
             if rid:
                 base["record_id"] = rid
@@ -1206,6 +1250,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             organizations.append(base)
+            register_source_record_key(base)
         elif rt == "Practitioner":
             if rid:
                 base["record_id"] = rid
@@ -1231,6 +1276,7 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             practitioners.append(base)
+            register_source_record_key(base)
         elif rt == "Location":
             if rid:
                 base["record_id"] = rid
@@ -1253,6 +1299,49 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             locations.append(base)
+            register_source_record_key(base)
+        elif rt == "Provenance":
+            if rid:
+                base["record_id"] = rid
+                base["provenance_id"] = rid
+            base["record_type"] = "Provenance"
+            recorded = res.get("recorded")
+            if isinstance(recorded, str) and recorded.strip():
+                base["recorded"] = _normalize_time(recorded)
+            agents = res.get("agent")
+            if isinstance(agents, list):
+                agent_references = _sorted_string_list(
+                    [
+                        who.get("reference")
+                        for agent in agents
+                        if isinstance(agent, dict)
+                        for who in [agent.get("who")]
+                        if isinstance(who, dict)
+                    ]
+                )
+                if agent_references:
+                    base["agent_references"] = agent_references
+            targets = res.get("target")
+            if isinstance(targets, list):
+                target_references = _sorted_string_list(
+                    [
+                        reference
+                        for item in targets
+                        if isinstance(item, dict)
+                        for reference in [item.get("reference")]
+                        if isinstance(reference, str)
+                    ]
+                )
+                if target_references:
+                    base["target_references"] = target_references
+                    resolved_target_keys = sorted(
+                        {source_record_keys[reference] for reference in target_references if reference in source_record_keys}
+                    )
+                    if resolved_target_keys:
+                        base["target_record_keys"] = resolved_target_keys
+                    if len(resolved_target_keys) != len(target_references):
+                        pending_provenance_links.append((base, target_references))
+            provenance_rows.append(base)
         task_files.advance(1)
 
     if pending_report_links:
@@ -1272,6 +1361,20 @@ def _export_fhir_streams(
             json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         )
         report["record_key"] = report["event_key"]
+        register_source_record_key(report)
+
+    if pending_provenance_links:
+        for provenance, refs in pending_provenance_links:
+            resolved = sorted({source_record_keys[ref] for ref in refs if ref in source_record_keys})
+            if resolved:
+                provenance["target_record_keys"] = resolved
+
+    for provenance in provenance_rows:
+        provenance["event_key"] = _sha256_bytes(
+            json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+        provenance["record_key"] = provenance["event_key"]
+        register_source_record_key(provenance)
 
     if condition_warning_counts:
         for key in sorted(condition_warning_counts):
@@ -1289,7 +1392,23 @@ def _export_fhir_streams(
         for key in sorted(procedure_warning_counts):
             sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
-    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages, organizations, practitioners, locations
+    return (
+        observations,
+        documents,
+        meds,
+        conds,
+        encounters,
+        procedures,
+        diagnostic_reports,
+        goals,
+        careplans,
+        service_requests,
+        coverages,
+        organizations,
+        practitioners,
+        locations,
+        provenance_rows,
+    )
 
 
 def _xml_child_text(el: ET.Element, name: str) -> str | None:
@@ -1454,6 +1573,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_organizations,
             fhir_practitioners,
             fhir_locations,
+            fhir_provenance,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs, cda_encounters = _export_cda_streams(ctx)
@@ -1472,6 +1592,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     organizations = [*fhir_organizations]
     practitioners = [*fhir_practitioners]
     locations = [*fhir_locations]
+    provenance_rows = [*fhir_provenance]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -1518,6 +1639,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         organizations = sort_rows(dedupe(organizations))
         practitioners = sort_rows(dedupe(practitioners))
         locations = sort_rows(dedupe(locations))
+        provenance_rows = sort_rows(dedupe(provenance_rows))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -1546,3 +1668,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "practitioners.ndjson", practitioners)
         if locations:
             _write_ndjson(out_root / "locations.ndjson", locations)
+        if provenance_rows:
+            _write_ndjson(out_root / "provenance.ndjson", provenance_rows)

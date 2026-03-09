@@ -28,6 +28,7 @@ Written under `--out`:
 - `organizations.ndjson` (only if FHIR Organization resources are present)
 - `practitioners.ndjson` (only if FHIR Practitioner resources are present)
 - `locations.ndjson` (only if FHIR Location resources are present)
+- `provenance.ndjson` (only if FHIR Provenance resources are present)
 
 NDJSON is one JSON object per line (newline-terminated).
 
@@ -72,6 +73,7 @@ Fields that MUST NOT appear in NDJSON:
   - `Organization` → `organizations.ndjson`
   - `Practitioner` → `practitioners.ndjson`
   - `Location` → `locations.ndjson`
+  - `Provenance` → `provenance.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
   - `MedicationRequest`: `authoredOn`
@@ -85,6 +87,7 @@ Fields that MUST NOT appear in NDJSON:
   - `CarePlan`: `period.start`, else `period.end`, else `created`
   - `ServiceRequest`: `authoredOn`
   - `Coverage`: `period.start`, else `period.end`
+  - `Provenance`: `recorded`
 
 ### Observation fields
 
@@ -280,6 +283,15 @@ Canonical `Location` rows include, when present:
 - `address_city`
 - `address_state`
 - `address_postal_code`
+
+Canonical `Provenance` rows include, when present:
+- `record_id`
+- `record_type`
+- `provenance_id`
+- `recorded`
+- `agent_references`
+- `target_references`
+- `target_record_keys`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person
