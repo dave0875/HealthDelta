@@ -75,9 +75,9 @@ New planning phase: Orin production deployment target (`orin.local`)
     - https://github.com/dave0875/HealthDelta/issues/162
 
 Next roadmap focus (post-MMF)
-- Issue #205 - Refresh roadmap and create new issue set (open)
+- Issue #205 - Refresh roadmap and create new issue set (closed)
   - https://github.com/dave0875/HealthDelta/issues/205
-- Issue #209 - Benchmark maintenance cadence (open)
+- Issue #209 - Benchmark maintenance cadence (open; awaiting ORIN workflow proof)
   - https://github.com/dave0875/HealthDelta/issues/209
 - Issue #174 - Incremental HealthKit anchors (closed)
   - https://github.com/dave0875/HealthDelta/issues/174
@@ -117,7 +117,19 @@ Next roadmap focus (post-MMF)
   - Issue #192 - Clinical records ServiceRequest mapping v1 (closed)
   - Issue #193 - Clinical records Coverage mapping v1 (closed)
   - Issue #200 - Clinical records Organization mapping v1 (closed)
-  - Issues #201-#212 (clinical-record mapping and evidence expansion)
+  - Issue #201 - Clinical records Practitioner mapping v1 (closed)
+  - Issue #202 - Clinical records Location mapping v1 (closed)
+  - Issue #203 - Clinical records Provenance mapping v1 (closed)
+  - Issue #204 - Clinical records Binary + Attachment handling v1 (closed)
+  - Issue #206 - Clinical records mapping fixture pack v1 (closed)
+  - Issue #207 - Clinical records NDJSON validation rulepack v1 (closed)
+  - Issue #208 - Clinical records share-safe evidence manifest v1 (closed)
+  - Issue #210 - Clinical records ImagingStudy mapping v1 (closed)
+  - Issue #211 - Clinical records Specimen mapping v1 (closed)
+  - Issue #212 - Clinical records Device mapping v1 (closed)
+
+Current remaining backlog
+- Issue #209 - Benchmark maintenance cadence (open; workflow dispatch queued on ORIN self-hosted runner)
 
 ## Operating rules (quick reference)
 
