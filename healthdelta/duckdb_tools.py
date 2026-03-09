@@ -498,6 +498,12 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       run_id VARCHAR,
                       event_key VARCHAR,
                       source_id VARCHAR,
+                      record_id VARCHAR,
+                      record_type VARCHAR,
+                      encounter_id VARCHAR,
+                      subject_reference VARCHAR,
+                      period_start TIMESTAMP,
+                      period_end TIMESTAMP,
                       resource_type VARCHAR,
                       status VARCHAR,
                       class_code VARCHAR,
@@ -507,8 +513,17 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 )
                 _require_columns(con, "encounters", ["record_key"])
                 _add_column_if_missing(con, "encounters", "source_system", "VARCHAR")
+                _add_column_if_missing(con, "encounters", "record_id", "VARCHAR")
+                _add_column_if_missing(con, "encounters", "record_type", "VARCHAR")
+                _add_column_if_missing(con, "encounters", "encounter_id", "VARCHAR")
+                _add_column_if_missing(con, "encounters", "subject_reference", "VARCHAR")
+                _add_column_if_missing(con, "encounters", "period_start", "TIMESTAMP")
+                _add_column_if_missing(con, "encounters", "period_end", "TIMESTAMP")
                 _create_unique_index_if_possible(
                     con, name="encounters_record_key_uq", table="encounters", column="record_key"
+                )
+                _create_unique_index_if_possible(
+                    con, name="encounters_encounter_id_uq", table="encounters", column="encounter_id"
                 )
 
             with progress.phase("duckdb: load encounters"):
@@ -528,7 +543,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     con.execute(
                         """
                         INSERT INTO encounters
-                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                         WHERE NOT EXISTS (SELECT 1 FROM encounters WHERE record_key=?);
                         """,
                         [
@@ -542,6 +557,12 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                             obj.get("run_id"),
                             event_key,
                             obj.get("source_id") if isinstance(obj.get("source_id"), str) else None,
+                            obj.get("record_id") if isinstance(obj.get("record_id"), str) else None,
+                            obj.get("record_type") if isinstance(obj.get("record_type"), str) else None,
+                            obj.get("encounter_id") if isinstance(obj.get("encounter_id"), str) else None,
+                            obj.get("subject_reference") if isinstance(obj.get("subject_reference"), str) else None,
+                            _parse_event_time(obj.get("period_start")),
+                            _parse_event_time(obj.get("period_end")),
                             obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                             obj.get("status") if isinstance(obj.get("status"), str) else None,
                             obj.get("class_code") if isinstance(obj.get("class_code"), str) else None,

@@ -67,7 +67,7 @@ class TestDuckdbLoader(unittest.TestCase):
             _write_text(ndjson / "conditions.ndjson", conditions)
 
             encounters = (
-                '{"schema_version":2,"record_key":"e1","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n'
+                '{"schema_version":2,"record_key":"e1","canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","record_id":"e1","record_type":"Encounter","encounter_id":"e1","subject_reference":"Patient/p1","period_start":"2020-01-05T10:00:00Z","period_end":"2020-01-05T12:00:00Z","status":"finished"}\n'
             )
             _write_text(ndjson / "encounters.ndjson", encounters)
 
@@ -159,6 +159,35 @@ class TestDuckdbLoader(unittest.TestCase):
             self.assertEqual(q3.returncode, 0, msg=f"stdout={q3.stdout}\nstderr={q3.stderr}")
             rows = list(csv.DictReader(q3.stdout.splitlines()))
             self.assertEqual(rows[0]["n"], "1")
+
+            q3b = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT encounter_id, subject_reference, period_start, period_end FROM encounters ORDER BY encounter_id;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q3b.returncode, 0, msg=f"stdout={q3b.stdout}\nstderr={q3b.stderr}")
+            rows = list(csv.DictReader(q3b.stdout.splitlines()))
+            self.assertEqual(
+                rows,
+                [
+                    {
+                        "encounter_id": "e1",
+                        "subject_reference": "Patient/p1",
+                        "period_start": "2020-01-05T10:00:00Z",
+                        "period_end": "2020-01-05T12:00:00Z",
+                    }
+                ],
+            )
 
             q4 = subprocess.run(
                 [

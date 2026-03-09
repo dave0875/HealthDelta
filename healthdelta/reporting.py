@@ -390,11 +390,11 @@ def build_report(*, db_path: str, out_dir: str, mode: str = "local") -> None:
                         con,
                         """
                         SELECT canonical_person_id,
-                               COALESCE(resource_type, 'unknown') AS record_type,
+                               COALESCE(resource_type, record_type, 'unknown') AS record_type_label,
                                COUNT(*) AS n
                         FROM encounters
-                        GROUP BY canonical_person_id, record_type
-                        ORDER BY canonical_person_id, n DESC, record_type ASC;
+                        GROUP BY canonical_person_id, COALESCE(resource_type, record_type, 'unknown')
+                        ORDER BY canonical_person_id, n DESC, record_type_label ASC;
                         """,
                     )
                     if isinstance(pid, str) and isinstance(rt, str)

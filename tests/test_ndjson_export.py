@@ -550,6 +550,12 @@ class TestNdjsonExport(unittest.TestCase):
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
+            self.assertEqual(encounters[0].get("record_id"), "e1")
+            self.assertEqual(encounters[0].get("record_type"), "Encounter")
+            self.assertEqual(encounters[0].get("encounter_id"), "e1")
+            self.assertEqual(encounters[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(encounters[0].get("period_start"), "2020-01-05T10:00:00Z")
+            self.assertEqual(encounters[0].get("period_end"), "2020-01-05T12:00:00Z")
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")

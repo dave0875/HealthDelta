@@ -36,6 +36,9 @@ Notes:
 - `documents.ndjson` (required)
 - `medications.ndjson` (optional)
 - `conditions.ndjson` (optional)
+- `encounters.ndjson` (optional)
+- `procedures.ndjson` (optional)
+- `diagnostic_reports.ndjson` (optional)
 
 Each NDJSON line is expected to include:
 - `canonical_person_id`, `source`, `source_file`, `event_time`, `run_id`, `record_key`, `schema_version`
@@ -58,6 +61,21 @@ In this mode, HealthDelta loads from the `ndjson/` subdirectory and applies a su
 - `source_file` is set to `ndjson/observations.ndjson` (relative to the iOS export root)
 
 Other streams (documents/medications/conditions) are optional for iOS inputs and may load as empty tables until iOS emits them.
+
+### `encounters`
+
+Additional columns:
+- `source_id` (VARCHAR)
+- `record_id` (VARCHAR)
+- `record_type` (VARCHAR)
+- `encounter_id` (VARCHAR)
+- `subject_reference` (VARCHAR)
+- `period_start` (TIMESTAMP)
+- `period_end` (TIMESTAMP)
+- `resource_type` (VARCHAR)
+- `status` (VARCHAR)
+- `class_code` (VARCHAR)
+- `class_system` (VARCHAR)
 
 ## Schema
 

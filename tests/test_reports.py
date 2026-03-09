@@ -78,7 +78,7 @@ class TestReports(unittest.TestCase):
             )
             _write_text(
                 ndjson / "encounters.ndjson",
-                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","status":"finished"}\n',
+                '{"canonical_person_id":"person-1","source":"fhir","source_system":"ss_fhir","source_file":"source/clinical/encounter.json","event_time":"2020-01-05T10:00:00Z","run_id":"run-1","event_key":"e1","resource_type":"Encounter","source_id":"Encounter/e1","record_id":"e1","record_type":"Encounter","encounter_id":"e1","subject_reference":"Patient/p1","period_start":"2020-01-05T10:00:00Z","period_end":"2020-01-05T12:00:00Z","status":"finished"}\n',
             )
             _write_text(
                 ndjson / "procedures.ndjson",

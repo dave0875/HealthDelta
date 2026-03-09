@@ -696,9 +696,18 @@ def _export_fhir_streams(
             base["record_key"] = base["event_key"]
             observations.append(base)
         elif rt == "Encounter":
+            if rid:
+                base["record_id"] = rid
+                base["encounter_id"] = rid
+            base["record_type"] = "Encounter"
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             klass = res.get("class")
             if isinstance(klass, dict):
                 code = klass.get("code")
@@ -707,6 +716,12 @@ def _export_fhir_streams(
                     base["class_code"] = code
                 if isinstance(system, str) and system.strip():
                     base["class_system"] = system
+            period = res.get("period")
+            if isinstance(period, dict):
+                start = period.get("start")
+                end = period.get("end")
+                base["period_start"] = _normalize_time(start) if isinstance(start, str) else None
+                base["period_end"] = _normalize_time(end) if isinstance(end, str) else None
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             encounters.append(base)

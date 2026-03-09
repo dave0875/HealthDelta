@@ -122,6 +122,17 @@ Missing immunization/procedure code or status fields are counted in the share-sa
 - `warnings.immunization_missing.status=<n>`
 - `warnings.procedure_missing.code=<n>`
 - `warnings.procedure_missing.status=<n>`
+
+### Encounter fields
+
+Canonical `Encounter` rows include, when present:
+- `record_id`
+- `record_type`
+- `encounter_id`
+- `subject_reference`
+- `period_start`
+- `period_end`
+- `status`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person
