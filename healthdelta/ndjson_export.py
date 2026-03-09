@@ -534,7 +534,7 @@ def _fhir_event_time(resource: dict) -> str | None:
 
 def _export_fhir_streams(
     ctx: ExportContext,
-) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     observations: list[dict] = []
     documents: list[dict] = []
     meds: list[dict] = []
@@ -547,6 +547,7 @@ def _export_fhir_streams(
     service_requests: list[dict] = []
     coverages: list[dict] = []
     organizations: list[dict] = []
+    practitioners: list[dict] = []
     observation_keys: dict[str, str] = {}
     pending_report_links: list[tuple[dict, list[str]]] = []
     condition_warning_counts: dict[str, int] = {}
@@ -1204,6 +1205,31 @@ def _export_fhir_streams(
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             organizations.append(base)
+        elif rt == "Practitioner":
+            if rid:
+                base["record_id"] = rid
+                base["practitioner_id"] = rid
+            base["record_type"] = "Practitioner"
+            names = res.get("name")
+            if isinstance(names, list) and names:
+                first_name = names[0]
+                if isinstance(first_name, dict):
+                    text = first_name.get("text")
+                    if isinstance(text, str) and text.strip():
+                        base["name"] = text.strip()
+            identifiers = res.get("identifier")
+            if isinstance(identifiers, list) and identifiers:
+                first_identifier = identifiers[0]
+                if isinstance(first_identifier, dict):
+                    system = first_identifier.get("system")
+                    value = first_identifier.get("value")
+                    if isinstance(system, str) and system.strip():
+                        base["identifier_system"] = system.strip()
+                    if isinstance(value, str) and value.strip():
+                        base["identifier_value"] = value.strip()
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            practitioners.append(base)
         task_files.advance(1)
 
     if pending_report_links:
@@ -1240,7 +1266,7 @@ def _export_fhir_streams(
         for key in sorted(procedure_warning_counts):
             sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
-    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages, organizations
+    return observations, documents, meds, conds, encounters, procedures, diagnostic_reports, goals, careplans, service_requests, coverages, organizations, practitioners
 
 
 def _xml_child_text(el: ET.Element, name: str) -> str | None:
@@ -1403,6 +1429,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_service_requests,
             fhir_coverages,
             fhir_organizations,
+            fhir_practitioners,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
         cda_obs, cda_encounters = _export_cda_streams(ctx)
@@ -1419,6 +1446,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     service_requests = [*fhir_service_requests]
     coverages = [*fhir_coverages]
     organizations = [*fhir_organizations]
+    practitioners = [*fhir_practitioners]
 
     def dedupe(rows: list[dict]) -> list[dict]:
         seen: set[str] = set()
@@ -1463,6 +1491,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         service_requests = sort_rows(dedupe(service_requests))
         coverages = sort_rows(dedupe(coverages))
         organizations = sort_rows(dedupe(organizations))
+        practitioners = sort_rows(dedupe(practitioners))
 
     with progress.phase("export: write ndjson"):
         _write_ndjson(out_root / "observations.ndjson", observations)
@@ -1487,3 +1516,5 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "coverages.ndjson", coverages)
         if organizations:
             _write_ndjson(out_root / "organizations.ndjson", organizations)
+        if practitioners:
+            _write_ndjson(out_root / "practitioners.ndjson", practitioners)

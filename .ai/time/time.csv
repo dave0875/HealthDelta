@@ -137,3 +137,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,192,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical ServiceRequest NDJSON export plus validation-safe schema coverage"
 2026-03-08,193,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Coverage NDJSON export plus validation-safe schema coverage"
 2026-03-08,200,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Organization NDJSON export plus validation-safe schema coverage"
+2026-03-08,201,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Practitioner NDJSON export plus validation-safe schema coverage"
