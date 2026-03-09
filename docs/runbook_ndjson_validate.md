@@ -23,6 +23,13 @@ Optional (test-fixture guardrails):
   - `source_file`
   - `event_time`
   - `run_id`
+- Clinical-record rulepack checks also require stable mapping keys for covered resource types:
+  - `Observation` rows: `record_id`, `record_type`, `observation_id`, `subject_reference`, `code_system`
+  - `Immunization` rows: `source_id`, `resource_type`, `status`
+  - medication rows: `record_id`, `record_type`, `subject_reference`, `source_id`
+  - condition/allergy rows: `record_id`, `record_type`, `subject_reference`, `source_id`
+  - `Encounter` rows: `record_id`, `record_type`, `encounter_id`, `subject_reference`
+  - `Procedure` rows: `record_id`, `record_type`, `subject_reference`, `source_id`
 - Files must be newline-terminated (no partial final line).
 
 ## Output + exit codes
@@ -33,4 +40,3 @@ Optional (test-fixture guardrails):
 ## Privacy notes
 
 This validator does not attempt to “discover” PII. The banned token/pattern options exist to enforce expectations in synthetic tests (e.g., ensuring known synthetic names/DOBs do not appear in outputs).
-

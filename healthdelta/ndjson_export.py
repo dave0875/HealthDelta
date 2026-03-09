@@ -874,6 +874,14 @@ def _export_fhir_streams(
             binaries.append(base)
             register_source_record_key(base)
         elif rt in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:
+            if rid:
+                base["record_id"] = rid
+            base["record_type"] = rt
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
@@ -896,6 +904,14 @@ def _export_fhir_streams(
             meds.append(base)
             register_source_record_key(base)
         elif rt in {"Condition", "AllergyIntolerance"}:
+            if rid:
+                base["record_id"] = rid
+            base["record_type"] = rt
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             code = res.get("code")
             if isinstance(code, dict):
                 coding = code.get("coding")
@@ -1010,6 +1026,14 @@ def _export_fhir_streams(
             encounters.append(base)
             register_source_record_key(base)
         elif rt == "Procedure":
+            if rid:
+                base["record_id"] = rid
+            base["record_type"] = "Procedure"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status

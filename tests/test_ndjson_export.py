@@ -978,6 +978,9 @@ class TestNdjsonExport(unittest.TestCase):
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
+            self.assertEqual(proc_by_id["Procedure/pr1"].get("record_id"), "pr1")
+            self.assertEqual(proc_by_id["Procedure/pr1"].get("record_type"), "Procedure")
+            self.assertEqual(proc_by_id["Procedure/pr1"].get("subject_reference"), "Patient/p1")
             self.assertEqual(proc_by_id["Procedure/pr1"].get("event_time"), "2020-01-06T09:30:00Z")
             self.assertEqual(proc_by_id["Procedure/pr1"].get("code_system"), "http://snomed.info/sct")
             self.assertEqual(proc_by_id["Procedure/pr1"].get("code"), "80146002")
@@ -998,6 +1001,9 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(condition_rows), 2)
             cond_by_id = {c.get("source_id"): c for c in condition_rows}
             self.assertEqual(cond_by_id["Condition/c1"].get("code_system"), "http://snomed.info/sct")
+            self.assertEqual(cond_by_id["Condition/c1"].get("record_id"), "c1")
+            self.assertEqual(cond_by_id["Condition/c1"].get("record_type"), "Condition")
+            self.assertEqual(cond_by_id["Condition/c1"].get("subject_reference"), "Patient/p1")
             self.assertEqual(cond_by_id["Condition/c1"].get("code"), "38341003")
             self.assertEqual(cond_by_id["Condition/c1"].get("display"), "Hypertensive disorder")
             self.assertEqual(cond_by_id["Condition/c1"].get("clinical_status"), "active")
@@ -1014,6 +1020,9 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertIn("warnings.condition_missing.verification_status=1", exp1.stderr)
 
             med_by_id = {m.get("source_id"): m for m in meds}
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("record_id"), "m1")
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("record_type"), "MedicationRequest")
+            self.assertEqual(med_by_id["MedicationRequest/m1"].get("subject_reference"), "Patient/p1")
             self.assertEqual(med_by_id["MedicationRequest/m1"].get("code_system"), "http://www.nlm.nih.gov/research/umls/rxnorm")
             self.assertEqual(med_by_id["MedicationRequest/m1"].get("code"), "860975")
             self.assertEqual(med_by_id["MedicationRequest/m1"].get("display"), "metformin 500 MG")

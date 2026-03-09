@@ -145,3 +145,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,210,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical ImagingStudy NDJSON export plus validation-safe schema coverage"
 2026-03-09,211,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Specimen NDJSON export plus validation-safe schema coverage"
 2026-03-09,212,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical Device NDJSON export plus validation-safe schema coverage"
+2026-03-09,207,UNASSIGNED,45,codex,UNASSIGNED,"Add explicit NDJSON validation rulepack for mapped clinical record resource types"

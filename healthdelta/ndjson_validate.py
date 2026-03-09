@@ -91,6 +91,43 @@ def _validate_by_schema(
     return errs
 
 
+def _clinical_required_keys(rel_path: str, obj: dict) -> tuple[str, ...]:
+    stream = _stream_name(rel_path)
+    resource_type = obj.get("resource_type")
+    if not isinstance(resource_type, str) or not resource_type.strip():
+        return ()
+
+    if stream == "observations" and resource_type == "Observation":
+        return ("record_id", "record_type", "observation_id", "subject_reference", "code_system")
+    if stream == "observations" and resource_type == "Immunization":
+        return ("source_id", "resource_type", "status")
+    if stream == "medications" and resource_type in {"MedicationRequest", "MedicationStatement", "MedicationDispense"}:
+        return ("record_id", "record_type", "subject_reference", "source_id")
+    if stream == "conditions" and resource_type in {"Condition", "AllergyIntolerance"}:
+        return ("record_id", "record_type", "subject_reference", "source_id")
+    if stream == "encounters" and resource_type == "Encounter":
+        return ("record_id", "record_type", "encounter_id", "subject_reference")
+    if stream == "procedures" and resource_type == "Procedure":
+        return ("record_id", "record_type", "subject_reference", "source_id")
+    return ()
+
+
+def _validate_clinical_rulepack(*, rel_path: str, line_no: int, obj: dict) -> list[ValidationError]:
+    errs: list[ValidationError] = []
+    for key in _clinical_required_keys(rel_path, obj):
+        value = obj.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errs.append(
+                ValidationError(
+                    rel_path=rel_path,
+                    line_no=line_no,
+                    code="clinical_required_key_missing",
+                    message=f"missing clinical required key: {key}",
+                )
+            )
+    return errs
+
+
 def validate_ndjson_dir(
     *,
     input_dir: str,
@@ -186,6 +223,7 @@ def validate_ndjson_dir(
                         errors.extend(
                             _validate_by_schema(rel_path=rel, line_no=line_no, obj=obj, schema_cache=schema_cache)
                         )
+                        errors.extend(_validate_clinical_rulepack(rel_path=rel, line_no=line_no, obj=obj))
 
                     batch += 1
                     if batch >= 5000:

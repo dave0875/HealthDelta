@@ -412,6 +412,26 @@ class TestNdjsonValidate(unittest.TestCase):
             self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
             self.assertIn("device_id", r.stderr)
 
+    def test_validate_clinical_rulepack_requires_subject_reference_for_condition_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "conditions.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/cond.json","event_time":"2020-01-04T00:00:00Z","run_id":"r1","resource_type":"Condition","source_id":"Condition/c1","record_id":"c1","record_type":"Condition"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("clinical_required_key_missing", r.stderr)
+            self.assertIn("subject_reference", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
