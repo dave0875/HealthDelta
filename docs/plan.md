@@ -91,7 +91,7 @@ Next roadmap focus (post-MMF)
     - Issue #187 - Clinical records Encounter mapping v1 (closed)
     - Issue #188 - Clinical records Observation mapping v1 (closed)
     - Issue #189 - Clinical records DiagnosticReport mapping v1 (closed)
-    - Issue #190 - Clinical records DocumentReference mapping v1
+    - Issue #190 - Clinical records DocumentReference mapping v1 (closed)
     - Issue #191 - Clinical records CarePlan + Goal mapping v1
     - Issue #192 - Clinical records ServiceRequest mapping v1
 - Issue #179 - Hospital records coverage report artifacts (closed)
@@ -111,7 +111,8 @@ Next roadmap focus (post-MMF)
   - Issue #187 - Clinical records Encounter mapping v1 (closed)
   - Issue #188 - Clinical records Observation mapping v1 (closed)
   - Issue #189 - Clinical records DiagnosticReport mapping v1 (closed)
-  - Issues #190-#193 (FHIR and clinical-record resource coverage)
+  - Issue #190 - Clinical records DocumentReference mapping v1 (closed)
+  - Issues #191-#193 (FHIR and clinical-record resource coverage)
   - Issues #200-#212 (clinical-record mapping and evidence expansion)
 
 ## Operating rules (quick reference)

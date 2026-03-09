@@ -167,6 +167,23 @@ Canonical `DiagnosticReport` rows include, when present:
 - `display`
 - `status`
 - `result_observation_record_keys`
+
+### DocumentReference fields
+
+Canonical `DocumentReference` rows include, when present:
+- `record_id`
+- `record_type`
+- `document_reference_id`
+- `subject_reference`
+- `type_system`
+- `type_code`
+- `display`
+- `status`
+- `attachments`
+
+Attachment export is share-safe:
+- only structured metadata such as `content_type`, `title`, `size`, and `hash` may be emitted
+- attachment payload fields such as raw `data` and `url` are excluded
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person

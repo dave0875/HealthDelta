@@ -50,7 +50,22 @@ FHIR_DOC = {
     "status": "current",
     "subject": {"reference": "Patient/p1"},
     "date": "2020-01-02T03:04:05Z",
-    "type": {"text": "Discharge summary"},
+    "type": {
+        "coding": [{"system": "http://loinc.org", "code": "18842-5", "display": "Discharge summary"}],
+        "text": "Discharge summary",
+    },
+    "content": [
+        {
+            "attachment": {
+                "contentType": "application/pdf",
+                "title": "Discharge Summary PDF",
+                "size": 12345,
+                "hash": "YWJjMTIz",
+                "data": "VGhpcyBzaG91bGQgbm90IGJlIGV4cG9ydGVk",
+                "url": "https://example.invalid/private.pdf",
+            }
+        }
+    ],
 }
 FHIR_MED = {
     "resourceType": "MedicationRequest",
@@ -579,6 +594,27 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(encounters[0].get("subject_reference"), "Patient/p1")
             self.assertEqual(encounters[0].get("period_start"), "2020-01-05T10:00:00Z")
             self.assertEqual(encounters[0].get("period_end"), "2020-01-05T12:00:00Z")
+
+            self.assertEqual(documents[0].get("record_id"), "d1")
+            self.assertEqual(documents[0].get("record_type"), "DocumentReference")
+            self.assertEqual(documents[0].get("document_reference_id"), "d1")
+            self.assertEqual(documents[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(documents[0].get("type_system"), "http://loinc.org")
+            self.assertEqual(documents[0].get("type_code"), "18842-5")
+            self.assertEqual(documents[0].get("display"), "Discharge summary")
+            self.assertEqual(
+                documents[0].get("attachments"),
+                [
+                    {
+                        "content_type": "application/pdf",
+                        "hash": "YWJjMTIz",
+                        "size": 12345,
+                        "title": "Discharge Summary PDF",
+                    }
+                ],
+            )
+            self.assertNotIn("data", json.dumps(documents[0], sort_keys=True))
+            self.assertNotIn("url", json.dumps(documents[0], sort_keys=True))
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")

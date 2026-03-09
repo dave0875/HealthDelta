@@ -9,7 +9,12 @@
     "source",
     "source_file",
     "event_time",
-    "run_id"
+    "run_id",
+    "record_id",
+    "record_type",
+    "document_reference_id",
+    "subject_reference",
+    "status"
   ],
   "properties": {
     "schema_version": { "type": "integer", "const": 2 },
@@ -18,7 +23,16 @@
     "source": { "type": "string" },
     "source_file": { "type": "string" },
     "event_time": { "type": "string" },
-    "run_id": { "type": "string" }
+    "run_id": { "type": "string" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "document_reference_id": { "type": "string" },
+    "subject_reference": { "type": "string" },
+    "status": { "type": "string" },
+    "type_system": { "type": "string" },
+    "type_code": { "type": "string" },
+    "display": { "type": "string" },
+    "attachments": { "type": "array" }
   },
   "additionalProperties": true
 }

@@ -152,6 +152,26 @@ class TestNdjsonValidate(unittest.TestCase):
             self.assertIn("missing_required_key", r.stderr)
             self.assertIn("diagnostic_report_id", r.stderr)
 
+    def test_validate_documents_requires_document_reference_contract_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nd = root / "ndjson"
+            nd.mkdir(parents=True, exist_ok=True)
+
+            _write(
+                nd / "documents.ndjson",
+                '{"schema_version":2,"record_key":"k1","canonical_person_id":"p1","source":"fhir","source_file":"source/clinical/doc.json","event_time":"2020-01-02T03:04:05Z","run_id":"r1","resource_type":"DocumentReference","source_id":"DocumentReference/d1","status":"current"}\n',
+            )
+
+            r = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "export", "validate", "--input", str(nd)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(r.returncode, 1, msg=f"stdout={r.stdout}\nstderr={r.stderr}")
+            self.assertIn("missing_required_key", r.stderr)
+            self.assertIn("document_reference_id", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

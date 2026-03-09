@@ -652,8 +652,25 @@ def _export_fhir_streams(
                 observation_keys[rid] = base["record_key"]
                 observation_keys[f"Observation/{rid}"] = base["record_key"]
         elif rt == "DocumentReference":
+            if rid:
+                base["record_id"] = rid
+                base["document_reference_id"] = rid
+            base["record_type"] = "DocumentReference"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
             t = res.get("type")
             if isinstance(t, dict):
+                base["type_system"] = _first_fhir_coding_value(t, "system")
+                base["type_code"] = _first_fhir_coding_value(t, "code")
+                display = _first_fhir_coding_value(t, "display")
+                if display is None:
+                    text = t.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
                 coding = t.get("coding")
                 if isinstance(coding, list):
                     codings = []
@@ -666,6 +683,40 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["type_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            content = res.get("content")
+            if isinstance(content, list):
+                attachments: list[dict[str, object]] = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    attachment = item.get("attachment")
+                    if not isinstance(attachment, dict):
+                        continue
+                    row: dict[str, object] = {}
+                    content_type = attachment.get("contentType")
+                    if isinstance(content_type, str) and content_type.strip():
+                        row["content_type"] = content_type.strip()
+                    title = attachment.get("title")
+                    if isinstance(title, str) and title.strip():
+                        row["title"] = title.strip()
+                    size = attachment.get("size")
+                    if isinstance(size, int):
+                        row["size"] = size
+                    hash_value = attachment.get("hash")
+                    if isinstance(hash_value, str) and hash_value.strip():
+                        row["hash"] = hash_value.strip()
+                    if row:
+                        attachments.append(row)
+                if attachments:
+                    base["attachments"] = sorted(
+                        attachments,
+                        key=lambda item: (
+                            str(item.get("content_type") or ""),
+                            str(item.get("title") or ""),
+                            int(item.get("size") or 0),
+                            str(item.get("hash") or ""),
+                        ),
+                    )
             status = res.get("status")
             if isinstance(status, str):
                 base["status"] = status
