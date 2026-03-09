@@ -102,7 +102,7 @@ Next roadmap focus (post-MMF)
   - https://github.com/dave0875/HealthDelta/issues/181
 - Issue #182 - Share bundle hospital record evidence artifacts (closed)
   - https://github.com/dave0875/HealthDelta/issues/182
-- Issue #183 - Clinical records coverage matrix + gap report (open)
+- Issue #183 - Clinical records coverage matrix + gap report (closed)
   - https://github.com/dave0875/HealthDelta/issues/183
 - Open mapping wave:
   - Issues #184-#193 (FHIR and clinical-record resource coverage)
