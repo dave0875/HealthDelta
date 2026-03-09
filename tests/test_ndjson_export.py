@@ -218,6 +218,19 @@ FHIR_CAREPLAN = {
     "goal": [{"reference": "Goal/g1"}],
     "title": "Hypertension management",
 }
+FHIR_SERVICE_REQUEST = {
+    "resourceType": "ServiceRequest",
+    "id": "sr1",
+    "status": "active",
+    "intent": "order",
+    "subject": {"reference": "Patient/p1"},
+    "authoredOn": "2020-01-11T00:00:00Z",
+    "code": {
+        "coding": [{"system": "http://snomed.info/sct", "code": "306206005", "display": "Referral to cardiology service"}],
+        "text": "Cardiology referral",
+    },
+    "performer": [{"reference": "Organization/org1"}, {"reference": "Practitioner/prac1"}],
+}
 
 
 EXPORT_CDA_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -528,6 +541,7 @@ class TestNdjsonExport(unittest.TestCase):
             _write_json(clinical_dir / "diag_report_missing.json", FHIR_DIAG_REPORT_MISSING)
             _write_json(clinical_dir / "goal.json", FHIR_GOAL)
             _write_json(clinical_dir / "careplan.json", FHIR_CAREPLAN)
+            _write_json(clinical_dir / "service_request.json", FHIR_SERVICE_REQUEST)
 
             base_dir = root / "out"
 
@@ -587,6 +601,7 @@ class TestNdjsonExport(unittest.TestCase):
                 out_local / "diagnostic_reports.ndjson",
                 out_local / "goals.ndjson",
                 out_local / "careplans.ndjson",
+                out_local / "service_requests.ndjson",
             ]
             for p in expected_files:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
@@ -601,6 +616,7 @@ class TestNdjsonExport(unittest.TestCase):
             reports = _read_ndjson(out_local / "diagnostic_reports.ndjson")
             goals = _read_ndjson(out_local / "goals.ndjson")
             careplans = _read_ndjson(out_local / "careplans.ndjson")
+            service_requests = _read_ndjson(out_local / "service_requests.ndjson")
 
             # HealthKit Record (1) + FHIR Observation (1) + CDA observation-like entry (1) + Immunization (2)
             self.assertEqual(len(observations), 5)
@@ -612,6 +628,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(len(reports), 2)
             self.assertEqual(len(goals), 1)
             self.assertEqual(len(careplans), 1)
+            self.assertEqual(len(service_requests), 1)
 
             self.assertEqual(encounters[0].get("resource_type"), "Encounter")
             self.assertEqual(encounters[0].get("event_time"), "2020-01-05T10:00:00Z")
@@ -662,6 +679,18 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertEqual(careplans[0].get("period_end"), "2020-02-10T00:00:00Z")
             self.assertEqual(careplans[0].get("goal_ids"), ["g1"])
             self.assertEqual(careplans[0].get("title"), "Hypertension management")
+
+            self.assertEqual(service_requests[0].get("record_id"), "sr1")
+            self.assertEqual(service_requests[0].get("record_type"), "ServiceRequest")
+            self.assertEqual(service_requests[0].get("service_request_id"), "sr1")
+            self.assertEqual(service_requests[0].get("subject_reference"), "Patient/p1")
+            self.assertEqual(service_requests[0].get("status"), "active")
+            self.assertEqual(service_requests[0].get("intent"), "order")
+            self.assertEqual(service_requests[0].get("authored_on"), "2020-01-11T00:00:00Z")
+            self.assertEqual(service_requests[0].get("code_system"), "http://snomed.info/sct")
+            self.assertEqual(service_requests[0].get("code"), "306206005")
+            self.assertEqual(service_requests[0].get("display"), "Referral to cardiology service")
+            self.assertEqual(service_requests[0].get("performer_references"), ["Organization/org1", "Practitioner/prac1"])
 
             proc_by_id = {p.get("source_id"): p for p in procedures}
             self.assertEqual(proc_by_id["Procedure/pr1"].get("resource_type"), "Procedure")
@@ -803,7 +832,7 @@ class TestNdjsonExport(unittest.TestCase):
             self.assertNotIn("1980-01-02", combined)
             self.assertNotIn("19800102", combined)
 
-            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans]:
+            for row in [*observations, *documents, *meds, *conds, *encounters, *procedures, *reports, *goals, *careplans, *service_requests]:
                 self.assertIn("schema_version", row)
                 self.assertIn("canonical_person_id", row)
                 self.assertIn("source", row)

@@ -134,3 +134,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-08,189,UNASSIGNED,35,codex,UNASSIGNED,"Add explicit DiagnosticReport NDJSON fields and validation-safe canonical metadata"
 2026-03-08,190,UNASSIGNED,35,codex,UNASSIGNED,"Add explicit DocumentReference NDJSON fields and share-safe attachment metadata contract"
 2026-03-08,191,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical CarePlan and Goal NDJSON export plus validation-safe schema coverage"
+2026-03-08,192,UNASSIGNED,45,codex,UNASSIGNED,"Add canonical ServiceRequest NDJSON export plus validation-safe schema coverage"
