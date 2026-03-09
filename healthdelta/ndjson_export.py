@@ -501,6 +501,8 @@ def _export_fhir_streams(
     condition_warning_counts: dict[str, int] = {}
     medication_warning_counts: dict[str, int] = {}
     allergy_warning_counts: dict[str, int] = {}
+    immunization_warning_counts: dict[str, int] = {}
+    procedure_warning_counts: dict[str, int] = {}
 
     task_files = progress.task("Parse FHIR JSON files", total=len(ctx.clinical_json_rels), unit="files")
     for rel in ctx.clinical_json_rels:
@@ -666,6 +668,14 @@ def _export_fhir_streams(
                 base["status"] = status
             vaccine_code = res.get("vaccineCode")
             if isinstance(vaccine_code, dict):
+                base["code_system"] = _first_fhir_coding_value(vaccine_code, "system")
+                base["code"] = _first_fhir_coding_value(vaccine_code, "code")
+                display = _first_fhir_coding_value(vaccine_code, "display")
+                if display is None:
+                    text = vaccine_code.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
                 coding = vaccine_code.get("coding")
                 if isinstance(coding, list):
                     codings = []
@@ -678,6 +688,10 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            if base.get("code") is None:
+                immunization_warning_counts["code"] = int(immunization_warning_counts.get("code", 0)) + 1
+            if base.get("status") is None:
+                immunization_warning_counts["status"] = int(immunization_warning_counts.get("status", 0)) + 1
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             observations.append(base)
@@ -702,6 +716,14 @@ def _export_fhir_streams(
                 base["status"] = status
             code = res.get("code")
             if isinstance(code, dict):
+                base["code_system"] = _first_fhir_coding_value(code, "system")
+                base["code"] = _first_fhir_coding_value(code, "code")
+                display = _first_fhir_coding_value(code, "display")
+                if display is None:
+                    text = code.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
                 coding = code.get("coding")
                 if isinstance(coding, list):
                     codings = []
@@ -714,6 +736,10 @@ def _export_fhir_streams(
                             codings.append({"system": system, "code": code_val})
                     if codings:
                         base["code_coding"] = sorted(codings, key=lambda x: (x["system"], x["code"]))
+            if base.get("code") is None:
+                procedure_warning_counts["code"] = int(procedure_warning_counts.get("code", 0)) + 1
+            if base.get("status") is None:
+                procedure_warning_counts["status"] = int(procedure_warning_counts.get("status", 0)) + 1
             base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
             base["record_key"] = base["event_key"]
             procedures.append(base)
@@ -789,6 +815,12 @@ def _export_fhir_streams(
     if allergy_warning_counts:
         for key in sorted(allergy_warning_counts):
             sys.stderr.write(f"warnings.allergy_missing.{key}={allergy_warning_counts[key]}\n")
+    if immunization_warning_counts:
+        for key in sorted(immunization_warning_counts):
+            sys.stderr.write(f"warnings.immunization_missing.{key}={immunization_warning_counts[key]}\n")
+    if procedure_warning_counts:
+        for key in sorted(procedure_warning_counts):
+            sys.stderr.write(f"warnings.procedure_missing.{key}={procedure_warning_counts[key]}\n")
 
     return observations, documents, meds, conds, encounters, procedures, diagnostic_reports
 

@@ -55,12 +55,18 @@ Fields that MUST NOT appear in NDJSON:
   - `MedicationStatement` → `medications.ndjson`
   - `MedicationDispense` → `medications.ndjson`
   - `Condition` → `conditions.ndjson`
+  - `AllergyIntolerance` → `conditions.ndjson`
+  - `Immunization` → `observations.ndjson`
+  - `Procedure` → `procedures.ndjson`
 - `Patient` resources are used for identity resolution only and are not exported.
 - `event_time` selection for medication rows:
   - `MedicationRequest`: `authoredOn`
   - `MedicationStatement`: `effectiveDateTime`, else `effectivePeriod.start`, else `effectivePeriod.end`
   - `MedicationDispense`: `whenHandedOver`, else `whenPrepared`
   - `Condition`: `recordedDate`, else `onsetDateTime`
+  - `AllergyIntolerance`: `onsetDateTime`, else `recordedDate`
+  - `Immunization`: `occurrenceDateTime`
+  - `Procedure`: `performedDateTime`, else `performedPeriod.start`, else `performedPeriod.end`
 
 ### Condition fields
 
@@ -96,6 +102,26 @@ Missing medication/allergy code or status fields are counted in the share-safe s
 - `warnings.medication_missing.status=<n>`
 - `warnings.allergy_missing.code=<n>`
 - `warnings.allergy_missing.status=<n>`
+
+### Immunization and Procedure fields
+
+Canonical `Immunization` rows include, when present:
+- `code_system`
+- `code`
+- `display`
+- `status`
+
+Canonical `Procedure` rows include, when present:
+- `code_system`
+- `code`
+- `display`
+- `status`
+
+Missing immunization/procedure code or status fields are counted in the share-safe stderr warning summary:
+- `warnings.immunization_missing.code=<n>`
+- `warnings.immunization_missing.status=<n>`
+- `warnings.procedure_missing.code=<n>`
+- `warnings.procedure_missing.status=<n>`
 - `canonical_person_id` resolution:
   - preferred: `subject.reference == "Patient/<id>"` matched against identity aliases (`fhir:id`)
   - fallback: if exactly one person exists in `data/identity/people.json`, use that person
