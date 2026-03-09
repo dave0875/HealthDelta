@@ -538,6 +538,23 @@ def _fhir_event_time(resource: dict) -> str | None:
         started = resource.get("started")
         if isinstance(started, str):
             return _normalize_time(started)
+    if rt == "Specimen":
+        collection = resource.get("collection")
+        if isinstance(collection, dict):
+            collected = collection.get("collectedDateTime")
+            if isinstance(collected, str):
+                return _normalize_time(collected)
+            collected_period = collection.get("collectedPeriod")
+            if isinstance(collected_period, dict):
+                start = collected_period.get("start")
+                if isinstance(start, str):
+                    return _normalize_time(start)
+                end = collected_period.get("end")
+                if isinstance(end, str):
+                    return _normalize_time(end)
+        received = resource.get("receivedTime")
+        if isinstance(received, str):
+            return _normalize_time(received)
     if rt == "Provenance":
         recorded = resource.get("recorded")
         if isinstance(recorded, str):
@@ -548,6 +565,7 @@ def _fhir_event_time(resource: dict) -> str | None:
 def _export_fhir_streams(
     ctx: ExportContext,
 ) -> tuple[
+    list[dict],
     list[dict],
     list[dict],
     list[dict],
@@ -582,6 +600,7 @@ def _export_fhir_streams(
     practitioners: list[dict] = []
     locations: list[dict] = []
     imaging_studies: list[dict] = []
+    specimens: list[dict] = []
     provenance_rows: list[dict] = []
     observation_keys: dict[str, str] = {}
     source_record_keys: dict[str, str] = {}
@@ -1435,6 +1454,50 @@ def _export_fhir_streams(
             base["record_key"] = base["event_key"]
             imaging_studies.append(base)
             register_source_record_key(base)
+        elif rt == "Specimen":
+            if rid:
+                base["record_id"] = rid
+                base["specimen_id"] = rid
+            base["record_type"] = "Specimen"
+            subject = res.get("subject")
+            if isinstance(subject, dict):
+                subject_reference = subject.get("reference")
+                if isinstance(subject_reference, str) and subject_reference.strip():
+                    base["subject_reference"] = subject_reference.strip()
+            collection = res.get("collection")
+            if isinstance(collection, dict):
+                collected = collection.get("collectedDateTime")
+                if isinstance(collected, str) and collected.strip():
+                    base["collected_time"] = _normalize_time(collected)
+                else:
+                    collected_period = collection.get("collectedPeriod")
+                    if isinstance(collected_period, dict):
+                        start = collected_period.get("start")
+                        end = collected_period.get("end")
+                        if isinstance(start, str) and start.strip():
+                            base["collected_time"] = _normalize_time(start)
+                        elif isinstance(end, str) and end.strip():
+                            base["collected_time"] = _normalize_time(end)
+            received_time = res.get("receivedTime")
+            if isinstance(received_time, str) and received_time.strip():
+                base["received_time"] = _normalize_time(received_time)
+            specimen_type = res.get("type")
+            if isinstance(specimen_type, dict):
+                base["type_system"] = _first_fhir_coding_value(specimen_type, "system")
+                base["type_code"] = _first_fhir_coding_value(specimen_type, "code")
+                display = _first_fhir_coding_value(specimen_type, "display")
+                if display is None:
+                    text = specimen_type.get("text")
+                    if isinstance(text, str) and text.strip():
+                        display = text.strip()
+                base["display"] = display
+            identifiers = _extract_identifier_pairs(res.get("identifier"))
+            if identifiers:
+                base["identifiers"] = [{"system": system, "value": value} for system, value in identifiers]
+            base["event_key"] = _sha256_bytes(json.dumps(base, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            base["record_key"] = base["event_key"]
+            specimens.append(base)
+            register_source_record_key(base)
         elif rt == "Provenance":
             if rid:
                 base["record_id"] = rid
@@ -1544,6 +1607,7 @@ def _export_fhir_streams(
         practitioners,
         locations,
         imaging_studies,
+        specimens,
         provenance_rows,
     )
 
@@ -1712,6 +1776,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             fhir_practitioners,
             fhir_locations,
             fhir_imaging_studies,
+            fhir_specimens,
             fhir_provenance,
         ) = _export_fhir_streams(ctx)
     with progress.phase("export: parse CDA"):
@@ -1733,6 +1798,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
     practitioners = [*fhir_practitioners]
     locations = [*fhir_locations]
     imaging_studies = [*fhir_imaging_studies]
+    specimens = [*fhir_specimens]
     provenance_rows = [*fhir_provenance]
 
     def dedupe(rows: list[dict]) -> list[dict]:
@@ -1782,6 +1848,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         practitioners = sort_rows(dedupe(practitioners))
         locations = sort_rows(dedupe(locations))
         imaging_studies = sort_rows(dedupe(imaging_studies))
+        specimens = sort_rows(dedupe(specimens))
         provenance_rows = sort_rows(dedupe(provenance_rows))
 
     with progress.phase("export: write ndjson"):
@@ -1815,5 +1882,7 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
             _write_ndjson(out_root / "locations.ndjson", locations)
         if imaging_studies:
             _write_ndjson(out_root / "imaging_studies.ndjson", imaging_studies)
+        if specimens:
+            _write_ndjson(out_root / "specimens.ndjson", specimens)
         if provenance_rows:
             _write_ndjson(out_root / "provenance.ndjson", provenance_rows)
