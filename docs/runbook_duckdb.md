@@ -62,6 +62,8 @@ In this mode, HealthDelta loads from the `ndjson/` subdirectory and applies a su
 
 Other streams (documents/medications/conditions) are optional for iOS inputs and may load as empty tables until iOS emits them.
 
+For fresh iOS loads (`--replace` or a new DB file), duplicate observation rows that share the same `record_key` within a single iOS `observations.ndjson` file are deduplicated deterministically during import.
+
 ### `encounters`
 
 Additional columns:

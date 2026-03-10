@@ -97,3 +97,54 @@ class TestDuckdbLoaderIOS(unittest.TestCase):
             rows2 = list(csv.DictReader(q2.stdout.splitlines()))
             self.assertEqual(rows2[0]["n"], "2")
 
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_duckdb_build_batches_fresh_ios_observations_load(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ios_run = root / "ios_run"
+            ndjson_dir = ios_run / "ndjson"
+            ndjson_dir.mkdir(parents=True, exist_ok=True)
+
+            total_rows = 1001
+            duplicate_record_key = "rk500"
+            _write_text(ios_run / "manifest.json", f'{{"run_id":"run-batch","files":[],"row_counts":{{"observations":{total_rows + 1}}}}}')
+
+            observations = []
+            for idx in range(total_rows):
+                observations.append(
+                    '{"schema_version":1,"record_key":"rk%d","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-%02dT00:00:00Z","value_num":%d,"unit":"count"}'
+                    % (idx, (idx % 28) + 1, idx)
+                )
+            observations.append(
+                '{"schema_version":1,"record_key":"%s","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-15T00:00:00Z","value_num":9999,"unit":"count"}'
+                % duplicate_record_key
+            )
+            _write_text(ndjson_dir / "observations.ndjson", "\n".join(observations) + "\n")
+
+            db_path = root / "out.duckdb"
+            build = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "duckdb", "build", "--input", str(ios_run), "--db", str(db_path), "--replace"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+
+            q = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT COUNT(*) AS n, MIN(run_id) AS run_id FROM observations;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q.returncode, 0, msg=f"stdout={q.stdout}\nstderr={q.stderr}")
+            rows = list(csv.DictReader(q.stdout.splitlines()))
+            self.assertEqual(rows[0]["n"], str(total_rows))
+            self.assertEqual(rows[0]["run_id"], "run-batch")

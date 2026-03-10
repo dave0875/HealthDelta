@@ -107,6 +107,20 @@ def _create_unique_index_if_possible(con, *, name: str, table: str, column: str)
         pass
 
 
+def _flush_batch(con, *, insert_prefix: str, rows: list[list[object]], task) -> None:
+    if not rows:
+        return
+    width = len(rows[0])
+    placeholder_group = "(" + ",".join(["?"] * width) + ")"
+    sql = insert_prefix + ",".join([placeholder_group] * len(rows)) + ";"
+    params: list[object] = []
+    for row in rows:
+        params.extend(row)
+    con.execute(sql, params)
+    task.advance(len(rows))
+    rows.clear()
+
+
 def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None:
     try:
         import duckdb
@@ -249,33 +263,158 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
 
         with progress.phase("duckdb: load observations"):
             task = progress.task("duckdb: load observations", unit="rows")
-            batch = 0
-            for obj in _iter_ndjson(observations_path):
-                record_key = obj.get("record_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = obj.get("event_key")
-                if not isinstance(record_key, str) or not record_key:
-                    record_key = _sha256_text(_stable_json(obj) or "")
-
-                event_key = obj.get("event_key")
-                if not isinstance(event_key, str) or not event_key:
-                    event_key = record_key
-
-                value = obj.get("value")
-                if value is None and isinstance(obj.get("value_num"), (int, float)):
-                    value = obj.get("value_num")
-                value_str = str(value) if value is not None else None
-                value_num = None
-                if isinstance(value, (int, float)):
-                    value_num = float(value)
-                elif isinstance(value, str):
-                    try:
-                        value_num = float(value)
-                    except ValueError:
-                        value_num = None
-
+            append_only = not db_existed or replace
+            if ios_mode and append_only:
                 con.execute(
                     """
+                    WITH src AS (
+                      SELECT
+                        json AS payload,
+                        COALESCE(
+                          NULLIF(json_extract_string(json, '$.record_key'), ''),
+                          NULLIF(json_extract_string(json, '$.event_key'), '')
+                        ) AS resolved_record_key,
+                        ROW_NUMBER() OVER (
+                          PARTITION BY COALESCE(
+                            NULLIF(json_extract_string(json, '$.record_key'), ''),
+                            NULLIF(json_extract_string(json, '$.event_key'), '')
+                          )
+                          ORDER BY
+                            COALESCE(
+                              json_extract_string(json, '$.start_time'),
+                              json_extract_string(json, '$.event_time')
+                            ),
+                            COALESCE(json_extract_string(json, '$.sample_type'), ''),
+                            COALESCE(json_extract_string(json, '$.unit'), '')
+                        ) AS resolved_record_key_rank
+                      FROM read_ndjson_objects(?)
+                    )
+                    INSERT INTO observations (
+                      schema_version,
+                      record_key,
+                      canonical_person_id,
+                      source,
+                      source_system,
+                      source_file,
+                      event_time,
+                      run_id,
+                      event_key,
+                      source_id,
+                      record_id,
+                      record_type,
+                      observation_id,
+                      subject_reference,
+                      encounter_id,
+                      effective_start,
+                      effective_end,
+                      hk_type,
+                      resource_type,
+                      code_system,
+                      code,
+                      display,
+                      value,
+                      value_num,
+                      unit,
+                      section_code,
+                      section_display,
+                      section_title,
+                      components_json,
+                      code_coding_json,
+                      type_coding_json,
+                      status
+                    )
+                    SELECT
+                      TRY_CAST(json_extract_string(payload, '$.schema_version') AS INTEGER),
+                      resolved_record_key,
+                      json_extract_string(payload, '$.canonical_person_id'),
+                      json_extract_string(payload, '$.source'),
+                      NULL,
+                      ?,
+                      COALESCE(
+                        TRY_CAST(json_extract_string(payload, '$.event_time') AS TIMESTAMP),
+                        TRY_CAST(json_extract_string(payload, '$.start_time') AS TIMESTAMP)
+                      ),
+                      ?,
+                      COALESCE(NULLIF(json_extract_string(payload, '$.event_key'), ''), resolved_record_key),
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      json_extract_string(payload, '$.sample_type'),
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      COALESCE(
+                        json_extract_string(payload, '$.value'),
+                        json_extract_string(payload, '$.value_num')
+                      ),
+                      COALESCE(
+                        TRY_CAST(json_extract_string(payload, '$.value_num') AS DOUBLE),
+                        TRY_CAST(json_extract_string(payload, '$.value') AS DOUBLE)
+                      ),
+                      json_extract_string(payload, '$.unit'),
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL,
+                      NULL
+                    FROM src
+                    WHERE resolved_record_key IS NOT NULL
+                      AND resolved_record_key <> ''
+                      AND resolved_record_key_rank = 1;
+                    """,
+                    [str(observations_path), ios_source_file, ios_run_id],
+                )
+                inserted = con.execute("SELECT COUNT(*) FROM observations;").fetchone()
+                task.advance(int(inserted[0]) if inserted and inserted[0] is not None else 0)
+            else:
+                batch_rows: list[list[object]] = []
+                seen_record_keys: set[str] = set()
+                insert_prefix = """
+                    INSERT INTO observations (
+                      schema_version,
+                      record_key,
+                      canonical_person_id,
+                      source,
+                      source_system,
+                      source_file,
+                      event_time,
+                      run_id,
+                      event_key,
+                      source_id,
+                      record_id,
+                      record_type,
+                      observation_id,
+                      subject_reference,
+                      encounter_id,
+                      effective_start,
+                      effective_end,
+                      hk_type,
+                      resource_type,
+                      code_system,
+                      code,
+                      display,
+                      value,
+                      value_num,
+                      unit,
+                      section_code,
+                      section_display,
+                      section_title,
+                      components_json,
+                      code_coding_json,
+                      type_coding_json,
+                      status
+                    )
+                    VALUES
+                    """
+                dedupe_sql = """
                     INSERT INTO observations (
                       schema_version,
                       record_key,
@@ -312,8 +451,32 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                     )
                     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                     WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
-                    """,
-                    [
+                    """
+                for obj in _iter_ndjson(observations_path):
+                    record_key = obj.get("record_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = obj.get("event_key")
+                    if not isinstance(record_key, str) or not record_key:
+                        record_key = _sha256_text(_stable_json(obj) or "")
+
+                    event_key = obj.get("event_key")
+                    if not isinstance(event_key, str) or not event_key:
+                        event_key = record_key
+
+                    value = obj.get("value")
+                    if value is None and isinstance(obj.get("value_num"), (int, float)):
+                        value = obj.get("value_num")
+                    value_str = str(value) if value is not None else None
+                    value_num = None
+                    if isinstance(value, (int, float)):
+                        value_num = float(value)
+                    elif isinstance(value, str):
+                        try:
+                            value_num = float(value)
+                        except ValueError:
+                            value_num = None
+
+                    row = [
                         obj.get("schema_version") if isinstance(obj.get("schema_version"), int) else None,
                         record_key,
                         obj.get("canonical_person_id"),
@@ -347,16 +510,22 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         _stable_json(obj.get("code_coding")),
                         _stable_json(obj.get("type_coding")),
                         obj.get("status") if isinstance(obj.get("status"), str) else None,
-                        record_key,
-                    ],
-                )
+                    ]
 
-                batch += 1
-                if batch >= 1000:
-                    task.advance(batch)
-                    batch = 0
-            if batch:
-                task.advance(batch)
+                    if append_only:
+                        if record_key in seen_record_keys:
+                            continue
+                        seen_record_keys.add(record_key)
+                        batch_rows.append(row)
+                        if len(batch_rows) >= 1000:
+                            _flush_batch(con, insert_prefix=insert_prefix, rows=batch_rows, task=task)
+                        continue
+
+                    con.execute(dedupe_sql, row + [record_key])
+                    task.advance(1)
+
+                if append_only:
+                    _flush_batch(con, insert_prefix=insert_prefix, rows=batch_rows, task=task)
 
         if documents_path.exists():
             with progress.phase("duckdb: load documents"):

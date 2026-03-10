@@ -56,6 +56,34 @@ Recommended approach:
 2) Store it locally under a non-repo directory (example: `~/HealthDelta/ios_exports/<run_id>/`).
 3) Keep the directory private; do not publish it.
 
+### Mac to ORIN handoff (validated operator path)
+
+Once the iPhone run has been copied to the Mac, you can transfer the same run directory to ORIN for local ingest/reporting there:
+
+```bash
+rsync -az ~/HealthDelta/ios_exports/<run_id>/ dbarker@orin.local:~/ios_exports/<run_id>/
+```
+
+Then on ORIN:
+
+```bash
+PYTHONPATH=$HOME/HealthDelta-temp python3 -m healthdelta ingest ios \
+  --input ~/ios_exports/<run_id> \
+  --out ~/ios_stage_out
+
+PYTHONPATH=$HOME/HealthDelta-temp python3 -m healthdelta duckdb build \
+  --input ~/ios_exports/<run_id> \
+  --db ~/ios_duckdb_out/run.duckdb \
+  --replace
+
+PYTHONPATH=$HOME/HealthDelta-temp python3 -m healthdelta report build \
+  --db ~/ios_duckdb_out/run.duckdb \
+  --out ~/ios_report_out \
+  --mode share
+```
+
+This is the currently validated path for `iPhone -> Mac -> ORIN`.
+
 ## Ingest into Python toolchain
 
 ### Option A (recommended): stage first, then analyze
@@ -85,6 +113,10 @@ If you do not need staging, `duckdb build` can also load directly from an iOS ru
 ```bash
 healthdelta duckdb build --input <ios_run_dir> --db data/duckdb/run.duckdb --replace
 ```
+
+Notes:
+- Direct iOS-run DuckDB build is the currently validated ORIN path for copied iPhone exports.
+- Duplicate iOS observation rows with the same `record_key` are deduplicated deterministically during a fresh DuckDB build.
 
 ## Share-safe collaboration
 
