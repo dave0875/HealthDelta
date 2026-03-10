@@ -7,6 +7,13 @@ struct ContentView: View {
         NavigationStack {
             List {
                 Section("Sync Status") {
+                    Button(viewModel.isExporting ? "Exporting..." : "Export Now") {
+                        Task {
+                            await viewModel.exportNow()
+                        }
+                    }
+                    .disabled(viewModel.isExporting)
+
                     if let sync = viewModel.syncSnapshot {
                         LabeledContent("Last sync", value: sync.lastSyncLabel + " UTC")
                         LabeledContent("Last delta window", value: sync.lastDeltaLabel + (sync.deltaStart == nil ? "" : " UTC"))
@@ -129,16 +136,20 @@ final class DashboardViewModel: ObservableObject {
     @Published var syncSnapshot: SyncStatusSnapshot?
     @Published var insightCards: [InsightCard] = []
     @Published var errorMessage: String?
+    @Published var isExporting = false
 
-    private let syncStore: SyncStatusStore
-    private let insightsStore: InsightsStore
+    private let syncStore: SyncStatusLoading
+    private let insightsStore: InsightsLoading
+    private let manualExporter: ManualHealthExporting
 
     init(
-        syncStore: SyncStatusStore = SyncStatusStore(),
-        insightsStore: InsightsStore = InsightsStore()
+        syncStore: SyncStatusLoading = SyncStatusStore(),
+        insightsStore: InsightsLoading = InsightsStore(),
+        manualExporter: ManualHealthExporting = ManualHealthExportService.live()
     ) {
         self.syncStore = syncStore
         self.insightsStore = insightsStore
+        self.manualExporter = manualExporter
     }
 
     func refresh() {
@@ -154,6 +165,18 @@ final class DashboardViewModel: ObservableObject {
             syncSnapshot = nil
             insightCards = []
             errorMessage = "Unable to load local run data. \(error.localizedDescription)"
+        }
+    }
+
+    func exportNow() async {
+        isExporting = true
+        defer { isExporting = false }
+
+        do {
+            _ = try await manualExporter.runManualExport()
+            refresh()
+        } catch {
+            errorMessage = "Unable to export HealthKit data. \(error.localizedDescription)"
         }
     }
 }

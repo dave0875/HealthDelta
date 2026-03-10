@@ -153,3 +153,7 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,209,UNASSIGNED,30,codex,UNASSIGNED,"Restore ORIN benchmark execution after runner recovery by fixing Python 3.10 UTC compatibility"
 2026-03-09,215,UNASSIGNED,45,codex,UNASSIGNED,"Diagnose physical-iPhone launch termination and prepare the macOS runner for retesting once the device reconnects"
 2026-03-09,215,UNASSIGNED,35,codex,UNASSIGNED,"Retest the physical iPhone launch from the macOS GUI session, verify the app stays alive, and close the on-device startup fix"
+2026-03-09,216,UNASSIGNED,20,codex,UNASSIGNED,"Wire the first manual iOS export flow so the dashboard can populate local sync data from an on-device run"
+2026-03-09,216,UNASSIGNED,20,codex,UNASSIGNED,"Fix the first device export crash by adding the required Health privacy usage string and continue the on-device export retest"
+2026-03-09,216,UNASSIGNED,20,codex,UNASSIGNED,"Fix the missing HealthKit entitlement in the signed iOS app and continue the on-device export retest"
+2026-03-09,216,UNASSIGNED,20,codex,UNASSIGNED,"Capture the successful physical-device export proof, confirm the dashboard now shows local sync data, and close the issue"

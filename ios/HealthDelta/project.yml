@@ -19,6 +19,8 @@ targets:
         MARKETING_VERSION: 0.0.1
         GENERATE_INFOPLIST_FILE: YES
         ENABLE_DEBUG_DYLIB: NO
+        CODE_SIGN_ENTITLEMENTS: HealthDelta.entitlements
+        INFOPLIST_KEY_NSHealthShareUsageDescription: HealthDelta reads your Health data to create a local export and sync summary on this device.
     scheme:
       testTargets:
         - HealthDeltaTests

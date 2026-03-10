@@ -31,6 +31,22 @@ Minimum artifacts (current iOS skeleton):
 Anchor persistence artifacts:
 - Anchors are persisted separately by the iOS app (file-backed anchor store). These files are required for incremental continuation on-device, but are not required for Python ingestion.
 
+## Current manual export flow
+
+The app’s first user-facing export path is a manual dashboard action:
+
+1) Launch the app on the iPhone.
+2) Tap `Export Now` in the `Sync Status` section.
+3) Approve Health access for the app if iOS prompts for it.
+4) Wait for the export to complete, then tap `Refresh` if needed.
+
+Expected result:
+- the app writes a new run under `Documents/HealthDelta/<run_id>/`
+- `manifest.json` appears beside `ndjson/observations.ndjson`
+- the dashboard replaces `No sync data yet` with local sync details from the newest run
+
+If export fails or Health access is denied, the dashboard shows an error in the `Needs attention` section.
+
 ## Transfer to workstation (operator workflow)
 
 Goal: copy a single run directory (`<run_id>/`) from the device to your workstation without modifying it.
@@ -76,4 +92,3 @@ If you need to share results, do not share the iOS export directory.
 Instead, share only:
 - de-identified pipeline outputs, and/or
 - reports and share bundles produced from share-safe inputs.
-
