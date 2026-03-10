@@ -35,8 +35,8 @@ class TestDuckdbLoaderIOS(unittest.TestCase):
             # iOS observations NDJSON (subset schema).
             observations = "\n".join(
                 [
-                    '{"schema_version":1,"record_key":"rk1","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-01T00:00:00Z","end_time":"2020-01-01T00:00:00Z","value_num":1,"unit":"count"}',
-                    '{"schema_version":1,"record_key":"rk2","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-02T00:00:00Z","end_time":"2020-01-02T00:00:00Z","value_num":2,"unit":"count"}',
+                    '{"schema_version":1,"record_key":"rk1","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-1","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-01T00:00:00Z","end_time":"2020-01-01T00:00:00Z","value_num":1,"unit":"count"}',
+                    '{"schema_version":1,"record_key":"rk2","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-2","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-02T00:00:00Z","end_time":"2020-01-02T00:00:00Z","value_num":2,"unit":"count"}',
                 ]
             )
             _write_text(ndjson_dir / "observations.ndjson", observations + "\n")
@@ -97,6 +97,25 @@ class TestDuckdbLoaderIOS(unittest.TestCase):
             rows2 = list(csv.DictReader(q2.stdout.splitlines()))
             self.assertEqual(rows2[0]["n"], "2")
 
+            q3 = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    "SELECT source_id FROM observations ORDER BY source_id;",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q3.returncode, 0, msg=f"stdout={q3.stdout}\nstderr={q3.stderr}")
+            rows3 = list(csv.DictReader(q3.stdout.splitlines()))
+            self.assertEqual(rows3, [{"source_id": "HKSample/uuid-1"}, {"source_id": "HKSample/uuid-2"}])
+
     @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
     def test_duckdb_build_batches_fresh_ios_observations_load(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -112,11 +131,11 @@ class TestDuckdbLoaderIOS(unittest.TestCase):
             observations = []
             for idx in range(total_rows):
                 observations.append(
-                    '{"schema_version":1,"record_key":"rk%d","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-%02dT00:00:00Z","value_num":%d,"unit":"count"}'
-                    % (idx, (idx % 28) + 1, idx)
+                    '{"schema_version":1,"record_key":"rk%d","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-%d","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-%02dT00:00:00Z","value_num":%d,"unit":"count"}'
+                    % (idx, idx, (idx % 28) + 1, idx)
                 )
             observations.append(
-                '{"schema_version":1,"record_key":"%s","canonical_person_id":"person-1","source":"healthkit","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-15T00:00:00Z","value_num":9999,"unit":"count"}'
+                '{"schema_version":1,"record_key":"%s","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-500","sample_type":"HKQuantityTypeIdentifierStepCount","start_time":"2020-01-15T00:00:00Z","value_num":9999,"unit":"count"}'
                 % duplicate_record_key
             )
             _write_text(ndjson_dir / "observations.ndjson", "\n".join(observations) + "\n")

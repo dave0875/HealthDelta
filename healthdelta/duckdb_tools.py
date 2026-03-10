@@ -336,7 +336,7 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       ),
                       ?,
                       COALESCE(NULLIF(json_extract_string(payload, '$.event_key'), ''), resolved_record_key),
-                      NULL,
+                      json_extract_string(payload, '$.source_id'),
                       NULL,
                       NULL,
                       NULL,

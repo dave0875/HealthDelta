@@ -68,11 +68,13 @@ final class IncrementalNDJSONExporter {
         let typeId = sample.sampleType.identifier
         let start = iso8601(sample.startDate)
         let end = iso8601(sample.endDate)
+        let sourceID = healthKitSourceID(for: sample)
 
         var row: [String: Any] = [
             "schema_version": 1,
             "canonical_person_id": canonicalPersonID,
             "source": "healthkit",
+            "source_id": sourceID,
             "sample_type": typeId,
             "start_time": start,
             "end_time": end,
@@ -91,12 +93,31 @@ final class IncrementalNDJSONExporter {
     }
 
     private func recordKey(for row: [String: Any]) -> String {
-        // Derive from stable JSON bytes without record_key to avoid recursion.
+        if let sourceID = row["source_id"] as? String, !sourceID.isEmpty {
+            return sha256Hex("healthkit:\(sourceID)")
+        }
+
+        // Fallback for legacy or malformed rows: derive from stable JSON bytes without record_key to avoid recursion.
         var minimal = row
         minimal.removeValue(forKey: "record_key")
         guard let data = try? JSONSerialization.data(withJSONObject: minimal, options: [.sortedKeys]) else {
             return ""
         }
+        return sha256Hex(data)
+    }
+
+    private func healthKitSourceID(for sample: HKSample) -> String {
+        "HKSample/\(sample.uuid.uuidString.lowercased())"
+    }
+
+    private func sha256Hex(_ value: String) -> String {
+        guard let data = value.data(using: .utf8) else {
+            return ""
+        }
+        return sha256Hex(data)
+    }
+
+    private func sha256Hex(_ data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }

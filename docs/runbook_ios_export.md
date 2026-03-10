@@ -24,7 +24,8 @@ Minimum artifacts (current iOS skeleton):
 
 - `ndjson/observations.ndjson`
   - one JSON object per line
-  - includes `record_key` and `canonical_person_id`
+  - includes `canonical_person_id`, stable HealthKit `source_id`, and `record_key`
+  - `record_key` is derived from the stable HealthKit sample identity rather than only visible time/value fields
 - `manifest.json`
   - deterministic summary of run outputs (run_id, hashes/sizes, row counts)
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import HealthKit
 import XCTest
@@ -42,7 +43,11 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
         let bytes1 = try Data(contentsOf: outURL)
         XCTAssertTrue(bytes1.count > 0)
         XCTAssertEqual(bytes1.last, 0x0A)
-        try _assertAllRowsHaveCanonicalPersonID(bytes1)
+        let rows1 = try _rows(from: bytes1)
+        _assertAllRowsHaveCanonicalPersonID(rows1)
+        XCTAssertEqual(rows1.count, 1)
+        XCTAssertTrue((rows1[0]["source_id"] as? String)?.hasPrefix("HKSample/") == true)
+        XCTAssertEqual(rows1[0]["record_key"] as? String, _expectedRecordKey(sourceID: rows1[0]["source_id"] as? String ?? ""))
 
         let wrote2 = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
         XCTAssertFalse(wrote2)
@@ -74,7 +79,7 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
             _ = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
             _ = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
             let bytes = try Data(contentsOf: outURL)
-            try _assertAllRowsHaveCanonicalPersonID(bytes)
+            _assertAllRowsHaveCanonicalPersonID(try _rows(from: bytes))
             return bytes
         }
 
@@ -83,21 +88,69 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
         XCTAssertEqual(a, b)
     }
 
-    private func _assertAllRowsHaveCanonicalPersonID(_ bytes: Data) throws {
+    func testDistinctSamplesWithSameVisibleFieldsProduceDistinctRecordKeys() async throws {
+        let type = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let sampleA = _makeSample(type: type)
+        let sampleB = _makeSample(type: type)
+        XCTAssertNotEqual(sampleA.uuid, sampleB.uuid)
+
+        let script: [FakeAnchoredQueryClient.ScriptedResponse] = [
+            .init(result: AnchoredQueryResult(addedSamples: [sampleA, sampleB], deletedObjects: [], newAnchor: HKQueryAnchor(fromValue: 1)))
+        ]
+
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let anchorsDir = tmp.appendingPathComponent("anchors", isDirectory: true)
+        let outBase = tmp.appendingPathComponent("HealthDelta", isDirectory: true)
+        let outURL = IOSExportLayout(baseDirectoryURL: outBase).observationsNDJSONURL(runID: "run_1")
+
+        let exporter = IncrementalNDJSONExporter(
+            anchorStore: AnchorStore(directoryURL: anchorsDir),
+            queryClient: FakeAnchoredQueryClient(script: script),
+            canonicalPersonIDProvider: { self._fixedCanonicalPersonID }
+        )
+
+        let wrote = try await exporter.runOnce(key: "steps", type: type, outputURL: outURL)
+        XCTAssertTrue(wrote)
+
+        let rows = try _rows(from: Data(contentsOf: outURL))
+        XCTAssertEqual(rows.count, 2)
+        let sourceIDs = rows.compactMap { $0["source_id"] as? String }
+        let recordKeys = rows.compactMap { $0["record_key"] as? String }
+        XCTAssertEqual(Set(sourceIDs).count, 2)
+        XCTAssertEqual(Set(recordKeys).count, 2)
+        XCTAssertEqual(Set(zip(sourceIDs, recordKeys).map(_expectedRecordKeyPair)), Set(recordKeys))
+    }
+
+    private func _rows(from bytes: Data) throws -> [[String: Any]] {
         guard let s = String(data: bytes, encoding: .utf8) else {
             XCTFail("invalid UTF-8")
-            return
+            return []
         }
         let lines = s.split(separator: "\n")
         XCTAssertFalse(lines.isEmpty)
 
-        for line in lines {
+        return try lines.map { line in
             let obj = try JSONSerialization.jsonObject(with: Data(line.utf8), options: [])
             guard let dict = obj as? [String: Any] else {
                 XCTFail("not a JSON object")
-                continue
+                return [:]
             }
+            return dict
+        }
+    }
+
+    private func _assertAllRowsHaveCanonicalPersonID(_ rows: [[String: Any]]) {
+        for dict in rows {
             XCTAssertEqual(dict["canonical_person_id"] as? String, _fixedCanonicalPersonID)
         }
+    }
+
+    private func _expectedRecordKey(sourceID: String) -> String {
+        let digest = SHA256.hash(data: Data("healthkit:\(sourceID)".utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func _expectedRecordKeyPair(_ pair: (String, String)) -> String {
+        _expectedRecordKey(sourceID: pair.0)
     }
 }

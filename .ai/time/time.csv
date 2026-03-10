@@ -159,3 +159,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,216,UNASSIGNED,20,codex,UNASSIGNED,"Capture the successful physical-device export proof, confirm the dashboard now shows local sync data, and close the issue"
 2026-03-10,217,UNASSIGNED,90,codex,UNASSIGNED,"Reproduce the ORIN DuckDB/report failure for copied iOS incremental exports, optimize fresh iOS DuckDB loading, validate ORIN report generation, and align operator runbooks"
 2026-03-10,217,UNASSIGNED,10,codex,UNASSIGNED,"Capture the CI governance-footer failure, add follow-up audit artifacts, and rerun Issue #217 with a footer-compliant commit"
+2026-03-10,218,UNASSIGNED,60,codex,UNASSIGNED,"Strengthen iOS HealthKit observation identity to use stable sample UUID-based source_id/record_key, update downstream ingest, and verify with Python plus macOS simulator tests"
