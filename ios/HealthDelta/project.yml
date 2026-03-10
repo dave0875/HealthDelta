@@ -18,6 +18,7 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.0.1
         GENERATE_INFOPLIST_FILE: YES
+        ENABLE_DEBUG_DYLIB: NO
     scheme:
       testTargets:
         - HealthDeltaTests

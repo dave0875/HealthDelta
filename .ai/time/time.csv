@@ -151,3 +151,5 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-09,209,UNASSIGNED,45,codex,UNASSIGNED,"Add scheduled ORIN benchmark cadence, runbook updates, and workflow proof"
 2026-03-09,205,UNASSIGNED,30,codex,UNASSIGNED,"Refresh roadmap to reflect the completed clinical-record wave and remaining benchmark follow-up"
 2026-03-09,209,UNASSIGNED,30,codex,UNASSIGNED,"Restore ORIN benchmark execution after runner recovery by fixing Python 3.10 UTC compatibility"
+2026-03-09,215,UNASSIGNED,45,codex,UNASSIGNED,"Diagnose physical-iPhone launch termination and prepare the macOS runner for retesting once the device reconnects"
+2026-03-09,215,UNASSIGNED,35,codex,UNASSIGNED,"Retest the physical iPhone launch from the macOS GUI session, verify the app stays alive, and close the on-device startup fix"
