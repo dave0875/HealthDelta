@@ -168,3 +168,5 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,223,UNASSIGNED,60,codex,UNASSIGNED,"Validate and promote the Ollama-backed ORIN insight path using CPU-mode inference plus a host proxy for the loopback-only runtime"
 2026-03-11,223,UNASSIGNED,20,codex,UNASSIGNED,"Stabilize the existing macOS dashboard progress tests after the #223 landing push exposed a runner-dependent async gate race"
 2026-03-11,223,UNASSIGNED,20,codex,UNASSIGNED,"Tighten the live Ollama prompt to a fixed two-card JSON contract and revalidate the refined ORIN cards before final promotion"
+2026-03-11,224,UNASSIGNED,15,codex,UNASSIGNED,"Update iPhone dashboard and insight timestamps to render in the device local timezone instead of UTC"
+2026-03-11,224,UNASSIGNED,25,codex,UNASSIGNED,"Validate local-time iOS formatting on the Mac simulator suite and attempt a physical-device rebuild/install for the connected iPhone"

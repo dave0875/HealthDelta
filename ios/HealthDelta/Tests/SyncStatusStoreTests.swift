@@ -4,6 +4,39 @@ import XCTest
 @testable import HealthDelta
 
 final class SyncStatusStoreTests: XCTestCase {
+    func testDisplayLabelsUseProvidedLocalTimezone() {
+        let generatedAt = Date(timeIntervalSince1970: 1_706_884_800)
+        let deltaStart = Date(timeIntervalSince1970: 1_769_904_000)
+        let deltaEnd = Date(timeIntervalSince1970: 1_769_934_600)
+        let timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let locale = Locale(identifier: "en_US")
+
+        let snapshot = SyncStatusSnapshot(
+            runID: "run_test",
+            generatedAt: generatedAt,
+            deltaStart: deltaStart,
+            deltaEnd: deltaEnd,
+            totalRows: 1,
+            totalBytes: 1,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: [:],
+            sourceFiles: []
+        )
+
+        let localSync = snapshot.lastSyncLabel(timeZone: timeZone, locale: locale)
+        let localDelta = snapshot.lastDeltaLabel(timeZone: timeZone, locale: locale)
+        let utcSync = SyncStatusStore.displayDateString(
+            from: generatedAt,
+            timeZone: TimeZone(secondsFromGMT: 0)!,
+            locale: locale
+        )
+
+        XCTAssertEqual(normalizeDisplay(localSync), "Feb 2, 2024 at 6:40 AM")
+        XCTAssertEqual(normalizeDisplay(localDelta), "Jan 31, 2026 at 4:00 PM -> Feb 1, 2026 at 12:30 AM")
+        XCTAssertNotEqual(localSync, utcSync)
+    }
+
     func testLoadLatestBuildsDeterministicSnapshot() throws {
         let fixture = try FixtureDirs()
         let runDir = fixture.documents.appendingPathComponent("HealthDelta/run_20260202_010203", isDirectory: true)
@@ -65,6 +98,10 @@ final class SyncStatusStoreTests: XCTestCase {
             XCTAssertEqual(error as? SyncStatusStore.LoadError, .noRunDirectory)
         }
     }
+}
+
+private func normalizeDisplay(_ value: String) -> String {
+    value.replacingOccurrences(of: "\u{202F}", with: " ")
 }
 
 private struct FixtureDirs {

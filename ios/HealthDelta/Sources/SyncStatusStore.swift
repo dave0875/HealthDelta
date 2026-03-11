@@ -17,13 +17,22 @@ struct SyncStatusSnapshot: Equatable {
     }
 
     var lastSyncLabel: String {
-        guard let generatedAt else { return "Unknown" }
-        return SyncStatusStore.dateFormatter.string(from: generatedAt)
+        generatedAt.map { SyncStatusStore.displayDateString(from: $0) } ?? "Unknown"
     }
 
     var lastDeltaLabel: String {
         guard let deltaStart, let deltaEnd else { return "Not available yet" }
-        return "\(SyncStatusStore.dateFormatter.string(from: deltaStart)) -> \(SyncStatusStore.dateFormatter.string(from: deltaEnd))"
+        return "\(SyncStatusStore.displayDateString(from: deltaStart)) -> \(SyncStatusStore.displayDateString(from: deltaEnd))"
+    }
+
+    func lastSyncLabel(timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> String {
+        guard let generatedAt else { return "Unknown" }
+        return SyncStatusStore.displayDateString(from: generatedAt, timeZone: timeZone, locale: locale)
+    }
+
+    func lastDeltaLabel(timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> String {
+        guard let deltaStart, let deltaEnd else { return "Not available yet" }
+        return "\(SyncStatusStore.displayDateString(from: deltaStart, timeZone: timeZone, locale: locale)) -> \(SyncStatusStore.displayDateString(from: deltaEnd, timeZone: timeZone, locale: locale))"
     }
 
     var anchorStatusLabel: String {
@@ -69,14 +78,22 @@ struct SyncStatusStore {
         return f
     }()
 
-    static let dateFormatter: DateFormatter = {
+    static func makeDisplayDateFormatter(timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> DateFormatter {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.locale = locale
+        f.timeZone = timeZone
         return f
-    }()
+    }
+
+    static func displayDateString(
+        from date: Date,
+        timeZone: TimeZone = .autoupdatingCurrent,
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        makeDisplayDateFormatter(timeZone: timeZone, locale: locale).string(from: date)
+    }
 
     private static let iso8601WithFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()

@@ -21,6 +21,15 @@ struct InsightsStore {
         self.appDocumentsURL = appDocumentsURL ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
     }
 
+    static func freshnessLabel(
+        for modified: Date?,
+        timeZone: TimeZone = .autoupdatingCurrent,
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        let freshness = modified.map { SyncStatusStore.displayDateString(from: $0, timeZone: timeZone, locale: locale) } ?? "Unknown"
+        return "Updated \(freshness)"
+    }
+
     func loadLatestCards() throws -> [InsightCard] {
         let root = appDocumentsURL.appendingPathComponent("HealthDelta", isDirectory: true)
         guard let runDirectory = try latestRunDirectory(root: root) else {
@@ -68,7 +77,6 @@ struct InsightsStore {
             .map { normalizeBody($0, fallback: fallbackBody) }
             ?? fallbackBody
         let modified = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.modificationDate]) as? Date
-        let freshness = modified.map { SyncStatusStore.dateFormatter.string(from: $0) } ?? "Unknown"
 
         return InsightCard(
             id: "\(runID)-\(sourceLabel)",
@@ -76,7 +84,7 @@ struct InsightsStore {
             body: bodyText,
             disclaimer: "For education only. This is not medical advice.",
             sourceLabel: sourceLabel,
-            freshnessLabel: "Updated \(freshness) UTC"
+            freshnessLabel: Self.freshnessLabel(for: modified)
         )
     }
 

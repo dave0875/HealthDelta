@@ -23,8 +23,8 @@ struct ContentView: View {
                     }
 
                     if let sync = viewModel.syncSnapshot {
-                        LabeledContent("Last sync", value: sync.lastSyncLabel + " UTC")
-                        LabeledContent("Last delta window", value: sync.lastDeltaLabel + (sync.deltaStart == nil ? "" : " UTC"))
+                        LabeledContent("Last sync", value: sync.lastSyncLabel)
+                        LabeledContent("Last delta window", value: sync.lastDeltaLabel)
                         LabeledContent("Rows exported", value: sync.totalRowsLabel)
                         LabeledContent("Bytes exported", value: sync.totalBytesLabel)
                         LabeledContent("Anchor status", value: sync.anchorStatusLabel)
@@ -147,7 +147,7 @@ private struct SyncDetailsView: View {
         List {
             Section("Run") {
                 LabeledContent("Run ID", value: snapshot.runID)
-                LabeledContent("Generated", value: snapshot.lastSyncLabel + " UTC")
+                LabeledContent("Generated", value: snapshot.lastSyncLabel)
                 LabeledContent("Source files", value: "\(snapshot.fileCount)")
                 LabeledContent("Rows", value: snapshot.totalRowsLabel)
                 LabeledContent("Bytes", value: snapshot.totalBytesLabel)

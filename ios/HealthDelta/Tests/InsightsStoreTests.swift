@@ -4,6 +4,17 @@ import XCTest
 @testable import HealthDelta
 
 final class InsightsStoreTests: XCTestCase {
+    func testFreshnessLabelsUseProvidedLocalTimezone() {
+        let modified = Date(timeIntervalSince1970: 1_706_884_800)
+        let timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let locale = Locale(identifier: "en_US")
+
+        let freshnessLabel = InsightsStore.freshnessLabel(for: modified, timeZone: timeZone, locale: locale)
+
+        XCTAssertEqual(normalizeDisplay(freshnessLabel), "Updated Feb 2, 2024 at 6:40 AM")
+        XCTAssertFalse(freshnessLabel.contains("UTC"))
+    }
+
     func testLoadLatestCardsReturnsDoctorNoteAndSummaryWithFreshness() throws {
         let fixture = try FixtureDocs()
         let runDir = fixture.documents.appendingPathComponent("HealthDelta/run_20260202_010203", isDirectory: true)
@@ -46,6 +57,10 @@ final class InsightsStoreTests: XCTestCase {
         let store = InsightsStore(fileManager: .default, appDocumentsURL: fixture.documents)
         XCTAssertEqual(try store.loadLatestCards(), [])
     }
+}
+
+private func normalizeDisplay(_ value: String) -> String {
+    value.replacingOccurrences(of: "\u{202F}", with: " ")
 }
 
 private struct FixtureDocs {
