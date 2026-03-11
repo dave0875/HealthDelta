@@ -160,3 +160,7 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-10,217,UNASSIGNED,90,codex,UNASSIGNED,"Reproduce the ORIN DuckDB/report failure for copied iOS incremental exports, optimize fresh iOS DuckDB loading, validate ORIN report generation, and align operator runbooks"
 2026-03-10,217,UNASSIGNED,10,codex,UNASSIGNED,"Capture the CI governance-footer failure, add follow-up audit artifacts, and rerun Issue #217 with a footer-compliant commit"
 2026-03-10,218,UNASSIGNED,60,codex,UNASSIGNED,"Strengthen iOS HealthKit observation identity to use stable sample UUID-based source_id/record_key, update downstream ingest, and verify with Python plus macOS simulator tests"
+2026-03-10,219,UNASSIGNED,15,codex,UNASSIGNED,"Implement the first direct iPhone-to-ORIN upload path for completed iOS export runs"
+2026-03-11,220,UNASSIGNED,30,codex,UNASSIGNED,"Show explicit progress indicators for long-running iOS export and upload actions"
+2026-03-11,221,UNASSIGNED,45,codex,UNASSIGNED,"Fetch ORIN-generated insights into the iPhone app after upload"
+2026-03-11,222,UNASSIGNED,30,codex,UNASSIGNED,"Land the validated integrated iPhone ORIN upload, progress, and insights slice under one governance-compliant push"

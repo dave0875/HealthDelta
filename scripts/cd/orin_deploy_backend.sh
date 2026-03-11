@@ -12,6 +12,7 @@ TAG="${TAG:?tag to deploy (e.g., v0.0.2)}"
 VERSION="${VERSION:?expected version (e.g., 0.0.2)}"
 GIT_SHA="${GIT_SHA:?expected git sha}"
 UPLOAD_TOKEN="${HEALTHDELTA_UPLOAD_TOKEN:-}"
+PUBLISHED_BIND_HOST="${HEALTHDELTA_PUBLISHED_BIND_HOST:-127.0.0.1}"
 
 if [ ! -d "$DEPLOY_DIR" ]; then
   echo "ERROR: deploy dir '$DEPLOY_DIR' is missing." >&2
@@ -45,6 +46,7 @@ cp "$REPO_ROOT/deploy/orin/compose.yaml" "$DEPLOY_DIR/compose.yaml"
 cat >"$DEPLOY_DIR/.env" <<EOF
 HEALTHDELTA_BACKEND_IMAGE_TAG=$TAG
 HEALTHDELTA_UPLOAD_TOKEN=$UPLOAD_TOKEN
+HEALTHDELTA_PUBLISHED_BIND_HOST=$PUBLISHED_BIND_HOST
 EOF
 
 if [ -z "$UPLOAD_TOKEN" ]; then

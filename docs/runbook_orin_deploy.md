@@ -51,7 +51,11 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 4) Upload API token (required for iOS/TestFlight upload control endpoints)
    - Set `HEALTHDELTA_UPLOAD_TOKEN` to a long random value (stored as secret in deployment workflow context).
    - The backend returns `503 upload_unavailable` on upload endpoints when token is unset.
-5) Deploy directory permissions
+5) Published bind host for LAN clients (required for direct iPhone upload)
+   - Default deploy behavior publishes `127.0.0.1:8080` only.
+   - To allow a phone on the LAN to reach the upload API, set `HEALTHDELTA_PUBLISHED_BIND_HOST=0.0.0.0` before deploy/rollback.
+   - Keep loopback-only publishing when direct iPhone upload is not required.
+6) Deploy directory permissions
    - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
      - `sudo mkdir -p /opt/healthdelta/data`
@@ -62,8 +66,9 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 ## What gets deployed
 - Compose template: `deploy/orin/compose.yaml`
 - Pinned tag file: `/opt/healthdelta/.env` with `HEALTHDELTA_BACKEND_IMAGE_TAG=vX.Y.Z`
+- Optional published bind host in `/opt/healthdelta/.env`: `HEALTHDELTA_PUBLISHED_BIND_HOST=127.0.0.1` (default) or `0.0.0.0` for LAN reachability
 - Bind mount: `/opt/healthdelta/data:/app/data`
-- Service listens on `http://127.0.0.1:8080` (port mapping `8080:8080`)
+- Service publishes `8080` using `HEALTHDELTA_PUBLISHED_BIND_HOST` (default `127.0.0.1`)
 
 ## Vertical slice endpoint (Issue #123)
 - Endpoint: `POST /summary`
@@ -89,6 +94,7 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `POST /upload-sessions/{id}/finalize` assemble + verify + publish dataset
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
+- `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
 - `POST /datasets/archive` archive active dataset
 - `GET /datasets/archives` list archived datasets
 
@@ -112,7 +118,10 @@ curl -fsS -X PUT "$BASE/upload-sessions/$SID/chunks/0" -H "authorization: Bearer
 curl -fsS -X PUT "$BASE/upload-sessions/$SID/chunks/1" -H "authorization: Bearer $TOKEN" --data-binary @/tmp/chunk1.bin
 curl -fsS -X POST "$BASE/upload-sessions/$SID/finalize" -H "authorization: Bearer $TOKEN"
 curl -fsS "$BASE/datasets/current" -H "authorization: Bearer $TOKEN"
+curl -fsS "$BASE/insights/current" -H "authorization: Bearer $TOKEN"
 ```
+
+For direct iPhone upload over the LAN, use the ORIN host IP instead of `127.0.0.1` and ensure `/opt/healthdelta/.env` sets `HEALTHDELTA_PUBLISHED_BIND_HOST=0.0.0.0`.
 
 ## Verification (“150%” backend checks)
 The deploy workflow verifies:

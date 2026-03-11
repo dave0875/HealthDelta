@@ -4,7 +4,7 @@ services:
     pull_policy: always
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${HEALTHDELTA_PUBLISHED_BIND_HOST:-127.0.0.1}:8080:8080"
     environment:
       PORT: "8080"
       HEALTHDELTA_DATA_DIR: "/app/data"

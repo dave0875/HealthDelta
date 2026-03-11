@@ -48,6 +48,46 @@ Expected result:
 
 If export fails or Health access is denied, the dashboard shows an error in the `Needs attention` section.
 
+## Direct upload to ORIN (first version)
+
+The app also supports a first direct upload path for the newest completed run:
+
+1) Produce a local run with `Export Now`.
+2) In the `ORIN Upload` section, enter:
+   - `Upload endpoint` (example: `http://192.168.1.223:8080`)
+   - `Upload token` (must match `HEALTHDELTA_UPLOAD_TOKEN` on ORIN)
+3) Tap `Upload Latest Run`.
+
+Current behavior:
+- The app zips the completed run directory locally.
+- It creates an upload session with `POST /upload-sessions`.
+- It uploads the archive in sequential chunks with `PUT /upload-sessions/{id}/chunks/{index}`.
+- It finalizes the dataset with `POST /upload-sessions/{id}/finalize`.
+- On success, the app shows the returned dataset identifier and can fetch ORIN-generated insight cards with `GET /insights/current`.
+
+Insight refresh behavior:
+- The `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
+- The `Insights` section includes `Fetch from ORIN` for an explicit remote refresh.
+- On successful upload, the app immediately attempts an ORIN insights fetch.
+
+Failure behavior:
+- Missing/invalid endpoint or token surfaces an error in the dashboard.
+- ORIN-side API failures are surfaced using the backend error detail when available.
+- If the ORIN backend is only published on `127.0.0.1`, iPhone uploads will fail until ORIN is redeployed with `HEALTHDELTA_PUBLISHED_BIND_HOST=0.0.0.0`.
+
+Headless validation hook:
+- For operator validation from a tethered Mac, the app also honors these launch environment variables:
+  - `HEALTHDELTA_AUTO_UPLOAD_ON_LAUNCH=1`
+  - `HEALTHDELTA_AUTO_UPLOAD_BASE_URL=<http(s)://host:port>`
+  - `HEALTHDELTA_AUTO_UPLOAD_TOKEN=<bearer token>`
+- Equivalent launch arguments are also accepted:
+  - `--healthdelta-auto-upload-on-launch`
+  - `--healthdelta-auto-upload-base-url <http(s)://host:port>`
+  - `--healthdelta-auto-upload-token <bearer token>`
+- A file-based hook is also accepted at `Documents/HealthDelta/auto_upload.json` with JSON shape:
+  - `{"base_url":"http://host:port","bearer_token":"..."}`
+- When any one complete hook is present, the app refreshes the latest local run and attempts a one-shot upload on launch. This does not replace the normal dashboard-triggered flow.
+
 ## Transfer to workstation (operator workflow)
 
 Goal: copy a single run directory (`<run_id>/`) from the device to your workstation without modifying it.

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -213,6 +214,148 @@ def _run_grounded_qa(*, input_path: str, work_dir: str, question: str, citation_
     }
 
 
+def _normalize_card_body(raw: str, *, fallback: str) -> str:
+    cleaned = "\n".join(line.strip() for line in raw.splitlines() if line.strip()).strip()
+    return cleaned or fallback
+
+
+def _parse_iso_utc(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _bytes_label(size_bytes: int) -> str:
+    units = ["B", "KB", "MB", "GB"]
+    size = float(size_bytes)
+    unit = units[0]
+    for candidate in units:
+        unit = candidate
+        if size < 1024 or candidate == units[-1]:
+            break
+        size /= 1024.0
+    if unit == "B":
+        return f"{int(size)} {unit}"
+    return f"{size:.1f} {unit}"
+
+
+def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
+    try:
+        current = plane.get_current_dataset()
+    except UploadPlaneError as exc:
+        if exc.code == "no_current_dataset":
+            return {
+                "status": "no_insights_yet",
+                "detail": "Upload a completed run to ORIN before fetching insights.",
+                "cards": [],
+            }
+        raise
+
+    export_zip = Path(str(current["export_zip"]))
+    if not export_zip.exists():
+        raise FileNotFoundError(f"dataset export zip missing: {export_zip}")
+
+    observations_count = 0
+    total_value_num = 0.0
+    unique_days: set[str] = set()
+    first_time: datetime | None = None
+    last_time: datetime | None = None
+    run_id = str(current.get("dataset") or "current")
+
+    with zipfile.ZipFile(export_zip, "r") as archive:
+        manifest_name = next((name for name in archive.namelist() if name.endswith("manifest.json")), None)
+        observations_name = next(
+            (name for name in archive.namelist() if name.endswith("observations.ndjson")),
+            None,
+        )
+        if manifest_name is None or observations_name is None:
+            raise ValueError("uploaded dataset is missing manifest.json or ndjson/observations.ndjson")
+
+        manifest_obj = json.loads(archive.read(manifest_name).decode("utf-8"))
+        if isinstance(manifest_obj, dict) and isinstance(manifest_obj.get("run_id"), str) and manifest_obj.get("run_id"):
+            run_id = manifest_obj["run_id"]
+
+        with archive.open(observations_name, "r") as handle:
+            for raw_line in handle:
+                line = raw_line.decode("utf-8").strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    continue
+                observations_count += 1
+                when = _parse_iso_utc(row.get("start_time")) or _parse_iso_utc(row.get("event_time")) or _parse_iso_utc(row.get("end_time"))
+                if when is not None:
+                    unique_days.add(when.strftime("%Y-%m-%d"))
+                    first_time = when if first_time is None or when < first_time else first_time
+                    last_time = when if last_time is None or when > last_time else last_time
+                value_num = row.get("value_num")
+                if isinstance(value_num, (int, float)):
+                    total_value_num += float(value_num)
+
+    size_bytes = int(current.get("size_bytes") or 0)
+    updated_at = str(current.get("updated_at") or datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    freshness = f"Updated {updated_at}"
+
+    time_window = "Time window unavailable."
+    if first_time is not None and last_time is not None:
+        time_window = (
+            f"Time window: {first_time.strftime('%Y-%m-%d %H:%M')} UTC to "
+            f"{last_time.strftime('%Y-%m-%d %H:%M')} UTC."
+        )
+
+    overview_body = _normalize_card_body(
+        "\n".join(
+            [
+                f"Run {run_id} is active on ORIN.",
+                f"Dataset size: {_bytes_label(size_bytes)}.",
+                f"Observation rows: {observations_count:,}.",
+                time_window,
+            ]
+        ),
+        fallback="ORIN has the latest uploaded dataset ready.",
+    )
+    activity_body = _normalize_card_body(
+        "\n".join(
+            [
+                f"Rows in latest upload: {observations_count:,}.",
+                f"Total recorded value_num across uploaded observations: {total_value_num:,.0f}.",
+                f"Distinct calendar days covered: {len(unique_days):,}.",
+            ]
+        ),
+        fallback="ORIN has not generated an activity summary yet.",
+    )
+
+    return {
+        "status": "ok",
+        "dataset": current.get("dataset"),
+        "cards": [
+            {
+                "id": f"{run_id}-orin-overview",
+                "title": "ORIN Overview",
+                "body": overview_body,
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/datasets/current",
+                "freshnessLabel": freshness,
+            },
+            {
+                "id": f"{run_id}-orin-activity",
+                "title": "Activity Snapshot",
+                "body": activity_body,
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/datasets/current",
+                "freshnessLabel": freshness,
+            },
+        ],
+    }
+
+
 class _Handler(BaseHTTPRequestHandler):
     _session_status_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)$")
     _chunk_put_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)/chunks/(\d+)$")
@@ -310,6 +453,26 @@ class _Handler(BaseHTTPRequestHandler):
             except UploadPlaneError as exc:
                 self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
                 self._log_event("request_failed", status=exc.status, error=exc.code)
+            return
+        if self.path == "/insights/current":
+            if not self._authorize_upload():
+                return
+            try:
+                obj = _read_current_dataset_insights(plane=self._upload_plane())
+                self._send_json(200, obj)
+                self._log_event(
+                    "request_succeeded",
+                    status=200,
+                    insight_status=obj.get("status"),
+                    dataset=obj.get("dataset"),
+                    card_count=len(obj.get("cards", [])) if isinstance(obj.get("cards"), list) else 0,
+                )
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
+            except Exception as exc:
+                self._send_json(500, {"error": "insights_failed", "detail": str(exc)})
+                self._log_event("request_failed", status=500, error="insights_failed")
             return
         if self.path == "/datasets/archives":
             if not self._authorize_upload():
