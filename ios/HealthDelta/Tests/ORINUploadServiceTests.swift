@@ -4,6 +4,23 @@ import XCTest
 @testable import HealthDelta
 
 final class ORINUploadServiceTests: XCTestCase {
+    func testRelativeArchivePathHandlesPrivatePrefixMismatch() throws {
+        let builder = ZipRunArchiveBuilder()
+        let runID = "run_20260311_180938"
+        let runDirectory = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)", isDirectory: true)
+        let manifestURL = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)/manifest.json")
+        let observationsURL = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)/ndjson/observations.ndjson")
+
+        XCTAssertEqual(
+            try builder.relativeArchivePath(fileURL: manifestURL, runDirectory: runDirectory, runID: runID),
+            "\(runID)/manifest.json"
+        )
+        XCTAssertEqual(
+            try builder.relativeArchivePath(fileURL: observationsURL, runDirectory: runDirectory, runID: runID),
+            "\(runID)/ndjson/observations.ndjson"
+        )
+    }
+
     func testUploadRunCreatesSessionUploadsChunksAndFinalizes() async throws {
         let archiveURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: false)
