@@ -64,6 +64,7 @@ Current behavior:
 - It uploads the archive in sequential chunks with `PUT /upload-sessions/{id}/chunks/{index}`.
 - It finalizes the dataset with `POST /upload-sessions/{id}/finalize`.
 - On success, the app shows the returned dataset identifier and can fetch ORIN-generated insight cards with `GET /insights/current`.
+- When ORIN has a local Ollama runtime configured, those fetched cards can contain refined share-safe analysis generated from aggregate upload stats instead of only the deterministic heuristic summary.
 
 Insight refresh behavior:
 - The `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.

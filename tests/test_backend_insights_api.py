@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -60,6 +61,8 @@ class TestBackendInsightsAPI(unittest.TestCase):
     def setUp(self) -> None:
         self._old_data = os.environ.get("HEALTHDELTA_DATA_DIR")
         self._old_token = os.environ.get("HEALTHDELTA_UPLOAD_TOKEN")
+        self._old_ollama_base = os.environ.get("HEALTHDELTA_OLLAMA_BASE_URL")
+        self._old_ollama_model = os.environ.get("HEALTHDELTA_OLLAMA_MODEL")
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["HEALTHDELTA_DATA_DIR"] = self._tmp.name
         os.environ["HEALTHDELTA_UPLOAD_TOKEN"] = "test-token"
@@ -83,6 +86,14 @@ class TestBackendInsightsAPI(unittest.TestCase):
             os.environ.pop("HEALTHDELTA_UPLOAD_TOKEN", None)
         else:
             os.environ["HEALTHDELTA_UPLOAD_TOKEN"] = self._old_token
+        if self._old_ollama_base is None:
+            os.environ.pop("HEALTHDELTA_OLLAMA_BASE_URL", None)
+        else:
+            os.environ["HEALTHDELTA_OLLAMA_BASE_URL"] = self._old_ollama_base
+        if self._old_ollama_model is None:
+            os.environ.pop("HEALTHDELTA_OLLAMA_MODEL", None)
+        else:
+            os.environ["HEALTHDELTA_OLLAMA_MODEL"] = self._old_ollama_model
 
     def _request(self, method: str, path: str, *, auth: bool = True) -> tuple[int, dict]:
         headers: dict[str, str] = {}
@@ -118,10 +129,123 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(payload["cards"][1]["title"], "Activity Snapshot")
         self.assertIn("2,000", payload["cards"][1]["body"])
 
+    def test_insights_current_prefers_ollama_refined_cards_when_available(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        ollama = _FakeOllamaServer(
+            status_code=200,
+            body={
+                "response": "Here is the JSON payload:\n"
+                + json.dumps(
+                    {
+                        "cards": [
+                            {
+                                "title": "Activity Pattern",
+                                "body": "You logged activity on 2 distinct days with a stable cadence across the upload window.",
+                            },
+                            {
+                                "title": "Coaching Note",
+                                "body": "The latest upload suggests a small sample so trend confidence is limited, but consistency is improving.",
+                            },
+                        ]
+                    },
+                    sort_keys=True,
+                )
+            },
+        )
+        ollama.start()
+        self.addCleanup(ollama.stop)
+        os.environ["HEALTHDELTA_OLLAMA_BASE_URL"] = ollama.base_url
+        os.environ["HEALTHDELTA_OLLAMA_MODEL"] = "llama3.2:latest"
+
+        status, payload = self._request("GET", "/insights/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual([card["title"] for card in payload["cards"]], ["Activity Pattern", "Coaching Note"])
+        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/ollama")
+        self.assertIn("stable cadence", payload["cards"][0]["body"])
+        self.assertEqual(ollama.request_count, 1)
+
+    def test_insights_current_falls_back_when_ollama_output_is_invalid(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        ollama = _FakeOllamaServer(status_code=200, body={"response": "not-json"})
+        ollama.start()
+        self.addCleanup(ollama.stop)
+        os.environ["HEALTHDELTA_OLLAMA_BASE_URL"] = ollama.base_url
+        os.environ["HEALTHDELTA_OLLAMA_MODEL"] = "llama3.2:latest"
+
+        status, payload = self._request("GET", "/insights/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["cards"][0]["title"], "ORIN Overview")
+        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/datasets/current")
+        self.assertEqual(ollama.request_count, 1)
+
     def test_insights_current_rejects_invalid_bearer(self) -> None:
         status, payload = self._request("GET", "/insights/current", auth=False)
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "unauthorized")
+
+
+class _FakeOllamaHandler(BaseHTTPRequestHandler):
+    status_code = 200
+    body: dict[str, object] = {"response": "{}"}
+    request_count = 0
+
+    def do_POST(self) -> None:  # noqa: N802
+        type(self).request_count += 1
+        if self.path != "/api/generate":
+            self.send_response(404)
+            self.end_headers()
+            return
+        _ = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        payload = json.dumps(type(self).body).encode("utf-8")
+        self.send_response(type(self).status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        return
+
+
+class _FakeOllamaServer:
+    def __init__(self, *, status_code: int, body: dict[str, object]) -> None:
+        self._handler = type(
+            "_CaseSpecificOllamaHandler",
+            (_FakeOllamaHandler,),
+            {"status_code": status_code, "body": body, "request_count": 0},
+        )
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def base_url(self) -> str:
+        host, port = self._server.server_address
+        return f"http://{host}:{port}"
+
+    @property
+    def request_count(self) -> int:
+        return int(self._handler.request_count)
+
+    def start(self) -> None:
+        self._thread.start()
+        time.sleep(0.05)
+
+    def stop(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=2)
 
 
 if __name__ == "__main__":

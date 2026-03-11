@@ -76,6 +76,10 @@ jobs:
           TAG="${{ steps.v.outputs.tag }}" VERSION="${{ steps.v.outputs.ver }}" GIT_SHA="${{ steps.v.outputs.sha }}" \
             HEALTHDELTA_UPLOAD_TOKEN="${{ secrets.HEALTHDELTA_UPLOAD_TOKEN }}" \
             HEALTHDELTA_PUBLISHED_BIND_HOST="${{ vars.HEALTHDELTA_PUBLISHED_BIND_HOST || '127.0.0.1' }}" \
+            HEALTHDELTA_OLLAMA_BASE_URL="${{ vars.HEALTHDELTA_OLLAMA_BASE_URL || '' }}" \
+            HEALTHDELTA_OLLAMA_MODEL="${{ vars.HEALTHDELTA_OLLAMA_MODEL || 'llama3.2:latest' }}" \
+            HEALTHDELTA_OLLAMA_TIMEOUT_S="${{ vars.HEALTHDELTA_OLLAMA_TIMEOUT_S || '20' }}" \
+            HEALTHDELTA_OLLAMA_NUM_GPU="${{ vars.HEALTHDELTA_OLLAMA_NUM_GPU || '0' }}" \
             DEPLOY_DIR="/opt/healthdelta" SERVICE_NAME="backend" BASE_URL="http://127.0.0.1:8080" \
             bash scripts/cd/orin_deploy_backend.sh | tee artifacts/orin-deploy/deploy_verify.log
 

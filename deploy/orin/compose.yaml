@@ -3,11 +3,17 @@ services:
     image: ghcr.io/dave0875/healthdelta-backend:${HEALTHDELTA_BACKEND_IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${HEALTHDELTA_PUBLISHED_BIND_HOST:-127.0.0.1}:8080:8080"
     environment:
       PORT: "8080"
       HEALTHDELTA_DATA_DIR: "/app/data"
       HEALTHDELTA_UPLOAD_TOKEN: "${HEALTHDELTA_UPLOAD_TOKEN:-}"
+      HEALTHDELTA_OLLAMA_BASE_URL: "${HEALTHDELTA_OLLAMA_BASE_URL:-}"
+      HEALTHDELTA_OLLAMA_MODEL: "${HEALTHDELTA_OLLAMA_MODEL:-llama3.2:latest}"
+      HEALTHDELTA_OLLAMA_TIMEOUT_S: "${HEALTHDELTA_OLLAMA_TIMEOUT_S:-20}"
+      HEALTHDELTA_OLLAMA_NUM_GPU: "${HEALTHDELTA_OLLAMA_NUM_GPU:-0}"
     volumes:
       - /opt/healthdelta/data:/app/data

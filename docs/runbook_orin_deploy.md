@@ -55,7 +55,17 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
    - Default deploy behavior publishes `127.0.0.1:8080` only.
    - To allow a phone on the LAN to reach the upload API, set `HEALTHDELTA_PUBLISHED_BIND_HOST=0.0.0.0` before deploy/rollback.
    - Keep loopback-only publishing when direct iPhone upload is not required.
-6) Deploy directory permissions
+6) Local Ollama runtime for refined iPhone insights (optional but recommended)
+   - ORIN can refine `GET /insights/current` using a local Ollama runtime.
+   - Set `HEALTHDELTA_OLLAMA_BASE_URL` to the Ollama HTTP endpoint reachable from the backend container.
+   - The deploy workflow leaves this unset by default; refined insights stay disabled until a reachable endpoint is configured.
+   - If Ollama is loopback-only on the ORIN host (`127.0.0.1:11434`), expose a small proxy listener such as:
+     - `socat TCP-LISTEN:11435,bind=0.0.0.0,fork,reuseaddr TCP:127.0.0.1:11434`
+     - then set `HEALTHDELTA_OLLAMA_BASE_URL=http://host.docker.internal:11435`
+   - Set `HEALTHDELTA_OLLAMA_MODEL` to the installed model name, for example `llama3.2:latest`.
+   - Set `HEALTHDELTA_OLLAMA_NUM_GPU=0` on memory-constrained ORIN hosts to force CPU inference when GPU model loading fails.
+   - If Ollama is unavailable or returns invalid output, the backend falls back to deterministic heuristic cards.
+7) Deploy directory permissions
    - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
      - `sudo mkdir -p /opt/healthdelta/data`
@@ -67,6 +77,11 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
 - Compose template: `deploy/orin/compose.yaml`
 - Pinned tag file: `/opt/healthdelta/.env` with `HEALTHDELTA_BACKEND_IMAGE_TAG=vX.Y.Z`
 - Optional published bind host in `/opt/healthdelta/.env`: `HEALTHDELTA_PUBLISHED_BIND_HOST=127.0.0.1` (default) or `0.0.0.0` for LAN reachability
+- Optional Ollama settings in `/opt/healthdelta/.env`:
+  - `HEALTHDELTA_OLLAMA_BASE_URL=http://host.docker.internal:11435`
+  - `HEALTHDELTA_OLLAMA_MODEL=llama3.2:latest`
+  - `HEALTHDELTA_OLLAMA_TIMEOUT_S=20`
+  - `HEALTHDELTA_OLLAMA_NUM_GPU=0`
 - Bind mount: `/opt/healthdelta/data:/app/data`
 - Service publishes `8080` using `HEALTHDELTA_PUBLISHED_BIND_HOST` (default `127.0.0.1`)
 
@@ -95,6 +110,8 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
 - `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
+  - when Ollama is configured and reachable, this returns refined share-safe cards from a local LLM analysis of aggregate upload stats
+  - otherwise it falls back to deterministic heuristic cards
 - `POST /datasets/archive` archive active dataset
 - `GET /datasets/archives` list archived datasets
 

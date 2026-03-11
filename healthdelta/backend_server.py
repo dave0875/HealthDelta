@@ -10,6 +10,8 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity
@@ -245,6 +247,211 @@ def _bytes_label(size_bytes: int) -> str:
     return f"{size:.1f} {unit}"
 
 
+def _daily_totals_rows(daily_totals: dict[str, float]) -> list[dict[str, object]]:
+    return [
+        {"day": day, "total_value_num": round(float(daily_totals[day]), 2)}
+        for day in sorted(daily_totals)
+    ]
+
+
+def _slug_card_token(value: str) -> str:
+    token = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return token or "card"
+
+
+def _decode_json_object_from_text(raw: str) -> dict[str, Any] | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        obj = json.loads(text)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        obj = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _heuristic_insight_cards(*, run_id: str, freshness: str, stats: dict[str, Any]) -> list[dict[str, str]]:
+    time_window = "Time window unavailable."
+    first_time = stats.get("first_time")
+    last_time = stats.get("last_time")
+    if isinstance(first_time, datetime) and isinstance(last_time, datetime):
+        time_window = (
+            f"Time window: {first_time.strftime('%Y-%m-%d %H:%M')} UTC to "
+            f"{last_time.strftime('%Y-%m-%d %H:%M')} UTC."
+        )
+
+    overview_body = _normalize_card_body(
+        "\n".join(
+            [
+                f"Run {run_id} is active on ORIN.",
+                f"Dataset size: {_bytes_label(int(stats.get('size_bytes') or 0))}.",
+                f"Observation rows: {int(stats.get('observations_count') or 0):,}.",
+                time_window,
+            ]
+        ),
+        fallback="ORIN has the latest uploaded dataset ready.",
+    )
+    activity_body = _normalize_card_body(
+        "\n".join(
+            [
+                f"Rows in latest upload: {int(stats.get('observations_count') or 0):,}.",
+                f"Total recorded value_num across uploaded observations: {float(stats.get('total_value_num') or 0.0):,.0f}.",
+                f"Distinct calendar days covered: {int(stats.get('active_days') or 0):,}.",
+            ]
+        ),
+        fallback="ORIN has not generated an activity summary yet.",
+    )
+    return [
+        {
+            "id": f"{run_id}-orin-overview",
+            "title": "ORIN Overview",
+            "body": overview_body,
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/datasets/current",
+            "freshnessLabel": freshness,
+        },
+        {
+            "id": f"{run_id}-orin-activity",
+            "title": "Activity Snapshot",
+            "body": activity_body,
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/datasets/current",
+            "freshnessLabel": freshness,
+        },
+    ]
+
+
+def _coverage_caveat_card(*, run_id: str, freshness: str, stats: dict[str, Any]) -> dict[str, str]:
+    observations_count = int(stats.get("observations_count") or 0)
+    active_days = int(stats.get("active_days") or 0)
+    body = _normalize_card_body(
+        "\n".join(
+            [
+                f"This upload covers {observations_count:,} observations across {active_days:,} day(s).",
+                "Trend confidence is limited when the active window is this small.",
+                "If you expected a fuller picture, compare against an earlier baseline upload instead of treating this delta alone as the whole story.",
+            ]
+        ),
+        fallback="This upload window is too small for strong trend conclusions.",
+    )
+    return {
+        "id": f"{run_id}-orin-coverage-caveat",
+        "title": "Coverage Caveat",
+        "body": body,
+        "disclaimer": "For education only. This is not medical advice.",
+        "sourceLabel": "orin/datasets/current",
+        "freshnessLabel": freshness,
+    }
+
+
+def _build_ollama_prompt(*, stats: dict[str, Any]) -> str:
+    payload = {
+        "run_id": stats.get("run_id"),
+        "dataset": stats.get("dataset"),
+        "observations_count": int(stats.get("observations_count") or 0),
+        "size_bytes": int(stats.get("size_bytes") or 0),
+        "size_label": _bytes_label(int(stats.get("size_bytes") or 0)),
+        "active_days": int(stats.get("active_days") or 0),
+        "total_value_num": round(float(stats.get("total_value_num") or 0.0), 2),
+        "average_value_num_per_day": round(float(stats.get("average_value_num_per_day") or 0.0), 2),
+        "best_day": stats.get("best_day"),
+        "latest_day": stats.get("latest_day"),
+        "first_time": stats.get("first_time").strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(stats.get("first_time"), datetime)
+        else None,
+        "last_time": stats.get("last_time").strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(stats.get("last_time"), datetime)
+        else None,
+        "daily_totals": _daily_totals_rows(stats.get("daily_totals") or {}),
+    }
+    return "\n".join(
+        [
+            "You are generating share-safe HealthDelta dashboard insight cards for an iPhone app.",
+            "Use only the aggregate structured data below.",
+            "Do not mention names, exact identifiers, diagnoses, disease labels, or treatment instructions.",
+            "Do not claim medical certainty. If the sample is sparse, say so plainly.",
+            "Return exactly 2 cards:",
+            '1) an interpretation card explaining the strongest defensible pattern in plain language',
+            '2) a caveat-or-next-step card that explains confidence limits or the next useful operator action',
+            "Return strict JSON only with this shape:",
+            '{"cards":[{"title":"Short title","body":"One or two short sentences."}]}',
+            "Keep titles under 4 words and bodies under 2 sentences.",
+            "Structured dataset summary:",
+            json.dumps(payload, sort_keys=True),
+        ]
+    )
+
+
+def _ollama_refined_insight_cards(*, run_id: str, freshness: str, stats: dict[str, Any]) -> list[dict[str, str]] | None:
+    base_url = os.getenv("HEALTHDELTA_OLLAMA_BASE_URL", "").strip()
+    if not base_url:
+        return None
+    model = os.getenv("HEALTHDELTA_OLLAMA_MODEL", "llama3.2:latest").strip() or "llama3.2:latest"
+    timeout_s = float(os.getenv("HEALTHDELTA_OLLAMA_TIMEOUT_S", "20").strip() or "20")
+    ollama_num_gpu = int(os.getenv("HEALTHDELTA_OLLAMA_NUM_GPU", "0").strip() or "0")
+    try:
+        endpoint = base_url.rstrip("/") + "/api/generate"
+        body = json.dumps(
+            {
+                "model": model,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.2, "num_gpu": ollama_num_gpu},
+                "prompt": _build_ollama_prompt(stats=stats),
+            }
+        ).encode("utf-8")
+        req = Request(endpoint, data=body, headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(req, timeout=timeout_s) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+        response_text = raw.get("response") if isinstance(raw, dict) else None
+        if not isinstance(response_text, str) or not response_text.strip():
+            return None
+        decoded = _decode_json_object_from_text(response_text)
+        cards = decoded.get("cards") if isinstance(decoded, dict) else None
+        if not isinstance(cards, list):
+            return None
+
+        out: list[dict[str, str]] = []
+        for idx, row in enumerate(cards[:3], start=1):
+            if not isinstance(row, dict):
+                continue
+            title = row.get("title")
+            body_text = row.get("body")
+            if not isinstance(title, str) or not title.strip():
+                continue
+            if not isinstance(body_text, str) or not body_text.strip():
+                continue
+            out.append(
+                {
+                    "id": f"{run_id}-orin-ollama-{idx}-{_slug_card_token(title)}",
+                    "title": title.strip(),
+                    "body": _normalize_card_body(
+                        body_text,
+                        fallback="ORIN generated an empty insight response.",
+                    ),
+                    "disclaimer": "For education only. This is not medical advice.",
+                    "sourceLabel": "orin/ollama",
+                    "freshnessLabel": freshness,
+                }
+            )
+        if not out:
+            return None
+        if len(out) == 1:
+            out.append(_coverage_caveat_card(run_id=run_id, freshness=freshness, stats=stats))
+        return out
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
     try:
         current = plane.get_current_dataset()
@@ -266,6 +473,7 @@ def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
     unique_days: set[str] = set()
     first_time: datetime | None = None
     last_time: datetime | None = None
+    daily_totals: dict[str, float] = {}
     run_id = str(current.get("dataset") or "current")
 
     with zipfile.ZipFile(export_zip, "r") as archive:
@@ -292,67 +500,49 @@ def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
                 observations_count += 1
                 when = _parse_iso_utc(row.get("start_time")) or _parse_iso_utc(row.get("event_time")) or _parse_iso_utc(row.get("end_time"))
                 if when is not None:
-                    unique_days.add(when.strftime("%Y-%m-%d"))
+                    day_key = when.strftime("%Y-%m-%d")
+                    unique_days.add(day_key)
                     first_time = when if first_time is None or when < first_time else first_time
                     last_time = when if last_time is None or when > last_time else last_time
                 value_num = row.get("value_num")
                 if isinstance(value_num, (int, float)):
                     total_value_num += float(value_num)
+                    if when is not None:
+                        daily_totals[day_key] = daily_totals.get(day_key, 0.0) + float(value_num)
 
     size_bytes = int(current.get("size_bytes") or 0)
     updated_at = str(current.get("updated_at") or datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     freshness = f"Updated {updated_at}"
-
-    time_window = "Time window unavailable."
-    if first_time is not None and last_time is not None:
-        time_window = (
-            f"Time window: {first_time.strftime('%Y-%m-%d %H:%M')} UTC to "
-            f"{last_time.strftime('%Y-%m-%d %H:%M')} UTC."
-        )
-
-    overview_body = _normalize_card_body(
-        "\n".join(
-            [
-                f"Run {run_id} is active on ORIN.",
-                f"Dataset size: {_bytes_label(size_bytes)}.",
-                f"Observation rows: {observations_count:,}.",
-                time_window,
-            ]
-        ),
-        fallback="ORIN has the latest uploaded dataset ready.",
-    )
-    activity_body = _normalize_card_body(
-        "\n".join(
-            [
-                f"Rows in latest upload: {observations_count:,}.",
-                f"Total recorded value_num across uploaded observations: {total_value_num:,.0f}.",
-                f"Distinct calendar days covered: {len(unique_days):,}.",
-            ]
-        ),
-        fallback="ORIN has not generated an activity summary yet.",
-    )
+    best_day = None
+    if daily_totals:
+        best_day_key, best_day_total = max(daily_totals.items(), key=lambda kv: (kv[1], kv[0]))
+        best_day = {"day": best_day_key, "total_value_num": round(float(best_day_total), 2)}
+    latest_day = None
+    if daily_totals:
+        latest_day_key = sorted(daily_totals.keys())[-1]
+        latest_day = {"day": latest_day_key, "total_value_num": round(float(daily_totals[latest_day_key]), 2)}
+    stats = {
+        "run_id": run_id,
+        "dataset": current.get("dataset"),
+        "size_bytes": size_bytes,
+        "observations_count": observations_count,
+        "total_value_num": total_value_num,
+        "active_days": len(unique_days),
+        "average_value_num_per_day": (total_value_num / len(unique_days)) if unique_days else 0.0,
+        "first_time": first_time,
+        "last_time": last_time,
+        "daily_totals": daily_totals,
+        "best_day": best_day,
+        "latest_day": latest_day,
+    }
+    cards = _ollama_refined_insight_cards(run_id=run_id, freshness=freshness, stats=stats)
+    if cards is None:
+        cards = _heuristic_insight_cards(run_id=run_id, freshness=freshness, stats=stats)
 
     return {
         "status": "ok",
         "dataset": current.get("dataset"),
-        "cards": [
-            {
-                "id": f"{run_id}-orin-overview",
-                "title": "ORIN Overview",
-                "body": overview_body,
-                "disclaimer": "For education only. This is not medical advice.",
-                "sourceLabel": "orin/datasets/current",
-                "freshnessLabel": freshness,
-            },
-            {
-                "id": f"{run_id}-orin-activity",
-                "title": "Activity Snapshot",
-                "body": activity_body,
-                "disclaimer": "For education only. This is not medical advice.",
-                "sourceLabel": "orin/datasets/current",
-                "freshnessLabel": freshness,
-            },
-        ],
+        "cards": cards,
     }
 
 
