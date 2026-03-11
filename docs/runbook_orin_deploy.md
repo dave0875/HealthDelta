@@ -110,6 +110,10 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
 - `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
+  - optional query parameters:
+    - `canonical_person_id=<id>` limit insight generation to one canonical person
+    - `window_days=<positive int>` limit insight generation to the last N days relative to the latest matching observation
+  - when the filters match no rows, the endpoint returns `status=no_insights_yet` with an objective explanation instead of a server error
   - on first request for a dataset, the backend materializes analysis artifacts under `analysis/` by extracting `export.zip` and running:
     - `analysis/duckdb/run.duckdb`
     - `analysis/reports/summary.json`

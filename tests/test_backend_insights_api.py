@@ -29,10 +29,11 @@ def _write_ios_export_zip(path: Path) -> None:
             json.dumps(
                 {
                     "record_key": "rk1",
+                    "canonical_person_id": "person-a",
                     "source": "healthkit",
                     "sample_type": "HKQuantityTypeIdentifierStepCount",
-                    "start_time": "2026-03-10T00:00:00Z",
-                    "end_time": "2026-03-10T00:15:00Z",
+                    "start_time": "2026-03-01T00:00:00Z",
+                    "end_time": "2026-03-01T00:15:00Z",
                     "value_num": 1200,
                     "unit": "count",
                 },
@@ -41,11 +42,25 @@ def _write_ios_export_zip(path: Path) -> None:
             json.dumps(
                 {
                     "record_key": "rk2",
+                    "canonical_person_id": "person-a",
                     "source": "healthkit",
                     "sample_type": "HKQuantityTypeIdentifierStepCount",
                     "start_time": "2026-03-11T00:00:00Z",
                     "end_time": "2026-03-11T00:15:00Z",
                     "value_num": 800,
+                    "unit": "count",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "rk3",
+                    "canonical_person_id": "person-b",
+                    "source": "healthkit",
+                    "sample_type": "HKQuantityTypeIdentifierStepCount",
+                    "start_time": "2026-03-11T12:00:00Z",
+                    "end_time": "2026-03-11T12:15:00Z",
+                    "value_num": 600,
                     "unit": "count",
                 },
                 sort_keys=True,
@@ -200,6 +215,42 @@ class TestBackendInsightsAPI(unittest.TestCase):
         status, payload = self._request("GET", "/insights/current", auth=False)
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "unauthorized")
+
+    def test_insights_current_filters_by_window_days(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        status, payload = self._request("GET", "/insights/current?window_days=3")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("2 observation rows", payload["cards"][0]["body"])
+
+    def test_insights_current_filters_by_canonical_person_id(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        status, payload = self._request("GET", "/insights/current?canonical_person_id=person-a")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("2 observation rows", payload["cards"][0]["body"])
+
+    def test_insights_current_returns_no_insights_yet_for_empty_filter_match(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        status, payload = self._request("GET", "/insights/current?canonical_person_id=missing-person")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "no_insights_yet")
+        self.assertEqual(payload["cards"], [])
 
 
 class _FakeOllamaHandler(BaseHTTPRequestHandler):

@@ -286,6 +286,27 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.insightsProgressLabel)
     }
 
+    func testFetchORINInsightsPassesSelectedFilters() async throws {
+        let fetcher = FakeInsightsFetcher(result: .cards([]))
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: nil),
+            insightsStore: FakeInsightsStore(cards: []),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: fetcher
+        )
+
+        await viewModel.fetchORINInsights(
+            baseURLString: "http://orin.local:8080",
+            bearerToken: "token",
+            canonicalPersonID: "person-123",
+            windowDays: 30
+        )
+
+        XCTAssertEqual(fetcher.lastCanonicalPersonID, "person-123")
+        XCTAssertEqual(fetcher.lastWindowDays, 30)
+    }
+
     func testFetchORINInsightsShowsNoInsightsYetState() async throws {
         let viewModel = DashboardViewModel(
             syncStore: FakeSyncStatusStore(snapshot: nil),
@@ -468,13 +489,22 @@ private final class FakeRunUploader: RunUploading {
 private final class FakeInsightsFetcher: ORINInsightsFetching {
     let result: ORINInsightsFetchResult
     let error: Error?
+    private(set) var lastCanonicalPersonID: String?
+    private(set) var lastWindowDays: Int?
 
     init(result: ORINInsightsFetchResult = .cards([]), error: Error? = nil) {
         self.result = result
         self.error = error
     }
 
-    func fetchCurrentInsights(baseURLString: String, bearerToken: String) async throws -> ORINInsightsFetchResult {
+    func fetchCurrentInsights(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String?,
+        windowDays: Int?
+    ) async throws -> ORINInsightsFetchResult {
+        lastCanonicalPersonID = canonicalPersonID
+        lastWindowDays = windowDays
         if let error {
             throw error
         }

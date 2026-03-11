@@ -6,7 +6,12 @@ enum ORINInsightsFetchResult: Equatable {
 }
 
 protocol ORINInsightsFetching {
-    func fetchCurrentInsights(baseURLString: String, bearerToken: String) async throws -> ORINInsightsFetchResult
+    func fetchCurrentInsights(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String?,
+        windowDays: Int?
+    ) async throws -> ORINInsightsFetchResult
 }
 
 private struct ORINInsightsResponse: Decodable {
@@ -40,7 +45,12 @@ final class ORINInsightsService: ORINInsightsFetching {
         ORINInsightsService(session: URLSession.shared)
     }
 
-    func fetchCurrentInsights(baseURLString: String, bearerToken: String) async throws -> ORINInsightsFetchResult {
+    func fetchCurrentInsights(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String? = nil,
+        windowDays: Int? = nil
+    ) async throws -> ORINInsightsFetchResult {
         let trimmedURL = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let baseURL = URL(string: trimmedURL), let scheme = baseURL.scheme, scheme == "http" || scheme == "https" else {
             throw RunUploadError.invalidBaseURL
@@ -50,7 +60,23 @@ final class ORINInsightsService: ORINInsightsFetching {
             throw RunUploadError.missingToken
         }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("insights/current"))
+        var components = URLComponents(url: baseURL.appendingPathComponent("insights/current"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        let trimmedPerson = canonicalPersonID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedPerson.isEmpty {
+            queryItems.append(URLQueryItem(name: "canonical_person_id", value: trimmedPerson))
+        }
+        if let windowDays, windowDays > 0 {
+            queryItems.append(URLQueryItem(name: "window_days", value: String(windowDays)))
+        }
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+        guard let requestURL = components?.url else {
+            throw RunUploadError.invalidBaseURL
+        }
+
+        var request = URLRequest(url: requestURL)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 

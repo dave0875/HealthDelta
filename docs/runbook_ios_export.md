@@ -75,6 +75,10 @@ Current behavior:
 Insight refresh behavior:
 - The `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
 - The `Insights` section includes `Fetch from ORIN` for an explicit remote refresh.
+- The `Insights` section also lets the operator choose:
+  - `Evaluation window`: `All data`, `7 days`, `30 days`, or `90 days`
+  - optional `Patient canonical_person_id`: leave blank to evaluate all people in the current dataset
+- Those controls affect both explicit `Fetch from ORIN` requests and the automatic ORIN fetch that runs after a successful upload.
 - On successful upload, the app immediately attempts an ORIN insights fetch.
 
 Failure behavior:

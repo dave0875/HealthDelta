@@ -17,7 +17,9 @@ final class ORINInsightsServiceTests: XCTestCase {
 
         let result = try await service.fetchCurrentInsights(
             baseURLString: "http://orin.local:8080",
-            bearerToken: "token"
+            bearerToken: "token",
+            canonicalPersonID: nil,
+            windowDays: nil
         )
 
         XCTAssertEqual(
@@ -50,7 +52,9 @@ final class ORINInsightsServiceTests: XCTestCase {
 
         let result = try await service.fetchCurrentInsights(
             baseURLString: "http://orin.local:8080",
-            bearerToken: "token"
+            bearerToken: "token",
+            canonicalPersonID: nil,
+            windowDays: nil
         )
 
         XCTAssertEqual(result, .noInsightsYet("Upload a run first."))
@@ -70,10 +74,37 @@ final class ORINInsightsServiceTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(
             try await service.fetchCurrentInsights(
                 baseURLString: "http://orin.local:8080",
-                bearerToken: "token"
+                bearerToken: "token",
+                canonicalPersonID: nil,
+                windowDays: nil
             )
         ) { error in
             XCTAssertEqual(error.localizedDescription, "ORIN upload failed. insights_failed: boom")
         }
+    }
+
+    func testFetchCurrentInsightsAppendsWindowAndPatientQueryParameters() async throws {
+        let payload = """
+        {"status":"ok","dataset":"dataset_1","cards":[]}
+        """
+        let session = FakeHTTPSession(
+            queuedResponses: [
+                .init(statusCode: 200, body: Data(payload.utf8)),
+            ]
+        )
+        let service = ORINInsightsService(session: session)
+
+        _ = try await service.fetchCurrentInsights(
+            baseURLString: "http://orin.local:8080",
+            bearerToken: "token",
+            canonicalPersonID: "person-123",
+            windowDays: 30
+        )
+
+        let url = try XCTUnwrap(session.seenRequests.last?.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(query["canonical_person_id"], "person-123")
+        XCTAssertEqual(query["window_days"], "30")
     }
 }

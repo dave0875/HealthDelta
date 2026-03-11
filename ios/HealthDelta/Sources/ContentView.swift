@@ -4,6 +4,8 @@ struct ContentView: View {
     @StateObject private var viewModel = DashboardViewModel()
     @AppStorage("orinUploadBaseURL") private var uploadBaseURL = ""
     @AppStorage("orinUploadToken") private var uploadToken = ""
+    @AppStorage("orinInsightsCanonicalPersonID") private var insightsCanonicalPersonID = ""
+    @AppStorage("orinInsightsWindowDays") private var insightsWindowDays = 0
     @State private var didRunLaunchAutomation = false
 
     var body: some View {
@@ -51,7 +53,12 @@ struct ContentView: View {
 
                     Button(viewModel.isUploading ? "Uploading..." : "Upload Latest Run") {
                         Task {
-                            await viewModel.uploadLatestRun(baseURLString: uploadBaseURL, bearerToken: uploadToken)
+                            await viewModel.uploadLatestRun(
+                                baseURLString: uploadBaseURL,
+                                bearerToken: uploadToken,
+                                canonicalPersonID: normalizedCanonicalPersonID,
+                                windowDays: normalizedWindowDays
+                            )
                         }
                     }
                     .disabled(viewModel.isUploading || viewModel.syncSnapshot == nil)
@@ -73,11 +80,24 @@ struct ContentView: View {
                 }
 
                 Section("Insights") {
+                    Picker("Evaluation window", selection: $insightsWindowDays) {
+                        Text("All data").tag(0)
+                        Text("7 days").tag(7)
+                        Text("30 days").tag(30)
+                        Text("90 days").tag(90)
+                    }
+
+                    TextField("Patient canonical_person_id (optional)", text: $insightsCanonicalPersonID)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
                     Button(viewModel.isFetchingInsights ? "Fetching..." : "Fetch from ORIN") {
                         Task {
                             await viewModel.fetchORINInsights(
                                 baseURLString: uploadBaseURL,
-                                bearerToken: uploadToken
+                                bearerToken: uploadToken,
+                                canonicalPersonID: normalizedCanonicalPersonID,
+                                windowDays: normalizedWindowDays
                             )
                         }
                     }
@@ -99,6 +119,10 @@ struct ContentView: View {
                             InsightCardView(card: card)
                         }
                     }
+
+                    Text("Leave patient blank to evaluate all people in the current dataset. Choose All data to disable the time-window filter.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 if let errorMessage = viewModel.errorMessage {
@@ -114,7 +138,9 @@ struct ContentView: View {
                     Task {
                         await viewModel.refreshDashboard(
                             baseURLString: uploadBaseURL,
-                            bearerToken: uploadToken
+                            bearerToken: uploadToken,
+                            canonicalPersonID: normalizedCanonicalPersonID,
+                            windowDays: normalizedWindowDays
                         )
                     }
                 }
@@ -126,17 +152,30 @@ struct ContentView: View {
                 didRunLaunchAutomation = true
                 await viewModel.refreshDashboard(
                     baseURLString: uploadBaseURL,
-                    bearerToken: uploadToken
+                    bearerToken: uploadToken,
+                    canonicalPersonID: normalizedCanonicalPersonID,
+                    windowDays: normalizedWindowDays
                 )
                 if let config = LaunchAutomation.autoUploadConfig() {
                     print("HealthDelta auto-upload launch hook active for \(config.baseURLString)")
                     await viewModel.uploadLatestRun(
                         baseURLString: config.baseURLString,
-                        bearerToken: config.bearerToken
+                        bearerToken: config.bearerToken,
+                        canonicalPersonID: normalizedCanonicalPersonID,
+                        windowDays: normalizedWindowDays
                     )
                 }
             }
         }
+    }
+
+    private var normalizedCanonicalPersonID: String? {
+        let trimmed = insightsCanonicalPersonID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var normalizedWindowDays: Int? {
+        insightsWindowDays > 0 ? insightsWindowDays : nil
     }
 }
 
@@ -267,7 +306,12 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    func refreshDashboard(baseURLString: String, bearerToken: String) async {
+    func refreshDashboard(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String? = nil,
+        windowDays: Int? = nil
+    ) async {
         refresh()
         guard !baseURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
@@ -275,7 +319,12 @@ final class DashboardViewModel: ObservableObject {
         guard !bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
-        await fetchORINInsights(baseURLString: baseURLString, bearerToken: bearerToken)
+        await fetchORINInsights(
+            baseURLString: baseURLString,
+            bearerToken: bearerToken,
+            canonicalPersonID: canonicalPersonID,
+            windowDays: windowDays
+        )
     }
 
     func exportNow() async {
@@ -291,7 +340,12 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    func uploadLatestRun(baseURLString: String, bearerToken: String) async {
+    func uploadLatestRun(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String? = nil,
+        windowDays: Int? = nil
+    ) async {
         let snapshot: SyncStatusSnapshot
         do {
             snapshot = try syncStore.loadLatest()
@@ -319,7 +373,12 @@ final class DashboardViewModel: ObservableObject {
             print("HealthDelta upload succeeded with dataset \(dataset)")
             uploadStatusMessage = "Uploaded \(snapshot.runID) to ORIN dataset \(dataset)."
             errorMessage = nil
-            await fetchORINInsights(baseURLString: baseURLString, bearerToken: bearerToken)
+            await fetchORINInsights(
+                baseURLString: baseURLString,
+                bearerToken: bearerToken,
+                canonicalPersonID: canonicalPersonID,
+                windowDays: windowDays
+            )
         } catch {
             print("HealthDelta upload failed: \(error.localizedDescription)")
             uploadStatusMessage = nil
@@ -327,14 +386,21 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    func fetchORINInsights(baseURLString: String, bearerToken: String) async {
+    func fetchORINInsights(
+        baseURLString: String,
+        bearerToken: String,
+        canonicalPersonID: String? = nil,
+        windowDays: Int? = nil
+    ) async {
         isFetchingInsights = true
         defer { isFetchingInsights = false }
 
         do {
             let result = try await insightsFetcher.fetchCurrentInsights(
                 baseURLString: baseURLString,
-                bearerToken: bearerToken
+                bearerToken: bearerToken,
+                canonicalPersonID: canonicalPersonID,
+                windowDays: windowDays
             )
             switch result {
             case .cards(let cards):

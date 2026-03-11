@@ -10,6 +10,7 @@ struct QueuedHTTPResponse {
 
 final class FakeHTTPSession: URLSessionUploading {
     var queuedResponses: [QueuedHTTPResponse]
+    private(set) var seenRequests: [URLRequest] = []
 
     init(queuedResponses: [QueuedHTTPResponse]) {
         self.queuedResponses = queuedResponses
@@ -24,6 +25,7 @@ final class FakeHTTPSession: URLSessionUploading {
     }
 
     private func dequeueResponse(for request: URLRequest) throws -> (Data, URLResponse) {
+        seenRequests.append(request)
         guard !queuedResponses.isEmpty else {
             throw URLError(.badServerResponse)
         }

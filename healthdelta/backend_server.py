@@ -7,12 +7,15 @@ import re
 import shutil
 import time
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
+
+import duckdb
 
 from healthdelta.deid import deidentify_run
 from healthdelta.duckdb_tools import build_duckdb
@@ -426,6 +429,147 @@ def _artifact_grounded_insight_cards(
     ]
 
 
+def _filtered_observation_facts(
+    *,
+    db_path: Path,
+    canonical_person_id: str | None,
+    window_days: int | None,
+) -> dict[str, Any] | None:
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        clauses = ["1=1"]
+        params: list[object] = []
+        if canonical_person_id:
+            clauses.append("canonical_person_id = ?")
+            params.append(canonical_person_id)
+        base_where = " AND ".join(clauses)
+        max_event_time = con.execute(
+            f"SELECT MAX(TRY_CAST(event_time AS TIMESTAMP)) FROM observations WHERE {base_where}",
+            params,
+        ).fetchone()[0]
+        if max_event_time is None:
+            return None
+
+        filtered_clauses = list(clauses)
+        filtered_params = list(params)
+        if window_days is not None and window_days > 0:
+            filtered_clauses.append("TRY_CAST(event_time AS TIMESTAMP) >= ?")
+            filtered_params.append(max_event_time - timedelta(days=window_days))
+        filtered_where = " AND ".join(filtered_clauses)
+
+        row = con.execute(
+            f"""
+            SELECT
+              COUNT(*) AS total_rows,
+              MIN(TRY_CAST(event_time AS TIMESTAMP)) AS min_event_time,
+              MAX(TRY_CAST(event_time AS TIMESTAMP)) AS max_event_time,
+              COUNT(DISTINCT CAST(TRY_CAST(event_time AS DATE) AS VARCHAR)) AS active_days,
+              COUNT(DISTINCT canonical_person_id) AS distinct_people
+            FROM observations
+            WHERE {filtered_where}
+            """,
+            filtered_params,
+        ).fetchone()
+        if row is None or int(row[0] or 0) == 0:
+            return None
+
+        rows_by_source = {
+            str(source): int(count)
+            for source, count in con.execute(
+                f"""
+                SELECT COALESCE(source, 'unknown') AS source, COUNT(*)
+                FROM observations
+                WHERE {filtered_where}
+                GROUP BY 1
+                ORDER BY 1
+                """,
+                filtered_params,
+            ).fetchall()
+        }
+        top_signal_row = con.execute(
+            f"""
+            SELECT COALESCE(record_type, code, 'unknown') AS signal, COUNT(*) AS n
+            FROM observations
+            WHERE {filtered_where}
+            GROUP BY 1
+            ORDER BY n DESC, signal ASC
+            LIMIT 1
+            """,
+            filtered_params,
+        ).fetchone()
+
+        return {
+            "canonical_person_id": canonical_person_id,
+            "window_days": window_days,
+            "total_rows": int(row[0] or 0),
+            "min_event_time": row[1].strftime("%Y-%m-%dT%H:%M:%SZ") if row[1] else None,
+            "max_event_time": row[2].strftime("%Y-%m-%dT%H:%M:%SZ") if row[2] else None,
+            "active_days": int(row[3] or 0),
+            "distinct_people": int(row[4] or 0),
+            "rows_by_source": rows_by_source,
+            "top_signal": str(top_signal_row[0]) if top_signal_row else "",
+        }
+    finally:
+        con.close()
+
+
+def _filtered_note_text(*, facts: dict[str, Any]) -> str:
+    lines = []
+    if facts.get("canonical_person_id"):
+        lines.append(f"canonical_person_id={facts['canonical_person_id']}")
+    if facts.get("window_days") is not None:
+        lines.append(f"window_days={facts['window_days']}")
+    lines.append(f"total_rows={facts['total_rows']}")
+    if facts.get("min_event_time") and facts.get("max_event_time"):
+        lines.append(f"event_time_range={facts['min_event_time']}..{facts['max_event_time']}")
+    if facts.get("top_signal"):
+        lines.append(f"signals.top_observations={facts['top_signal']}")
+    for source, count in sorted((facts.get("rows_by_source") or {}).items()):
+        lines.append(f"sources.{source}={count}")
+    return "\n".join(lines) + "\n"
+
+
+def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any]) -> list[dict[str, str]]:
+    doctor_lines = [f"ORIN analyzed {int(facts['total_rows']):,} observation rows for the selected scope."]
+    if facts.get("canonical_person_id"):
+        doctor_lines.append("Filtered to the requested patient.")
+    if facts.get("window_days") is not None:
+        doctor_lines.append(f"Evaluation window: last {int(facts['window_days'])} days relative to the latest matching observation.")
+    if facts.get("min_event_time") and facts.get("max_event_time"):
+        doctor_lines.append(f"Observed window: {facts['min_event_time']} to {facts['max_event_time']}.")
+    if facts.get("top_signal"):
+        doctor_lines.append(f"Primary observed signal in this scope: {facts['top_signal']}.")
+
+    summary_lines = [
+        f"Active days in scope: {int(facts['active_days']):,}.",
+        f"Distinct canonical people in scope: {int(facts['distinct_people']):,}.",
+    ]
+    rows_by_source = facts.get("rows_by_source") or {}
+    if rows_by_source:
+        source_parts = [f"{source}={int(rows_by_source[source]):,}" for source in sorted(rows_by_source)]
+        summary_lines.append("Rows by source: " + ", ".join(source_parts) + ".")
+    summary_lines.append("Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.")
+
+    return [
+        {
+            "id": f"{run_id}-orin-filtered-doctor-note",
+            "title": "Doctor's Note",
+            "body": _normalize_card_body("\n".join(doctor_lines), fallback="ORIN generated a scoped doctor-note summary."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/note",
+            "freshnessLabel": freshness,
+        },
+        {
+            "id": f"{run_id}-orin-filtered-summary",
+            "title": "Summary",
+            "body": _normalize_card_body("\n".join(summary_lines), fallback="ORIN generated a scoped summary report."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/reports",
+            "freshnessLabel": freshness,
+        },
+    ]
+
+
 def _decode_json_object_from_text(raw: str) -> dict[str, Any] | None:
     text = (raw or "").strip()
     if not text:
@@ -546,7 +690,12 @@ def _ollama_refined_insight_cards(
         return None
 
 
-def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
+def _read_current_dataset_insights(
+    *,
+    plane: UploadPlane,
+    canonical_person_id: str | None = None,
+    window_days: int | None = None,
+) -> dict[str, Any]:
     try:
         current = plane.get_current_dataset()
     except UploadPlaneError as exc:
@@ -573,6 +722,52 @@ def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
 
     updated_at = str(current.get("updated_at") or datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     freshness = f"Updated {updated_at}"
+    if canonical_person_id or window_days is not None:
+        facts = _filtered_observation_facts(
+            db_path=analysis["db_path"],
+            canonical_person_id=canonical_person_id,
+            window_days=window_days,
+        )
+        if facts is None:
+            detail_parts = ["The selected insights filter did not match any observation rows in the current dataset."]
+            if canonical_person_id:
+                detail_parts.append("Try a different canonical person ID or leave the field blank for all patients.")
+            if window_days is not None:
+                detail_parts.append("Try a longer evaluation window or choose All data.")
+            return {
+                "status": "no_insights_yet",
+                "detail": " ".join(detail_parts),
+                "cards": [],
+            }
+
+        filtered_summary_obj = {
+            "filter_context": {
+                "canonical_person_id": canonical_person_id,
+                "window_days": window_days,
+            },
+            "filtered_facts": facts,
+        }
+        filtered_note_text = _filtered_note_text(facts=facts)
+        fallback_cards = _filtered_insight_cards(
+            run_id=run_id,
+            freshness=freshness,
+            facts=facts,
+        )
+        cards = _ollama_refined_insight_cards(
+            run_id=run_id,
+            freshness=freshness,
+            note_text=filtered_note_text,
+            summary_obj=filtered_summary_obj,
+            fallback_cards=fallback_cards,
+        )
+        if cards is None:
+            cards = fallback_cards
+        return {
+            "status": "ok",
+            "dataset": current.get("dataset"),
+            "cards": cards,
+        }
+
     fallback_cards = _artifact_grounded_insight_cards(
         run_id=run_id,
         freshness=freshness,
@@ -675,15 +870,18 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         self._log_event("request_received")
-        if self.path == "/healthz":
+        parsed = urlparse(self.path)
+        route = parsed.path
+        query = parse_qs(parsed.query)
+        if route == "/healthz":
             self._send_json(200, healthz_payload())
             self._log_event("request_succeeded", status=200)
             return
-        if self.path == "/version":
+        if route == "/version":
             self._send_json(200, version_payload())
             self._log_event("request_succeeded", status=200)
             return
-        if self.path == "/datasets/current":
+        if route == "/datasets/current":
             if not self._authorize_upload():
                 return
             try:
@@ -694,11 +892,25 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
                 self._log_event("request_failed", status=exc.status, error=exc.code)
             return
-        if self.path == "/insights/current":
+        if route == "/insights/current":
             if not self._authorize_upload():
                 return
             try:
-                obj = _read_current_dataset_insights(plane=self._upload_plane())
+                canonical_person_id = (query.get("canonical_person_id", [""])[0] or "").strip() or None
+                window_days = None
+                window_days_raw = (query.get("window_days", [""])[0] or "").strip()
+                if window_days_raw:
+                    try:
+                        window_days = int(window_days_raw)
+                    except ValueError as exc:
+                        raise UploadPlaneError(400, "invalid_window_days", "window_days must be a positive integer") from exc
+                    if window_days <= 0:
+                        raise UploadPlaneError(400, "invalid_window_days", "window_days must be a positive integer")
+                obj = _read_current_dataset_insights(
+                    plane=self._upload_plane(),
+                    canonical_person_id=canonical_person_id,
+                    window_days=window_days,
+                )
                 self._send_json(200, obj)
                 self._log_event(
                     "request_succeeded",
@@ -725,7 +937,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
                 self._log_event("request_failed", status=exc.status, error=exc.code)
             return
-        session_match = self._session_status_re.match(self.path)
+        session_match = self._session_status_re.match(route)
         if session_match:
             if not self._authorize_upload():
                 return
