@@ -375,17 +375,13 @@ def _build_ollama_prompt(*, stats: dict[str, Any]) -> str:
     }
     return "\n".join(
         [
-            "You are generating share-safe HealthDelta dashboard insight cards for an iPhone app.",
-            "Use only the aggregate structured data below.",
-            "Do not mention names, exact identifiers, diagnoses, disease labels, or treatment instructions.",
-            "Do not claim medical certainty. If the sample is sparse, say so plainly.",
-            "Return exactly 2 cards:",
-            '1) an interpretation card explaining the strongest defensible pattern in plain language',
-            '2) a caveat-or-next-step card that explains confidence limits or the next useful operator action',
-            "Return strict JSON only with this shape:",
-            '{"cards":[{"title":"Short title","body":"One or two short sentences."}]}',
-            "Keep titles under 4 words and bodies under 2 sentences.",
-            "Structured dataset summary:",
+            "Return JSON only. No markdown. No preface. No code fences.",
+            "Use only the aggregate facts below.",
+            "Do not mention names, identifiers, diagnoses, disease labels, or treatment instructions.",
+            "If the sample is sparse, say so plainly.",
+            "Return exactly this shape with exactly 2 cards:",
+            '{"cards":[{"title":"Interpretation","body":"One or two short sentences."},{"title":"Confidence","body":"One or two short sentences."}]}',
+            "Facts:",
             json.dumps(payload, sort_keys=True),
         ]
     )
