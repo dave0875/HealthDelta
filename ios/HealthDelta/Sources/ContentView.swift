@@ -292,9 +292,17 @@ final class DashboardViewModel: ObservableObject {
     }
 
     func uploadLatestRun(baseURLString: String, bearerToken: String) async {
-        guard let snapshot = syncSnapshot else {
+        let snapshot: SyncStatusSnapshot
+        do {
+            snapshot = try syncStore.loadLatest()
+            syncSnapshot = snapshot
+        } catch SyncStatusStore.LoadError.noRunDirectory {
             print("HealthDelta upload skipped: no completed local run is available")
             errorMessage = "Unable to upload run to ORIN. No completed local run is available to upload yet."
+            return
+        } catch {
+            print("HealthDelta upload skipped: unable to reload latest run \(error.localizedDescription)")
+            errorMessage = "Unable to upload run to ORIN. \(error.localizedDescription)"
             return
         }
 

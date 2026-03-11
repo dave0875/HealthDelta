@@ -142,6 +142,50 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.uploadProgressLabel)
     }
 
+    func testUploadLatestRunReloadsSyncSnapshotBeforeUploading() async throws {
+        let staleSnapshot = SyncStatusSnapshot(
+            runID: "run_stale",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deltaStart: nil,
+            deltaEnd: nil,
+            totalRows: 1,
+            totalBytes: 32,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: ["observations": 1],
+            sourceFiles: ["ndjson/observations.ndjson"]
+        )
+        let freshSnapshot = SyncStatusSnapshot(
+            runID: "run_fresh",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            deltaStart: nil,
+            deltaEnd: nil,
+            totalRows: 5,
+            totalBytes: 128,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: ["observations": 5],
+            sourceFiles: ["ndjson/observations.ndjson"]
+        )
+        let syncStore = FakeSyncStatusStore(snapshots: [staleSnapshot, freshSnapshot])
+        let uploader = FakeRunUploader(dataset: "dataset_test")
+        let viewModel = DashboardViewModel(
+            syncStore: syncStore,
+            insightsStore: FakeInsightsStore(cards: []),
+            manualExporter: FakeManualExporter(),
+            runUploader: uploader,
+            insightsFetcher: FakeInsightsFetcher()
+        )
+
+        viewModel.refresh()
+        XCTAssertEqual(viewModel.syncSnapshot?.runID, "run_stale")
+
+        await viewModel.uploadLatestRun(baseURLString: "http://orin.local:8080", bearerToken: "token")
+
+        XCTAssertEqual(uploader.lastRunID, "run_fresh")
+        XCTAssertEqual(viewModel.syncSnapshot?.runID, "run_fresh")
+    }
+
     func testUploadLatestRunSurfacesFailure() async throws {
         let snapshot = SyncStatusSnapshot(
             runID: "run_upload",
@@ -342,13 +386,18 @@ private actor AsyncGate {
 }
 
 private final class FakeSyncStatusStore: SyncStatusLoading {
-    let snapshot: SyncStatusSnapshot?
+    private var snapshots: [SyncStatusSnapshot?]
 
     init(snapshot: SyncStatusSnapshot?) {
-        self.snapshot = snapshot
+        self.snapshots = [snapshot]
+    }
+
+    init(snapshots: [SyncStatusSnapshot?]) {
+        self.snapshots = snapshots
     }
 
     func loadLatest() throws -> SyncStatusSnapshot {
+        let snapshot = snapshots.count > 1 ? snapshots.removeFirst() : snapshots.first ?? nil
         guard let snapshot else {
             throw SyncStatusStore.LoadError.noRunDirectory
         }
