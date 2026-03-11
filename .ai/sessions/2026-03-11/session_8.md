@@ -11,3 +11,5 @@ Actions
 - Updated the iOS formatter helpers and dashboard/detail views so displayed timestamps use the device local timezone while stored manifest and NDJSON timestamps remain unchanged.
 - Validated the full iOS simulator suite on the MacBook Air with `xcodebuild test -project HealthDelta.xcodeproj -scheme HealthDelta -destination "platform=iOS Simulator,name=iPhone 17"` and observed `42` tests passed with `0` failures.
 - Attempted a physical-device rebuild/install for iPhone `00008130-000971690021401C`, but the SSH-driven device build stopped at macOS code signing with `errSecInternalComponent` because the login keychain still requires interactive access for that signing step.
+- Observed that the first GitHub CI run for commit `1ac1f2d` failed only on the commit-footer governance gate because the commit message omitted the required `Issue: #224` footer.
+- Chose a non-rewrite follow-up push to repair governance without amending published history.
