@@ -183,12 +183,34 @@ struct SyncStatusStore {
             guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
                 return false
             }
-            return fileManager.fileExists(atPath: url.appendingPathComponent("manifest.json").path)
+            return isCompleteRunDirectory(url)
         }
         return runDirs.max { lhs, rhs in
             let la = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             let ra = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             return la < ra
+        }
+    }
+
+    private func isCompleteRunDirectory(_ url: URL) -> Bool {
+        let manifestURL = url.appendingPathComponent("manifest.json", isDirectory: false)
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            return false
+        }
+        guard
+            let data = try? Data(contentsOf: manifestURL),
+            let object = try? JSONSerialization.jsonObject(with: data, options: []),
+            let manifest = object as? [String: Any],
+            let files = manifest["files"] as? [[String: Any]],
+            !files.isEmpty
+        else {
+            return false
+        }
+        return files.contains { file in
+            guard let path = file["path"] as? String, path.hasSuffix(".ndjson") else {
+                return false
+            }
+            return fileManager.fileExists(atPath: url.appendingPathComponent(path, isDirectory: false).path)
         }
     }
 

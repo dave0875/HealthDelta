@@ -174,3 +174,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,225,UNASSIGNED,20,codex,UNASSIGNED,"Rework ORIN iPhone insights to use deterministic analytics artifacts plus artifact-grounded Ollama refinement"
 2026-03-11,227,UNASSIGNED,20,codex,UNASSIGNED,"Package the backend image runtime dependencies needed by the ORIN artifact-grounded insights path"
 2026-03-11,228,UNASSIGNED,25,codex,UNASSIGNED,"Fix the iPhone upload archive builder so ORIN receives correct run-relative manifest and NDJSON paths"
+2026-03-11,228,UNASSIGNED,35,codex,UNASSIGNED,"Tighten the iPhone upload repair so the app skips manifest-only stub runs and archives the newest complete export for ORIN"

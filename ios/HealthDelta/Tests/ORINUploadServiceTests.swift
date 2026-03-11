@@ -4,21 +4,30 @@ import XCTest
 @testable import HealthDelta
 
 final class ORINUploadServiceTests: XCTestCase {
-    func testRelativeArchivePathHandlesPrivatePrefixMismatch() throws {
-        let builder = ZipRunArchiveBuilder()
+    func testBuildArchiveUsesRunRelativePaths() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let layout = IOSExportLayout(baseDirectoryURL: root)
         let runID = "run_20260311_180938"
-        let runDirectory = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)", isDirectory: true)
-        let manifestURL = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)/manifest.json")
-        let observationsURL = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/ABC/Documents/HealthDelta/\(runID)/ndjson/observations.ndjson")
+        let runDirectory = layout.runDirectory(runID: runID)
+        let ndjsonDirectory = layout.ndjsonDirectory(runID: runID)
+        try FileManager.default.createDirectory(at: ndjsonDirectory, withIntermediateDirectories: true)
+        try "{}".write(to: layout.manifestURL(runID: runID), atomically: true, encoding: .utf8)
+        try "{}\n".write(to: layout.observationsNDJSONURL(runID: runID), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: root) }
 
+        let archive = try ZipRunArchiveBuilder().buildArchive(runID: runID, layout: layout)
+        defer { try? FileManager.default.removeItem(at: archive.url) }
+
+        let names = try zipEntryNames(at: archive.url)
         XCTAssertEqual(
-            try builder.relativeArchivePath(fileURL: manifestURL, runDirectory: runDirectory, runID: runID),
-            "\(runID)/manifest.json"
+            names,
+            [
+                "\(runID)/manifest.json",
+                "\(runID)/ndjson/observations.ndjson",
+            ]
         )
-        XCTAssertEqual(
-            try builder.relativeArchivePath(fileURL: observationsURL, runDirectory: runDirectory, runID: runID),
-            "\(runID)/ndjson/observations.ndjson"
-        )
+        XCTAssertFalse(names.contains { $0.contains("private") })
     }
 
     func testUploadRunCreatesSessionUploadsChunksAndFinalizes() async throws {
@@ -73,6 +82,33 @@ final class ORINUploadServiceTests: XCTestCase {
             XCTAssertEqual(error, .missingToken)
         }
     }
+}
+
+private func zipEntryNames(at url: URL) throws -> [String] {
+    let data = try Data(contentsOf: url)
+    let signature = Data([0x50, 0x4b, 0x01, 0x02])
+    var names: [String] = []
+    var searchRange = data.startIndex..<data.endIndex
+
+    while let range = data.range(of: signature, options: [], in: searchRange) {
+        let headerStart = range.lowerBound
+        let nameLength = Int(readUInt16LE(data, at: headerStart + 28))
+        let extraLength = Int(readUInt16LE(data, at: headerStart + 30))
+        let commentLength = Int(readUInt16LE(data, at: headerStart + 32))
+        let nameStart = headerStart + 46
+        let nameEnd = nameStart + nameLength
+        let nameData = data[nameStart..<nameEnd]
+        names.append(String(decoding: nameData, as: UTF8.self))
+        searchRange = (nameEnd + extraLength + commentLength)..<data.endIndex
+    }
+
+    return names
+}
+
+private func readUInt16LE(_ data: Data, at offset: Int) -> UInt16 {
+    let lower = UInt16(data[offset])
+    let upper = UInt16(data[offset + 1]) << 8
+    return lower | upper
 }
 
 private final class FakeRunArchiveBuilder: RunArchiveBuilding {

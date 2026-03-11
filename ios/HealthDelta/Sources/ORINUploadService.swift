@@ -132,18 +132,15 @@ final class ZipRunArchiveBuilder: RunArchiveBuilding {
     }
 
     private func archiveEntries(runDirectory: URL, runID: String) throws -> [(pathData: Data, data: Data, crc32: UInt32)] {
-        guard let enumerator = fileManager.enumerator(at: runDirectory, includingPropertiesForKeys: [.isRegularFileKey]) else {
-            return []
-        }
-
         var out: [(String, Data, UInt32)] = []
-        for case let fileURL as URL in enumerator {
+        for relativePath in try fileManager.subpathsOfDirectory(atPath: runDirectory.path).sorted() {
+            let fileURL = runDirectory.appendingPathComponent(relativePath, isDirectory: false)
             let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else {
                 continue
             }
             let data = try Data(contentsOf: fileURL)
-            let zipPath = try relativeArchivePath(fileURL: fileURL, runDirectory: runDirectory, runID: runID)
+            let zipPath = "\(runID)/\(relativePath)"
             out.append((zipPath, data, Self.crc32(data)))
         }
 
@@ -155,32 +152,6 @@ final class ZipRunArchiveBuilder: RunArchiveBuilding {
                 }
                 return (pathData, data, crc32)
             }
-    }
-
-    func relativeArchivePath(fileURL: URL, runDirectory: URL, runID: String) throws -> String {
-        let fileComponents = Self.normalizedPathComponents(fileURL)
-        let runComponents = Self.normalizedPathComponents(runDirectory)
-        let relativeComponents: ArraySlice<String>
-        if fileComponents.starts(with: runComponents) {
-            relativeComponents = fileComponents.dropFirst(runComponents.count)
-        } else if let runIndex = fileComponents.lastIndex(of: runID), runIndex < fileComponents.count - 1 {
-            relativeComponents = fileComponents[(runIndex + 1)...]
-        } else {
-            throw CocoaError(.fileReadInvalidFileName)
-        }
-        let relativePath = Array(relativeComponents).joined(separator: "/")
-        guard !relativePath.isEmpty else {
-            throw CocoaError(.fileReadInvalidFileName)
-        }
-        return "\(runID)/\(relativePath)"
-    }
-
-    private static func normalizedPathComponents(_ url: URL) -> [String] {
-        let components = url.standardizedFileURL.pathComponents
-        if components.count > 1, components[0] == "/", components[1] == "private" {
-            return ["/"] + Array(components.dropFirst(2))
-        }
-        return components
     }
 
     private static func crc32(_ data: Data) -> UInt32 {

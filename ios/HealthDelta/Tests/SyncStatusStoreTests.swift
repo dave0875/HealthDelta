@@ -98,6 +98,43 @@ final class SyncStatusStoreTests: XCTestCase {
             XCTAssertEqual(error as? SyncStatusStore.LoadError, .noRunDirectory)
         }
     }
+
+    func testLoadLatestSkipsNewerManifestOnlyStubRun() throws {
+        let fixture = try FixtureDirs()
+        let root = fixture.documents.appendingPathComponent("HealthDelta", isDirectory: true)
+        let goodRun = root.appendingPathComponent("run_good", isDirectory: true)
+        let stubRun = root.appendingPathComponent("run_stub", isDirectory: true)
+        try FileManager.default.createDirectory(at: goodRun.appendingPathComponent("ndjson", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: stubRun.appendingPathComponent("ndjson", isDirectory: true), withIntermediateDirectories: true)
+
+        try """
+        {"files":[{"path":"ndjson/observations.ndjson","sha256":"x","size_bytes":12}],"row_counts":{"observations":1},"run_id":"run_good"}
+        """.write(to: goodRun.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
+        try "{\"start_time\":\"2026-02-01T00:00:00Z\",\"end_time\":\"2026-02-01T01:00:00Z\"}\n".write(
+            to: goodRun.appendingPathComponent("ndjson/observations.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try """
+        {"files":[],"row_counts":{"observations":0},"run_id":"run_stub"}
+        """.write(to: stubRun.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
+
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_800_000_000)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: goodRun.path)
+        try FileManager.default.setAttributes([.modificationDate: newDate], ofItemAtPath: stubRun.path)
+
+        let store = SyncStatusStore(
+            fileManager: .default,
+            appDocumentsURL: fixture.documents,
+            appSupportURL: fixture.appSupport
+        )
+        let snapshot = try store.loadLatest()
+
+        XCTAssertEqual(snapshot.runID, "run_good")
+        XCTAssertEqual(snapshot.totalRows, 1)
+    }
 }
 
 private func normalizeDisplay(_ value: String) -> String {
