@@ -168,3 +168,9 @@ jobs:
             raise SystemExit(f"git_sha mismatch: got={obj.get('git_sha')} expected={expected_sha}")
           print("ok")
           PY
+
+      - name: Verify image imports ORIN insights runtime modules
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ github.repository_owner }}/healthdelta-backend:${{ steps.v.outputs.tag }}"
+          docker run --rm "$image" python -c "import duckdb; import healthdelta.duckdb_tools; import healthdelta.reporting; import healthdelta.note; print('ok')"
