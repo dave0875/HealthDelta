@@ -97,7 +97,7 @@ final class DashboardViewModelTests: XCTestCase {
         let task = Task {
             await viewModel.exportNow()
         }
-        await Task.yield()
+        await gate.waitUntilBlocked()
 
         XCTAssertTrue(viewModel.isExporting)
         XCTAssertEqual(viewModel.exportProgressLabel, "Exporting HealthKit data...")
@@ -202,7 +202,7 @@ final class DashboardViewModelTests: XCTestCase {
         let task = Task {
             await viewModel.uploadLatestRun(baseURLString: "http://orin.local:8080", bearerToken: "token")
         }
-        await Task.yield()
+        await gate.waitUntilBlocked()
 
         XCTAssertTrue(viewModel.isUploading)
         XCTAssertEqual(viewModel.uploadProgressLabel, "Uploading latest run to ORIN...")
@@ -312,10 +312,26 @@ final class DashboardViewModelTests: XCTestCase {
 
 private actor AsyncGate {
     private var continuation: CheckedContinuation<Void, Never>?
+    private var started = false
+    private var startContinuations: [CheckedContinuation<Void, Never>] = []
 
     func wait() async {
+        started = true
+        for continuation in startContinuations {
+            continuation.resume()
+        }
+        startContinuations.removeAll()
         await withCheckedContinuation { continuation in
             self.continuation = continuation
+        }
+    }
+
+    func waitUntilBlocked() async {
+        if started {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startContinuations.append(continuation)
         }
     }
 
