@@ -64,7 +64,7 @@ This runbook covers the ORIN-side prerequisites and operational commands for bac
      - then set `HEALTHDELTA_OLLAMA_BASE_URL=http://host.docker.internal:11435`
    - Set `HEALTHDELTA_OLLAMA_MODEL` to the installed model name, for example `llama3.2:latest`.
    - Set `HEALTHDELTA_OLLAMA_NUM_GPU=0` on memory-constrained ORIN hosts to force CPU inference when GPU model loading fails.
-   - If Ollama is unavailable or returns invalid output, the backend falls back to deterministic heuristic cards.
+   - If Ollama is unavailable or returns invalid output, the backend falls back to deterministic artifact-grounded cards.
 7) Deploy directory permissions
    - Required one-time bootstrap (no sudo during workflow execution):
      - `sudo mkdir -p /opt/healthdelta`
@@ -110,8 +110,14 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
 - `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
-  - when Ollama is configured and reachable, this returns refined share-safe cards from a local LLM analysis of aggregate upload stats
-  - otherwise it falls back to deterministic heuristic cards
+  - on first request for a dataset, the backend materializes analysis artifacts under `analysis/` by extracting `export.zip` and running:
+    - `analysis/duckdb/run.duckdb`
+    - `analysis/reports/summary.json`
+    - `analysis/reports/summary.md`
+    - `analysis/note/doctor_note.md`
+  - the endpoint's fallback cards are derived from those deterministic ORIN-side artifacts, not from raw upload aggregates
+  - when Ollama is configured and reachable, it receives only artifact-grounded inputs (`doctor_note`, `summary_json`, fallback cards) and returns refined share-safe cards
+  - otherwise it falls back to deterministic artifact-grounded cards
 - `POST /datasets/archive` archive active dataset
 - `GET /datasets/archives` list archived datasets
 

@@ -124,10 +124,13 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["dataset"], "dataset_test")
         self.assertEqual(len(payload["cards"]), 2)
-        self.assertEqual(payload["cards"][0]["title"], "ORIN Overview")
-        self.assertIn("Observation rows: 2.", payload["cards"][0]["body"])
-        self.assertEqual(payload["cards"][1]["title"], "Activity Snapshot")
-        self.assertIn("2,000", payload["cards"][1]["body"])
+        self.assertEqual(payload["cards"][0]["title"], "Doctor's Note")
+        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/analysis/note")
+        self.assertEqual(payload["cards"][1]["title"], "Summary")
+        self.assertEqual(payload["cards"][1]["sourceLabel"], "orin/analysis/reports")
+        self.assertTrue((dataset_dir / "analysis" / "duckdb" / "run.duckdb").exists())
+        self.assertTrue((dataset_dir / "analysis" / "reports" / "summary.md").exists())
+        self.assertTrue((dataset_dir / "analysis" / "note" / "doctor_note.md").exists())
 
     def test_insights_current_prefers_ollama_refined_cards_when_available(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
@@ -169,6 +172,9 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/ollama")
         self.assertIn("stable cadence", payload["cards"][0]["body"])
         self.assertEqual(ollama.request_count, 1)
+        self.assertIsNotNone(ollama.last_request_json)
+        self.assertIn("doctor_note", ollama.last_request_json["prompt"])
+        self.assertIn("summary_json", ollama.last_request_json["prompt"])
 
     def test_insights_current_falls_back_when_ollama_output_is_invalid(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
@@ -186,8 +192,8 @@ class TestBackendInsightsAPI(unittest.TestCase):
         status, payload = self._request("GET", "/insights/current")
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["cards"][0]["title"], "ORIN Overview")
-        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/datasets/current")
+        self.assertEqual(payload["cards"][0]["title"], "Doctor's Note")
+        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/analysis/note")
         self.assertEqual(ollama.request_count, 1)
 
     def test_insights_current_rejects_invalid_bearer(self) -> None:
@@ -200,6 +206,7 @@ class _FakeOllamaHandler(BaseHTTPRequestHandler):
     status_code = 200
     body: dict[str, object] = {"response": "{}"}
     request_count = 0
+    last_request_json: dict[str, object] | None = None
 
     def do_POST(self) -> None:  # noqa: N802
         type(self).request_count += 1
@@ -207,7 +214,11 @@ class _FakeOllamaHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        _ = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        try:
+            type(self).last_request_json = json.loads(raw.decode("utf-8"))
+        except Exception:
+            type(self).last_request_json = None
         payload = json.dumps(type(self).body).encode("utf-8")
         self.send_response(type(self).status_code)
         self.send_header("Content-Type", "application/json")
@@ -224,7 +235,7 @@ class _FakeOllamaServer:
         self._handler = type(
             "_CaseSpecificOllamaHandler",
             (_FakeOllamaHandler,),
-            {"status_code": status_code, "body": body, "request_count": 0},
+            {"status_code": status_code, "body": body, "request_count": 0, "last_request_json": None},
         )
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -237,6 +248,11 @@ class _FakeOllamaServer:
     @property
     def request_count(self) -> int:
         return int(self._handler.request_count)
+
+    @property
+    def last_request_json(self) -> dict[str, object] | None:
+        value = self._handler.last_request_json
+        return value if isinstance(value, dict) else None
 
     def start(self) -> None:
         self._thread.start()

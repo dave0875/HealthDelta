@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import time
 import zipfile
 from datetime import datetime
@@ -14,10 +15,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from healthdelta.deid import deidentify_run
+from healthdelta.duckdb_tools import build_duckdb
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
+from healthdelta.note import build_doctor_note
 from healthdelta.ndjson_export import export_ndjson
 from healthdelta.qa import answer_question
+from healthdelta.reporting import build_report
 from healthdelta.risk_flags import build_risk_flags
 from healthdelta.time_utils import UTC
 from healthdelta.trends import build_trend_analysis
@@ -259,6 +263,169 @@ def _slug_card_token(value: str) -> str:
     return token or "card"
 
 
+def _analysis_paths(dataset_dir: Path) -> dict[str, Path]:
+    analysis_root = dataset_dir / "analysis"
+    return {
+        "analysis_root": analysis_root,
+        "extract_root": analysis_root / "input",
+        "db_path": analysis_root / "duckdb" / "run.duckdb",
+        "reports_dir": analysis_root / "reports",
+        "note_dir": analysis_root / "note",
+        "summary_json": analysis_root / "reports" / "summary.json",
+        "summary_md": analysis_root / "reports" / "summary.md",
+        "doctor_note_md": analysis_root / "note" / "doctor_note.md",
+    }
+
+
+def _safe_extract_zip(*, export_zip: Path, extract_root: Path) -> None:
+    extract_root.mkdir(parents=True, exist_ok=True)
+    resolved_root = extract_root.resolve()
+    with zipfile.ZipFile(export_zip, "r") as archive:
+        for member in archive.infolist():
+            rel = Path(member.filename)
+            target = (extract_root / rel).resolve()
+            if target != resolved_root and resolved_root not in target.parents:
+                raise ValueError(f"unsafe zip member path: {member.filename}")
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member, "r") as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+def _find_extracted_run_dir(extract_root: Path) -> Path:
+    candidates = sorted(
+        {
+            manifest.parent
+            for manifest in extract_root.rglob("manifest.json")
+            if manifest.is_file() and (manifest.parent / "ndjson" / "observations.ndjson").exists()
+        },
+        key=lambda p: p.as_posix(),
+    )
+    if not candidates:
+        raise FileNotFoundError(f"no extracted iOS run directory found under {extract_root}")
+    return candidates[0]
+
+
+def _ensure_dataset_analysis(*, dataset_dir: Path, export_zip: Path) -> dict[str, Path]:
+    paths = _analysis_paths(dataset_dir)
+    if paths["summary_json"].exists() and paths["summary_md"].exists() and paths["doctor_note_md"].exists():
+        return paths
+
+    paths["analysis_root"].mkdir(parents=True, exist_ok=True)
+    if not paths["extract_root"].exists():
+        _safe_extract_zip(export_zip=export_zip, extract_root=paths["extract_root"])
+    run_dir = _find_extracted_run_dir(paths["extract_root"])
+    paths["db_path"].parent.mkdir(parents=True, exist_ok=True)
+    paths["reports_dir"].mkdir(parents=True, exist_ok=True)
+    paths["note_dir"].mkdir(parents=True, exist_ok=True)
+    build_duckdb(input_dir=str(run_dir), db_path=str(paths["db_path"]), replace=True)
+    build_report(db_path=str(paths["db_path"]), out_dir=str(paths["reports_dir"]), mode="share")
+    build_doctor_note(db_path=str(paths["db_path"]), out_dir=str(paths["note_dir"]), mode="share")
+    return paths
+
+
+def _read_json_or_empty(path: Path) -> dict[str, Any]:
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _read_text_or_empty(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _parse_key_value_lines(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or "=" not in line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        out[key.strip()] = value.strip()
+    return out
+
+
+def _summary_table_info(summary_obj: dict[str, Any], table_name: str) -> dict[str, Any]:
+    tables = summary_obj.get("tables")
+    if not isinstance(tables, dict):
+        return {}
+    table = tables.get(table_name)
+    return table if isinstance(table, dict) else {}
+
+
+def _artifact_grounded_insight_cards(
+    *,
+    run_id: str,
+    freshness: str,
+    note_text: str,
+    summary_obj: dict[str, Any],
+) -> list[dict[str, str]]:
+    note_fields = _parse_key_value_lines(note_text)
+    observations = _summary_table_info(summary_obj, "observations")
+    total_rows = int(observations.get("total_rows") or 0)
+    min_event_time = str(observations.get("min_event_time") or note_fields.get("event_time_range", "").split("..")[0] or "").strip()
+    max_event_time = str(observations.get("max_event_time") or (note_fields.get("event_time_range", "").split("..")[-1] if ".." in note_fields.get("event_time_range", "") else "") or "").strip()
+    rows_by_source = observations.get("rows_by_source") if isinstance(observations.get("rows_by_source"), dict) else {}
+    healthkit_rows = int(rows_by_source.get("healthkit") or note_fields.get("sources.healthkit") or 0)
+    unresolved_total = 0
+    reference_integrity = summary_obj.get("reference_integrity")
+    if isinstance(reference_integrity, dict):
+        unresolved_total = int(reference_integrity.get("unresolved_reference_rows_total") or 0)
+
+    top_signal = note_fields.get("signals.top_observations", "")
+    primary_signal = top_signal.split(";", 1)[0].split(":", 1)[0].replace("HKQuantityTypeIdentifier", "").strip() if top_signal else ""
+
+    doctor_lines = []
+    if total_rows:
+        doctor_lines.append(f"ORIN analyzed {total_rows:,} observation rows from the latest uploaded run.")
+    if min_event_time and max_event_time:
+        doctor_lines.append(f"Observed window: {min_event_time} to {max_event_time}.")
+    if primary_signal:
+        doctor_lines.append(f"Primary observed signal in this upload: {primary_signal}.")
+    if healthkit_rows:
+        doctor_lines.append(f"HealthKit contributed {healthkit_rows:,} rows to the current analysis.")
+    if not doctor_lines:
+        doctor_lines.append("ORIN generated a deterministic doctor-note analysis for the latest uploaded run.")
+
+    summary_lines = []
+    if isinstance(reference_integrity, dict):
+        summary_lines.append(f"Share-safe report unresolved clinical reference rows: {unresolved_total:,}.")
+    if isinstance(rows_by_source, dict) and rows_by_source:
+        source_parts = [f"{source}={int(rows_by_source[source]):,}" for source in sorted(rows_by_source)]
+        summary_lines.append("Rows by source: " + ", ".join(source_parts) + ".")
+    notes = summary_obj.get("notes")
+    if isinstance(notes, dict) and isinstance(notes.get("privacy"), str):
+        summary_lines.append(notes["privacy"])
+    if not summary_lines:
+        summary_lines.append("ORIN generated a share-safe summary report for the latest uploaded run.")
+
+    return [
+        {
+            "id": f"{run_id}-orin-doctor-note",
+            "title": "Doctor's Note",
+            "body": _normalize_card_body("\n".join(doctor_lines), fallback="ORIN generated a doctor-note summary."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/note",
+            "freshnessLabel": freshness,
+        },
+        {
+            "id": f"{run_id}-orin-summary",
+            "title": "Summary",
+            "body": _normalize_card_body("\n".join(summary_lines), fallback="ORIN generated a summary report."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/reports",
+            "freshnessLabel": freshness,
+        },
+    ]
+
+
 def _decode_json_object_from_text(raw: str) -> dict[str, Any] | None:
     text = (raw or "").strip()
     if not text:
@@ -279,115 +446,41 @@ def _decode_json_object_from_text(raw: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _heuristic_insight_cards(*, run_id: str, freshness: str, stats: dict[str, Any]) -> list[dict[str, str]]:
-    time_window = "Time window unavailable."
-    first_time = stats.get("first_time")
-    last_time = stats.get("last_time")
-    if isinstance(first_time, datetime) and isinstance(last_time, datetime):
-        time_window = (
-            f"Time window: {first_time.strftime('%Y-%m-%d %H:%M')} UTC to "
-            f"{last_time.strftime('%Y-%m-%d %H:%M')} UTC."
-        )
-
-    overview_body = _normalize_card_body(
-        "\n".join(
-            [
-                f"Run {run_id} is active on ORIN.",
-                f"Dataset size: {_bytes_label(int(stats.get('size_bytes') or 0))}.",
-                f"Observation rows: {int(stats.get('observations_count') or 0):,}.",
-                time_window,
-            ]
-        ),
-        fallback="ORIN has the latest uploaded dataset ready.",
-    )
-    activity_body = _normalize_card_body(
-        "\n".join(
-            [
-                f"Rows in latest upload: {int(stats.get('observations_count') or 0):,}.",
-                f"Total recorded value_num across uploaded observations: {float(stats.get('total_value_num') or 0.0):,.0f}.",
-                f"Distinct calendar days covered: {int(stats.get('active_days') or 0):,}.",
-            ]
-        ),
-        fallback="ORIN has not generated an activity summary yet.",
-    )
-    return [
-        {
-            "id": f"{run_id}-orin-overview",
-            "title": "ORIN Overview",
-            "body": overview_body,
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/datasets/current",
-            "freshnessLabel": freshness,
-        },
-        {
-            "id": f"{run_id}-orin-activity",
-            "title": "Activity Snapshot",
-            "body": activity_body,
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/datasets/current",
-            "freshnessLabel": freshness,
-        },
-    ]
-
-
-def _coverage_caveat_card(*, run_id: str, freshness: str, stats: dict[str, Any]) -> dict[str, str]:
-    observations_count = int(stats.get("observations_count") or 0)
-    active_days = int(stats.get("active_days") or 0)
-    body = _normalize_card_body(
-        "\n".join(
-            [
-                f"This upload covers {observations_count:,} observations across {active_days:,} day(s).",
-                "Trend confidence is limited when the active window is this small.",
-                "If you expected a fuller picture, compare against an earlier baseline upload instead of treating this delta alone as the whole story.",
-            ]
-        ),
-        fallback="This upload window is too small for strong trend conclusions.",
-    )
-    return {
-        "id": f"{run_id}-orin-coverage-caveat",
-        "title": "Coverage Caveat",
-        "body": body,
-        "disclaimer": "For education only. This is not medical advice.",
-        "sourceLabel": "orin/datasets/current",
-        "freshnessLabel": freshness,
-    }
-
-
-def _build_ollama_prompt(*, stats: dict[str, Any]) -> str:
+def _build_ollama_prompt(
+    *,
+    run_id: str,
+    note_text: str,
+    summary_obj: dict[str, Any],
+    fallback_cards: list[dict[str, str]],
+) -> str:
     payload = {
-        "run_id": stats.get("run_id"),
-        "dataset": stats.get("dataset"),
-        "observations_count": int(stats.get("observations_count") or 0),
-        "size_bytes": int(stats.get("size_bytes") or 0),
-        "size_label": _bytes_label(int(stats.get("size_bytes") or 0)),
-        "active_days": int(stats.get("active_days") or 0),
-        "total_value_num": round(float(stats.get("total_value_num") or 0.0), 2),
-        "average_value_num_per_day": round(float(stats.get("average_value_num_per_day") or 0.0), 2),
-        "best_day": stats.get("best_day"),
-        "latest_day": stats.get("latest_day"),
-        "first_time": stats.get("first_time").strftime("%Y-%m-%dT%H:%M:%SZ")
-        if isinstance(stats.get("first_time"), datetime)
-        else None,
-        "last_time": stats.get("last_time").strftime("%Y-%m-%dT%H:%M:%SZ")
-        if isinstance(stats.get("last_time"), datetime)
-        else None,
-        "daily_totals": _daily_totals_rows(stats.get("daily_totals") or {}),
+        "run_id": run_id,
+        "doctor_note": note_text,
+        "summary_json": summary_obj,
+        "fallback_cards": [{"title": card["title"], "body": card["body"]} for card in fallback_cards],
     }
     return "\n".join(
         [
             "Return JSON only. No markdown. No preface. No code fences.",
-            "Use only the aggregate facts below.",
+            "Use only the artifact-grounded facts below.",
             "Do not mention names, identifiers, diagnoses, disease labels, or treatment instructions.",
-            "If the sample is sparse, say so plainly.",
+            "Do not invent tables, signals, or trends that are not present.",
             "Return exactly this shape with exactly 2 cards:",
-            '{"cards":[{"title":"Interpretation","body":"One or two short sentences."},{"title":"Confidence","body":"One or two short sentences."}]}',
+            '{"cards":[{"title":"Card title","body":"One or two short sentences."},{"title":"Card title","body":"One or two short sentences."}]}',
             "Facts:",
             json.dumps(payload, sort_keys=True),
         ]
     )
 
 
-def _ollama_refined_insight_cards(*, run_id: str, freshness: str, stats: dict[str, Any]) -> list[dict[str, str]] | None:
+def _ollama_refined_insight_cards(
+    *,
+    run_id: str,
+    freshness: str,
+    note_text: str,
+    summary_obj: dict[str, Any],
+    fallback_cards: list[dict[str, str]],
+) -> list[dict[str, str]] | None:
     base_url = os.getenv("HEALTHDELTA_OLLAMA_BASE_URL", "").strip()
     if not base_url:
         return None
@@ -402,7 +495,12 @@ def _ollama_refined_insight_cards(*, run_id: str, freshness: str, stats: dict[st
                 "stream": False,
                 "format": "json",
                 "options": {"temperature": 0.2, "num_gpu": ollama_num_gpu},
-                "prompt": _build_ollama_prompt(stats=stats),
+                "prompt": _build_ollama_prompt(
+                    run_id=run_id,
+                    note_text=note_text,
+                    summary_obj=summary_obj,
+                    fallback_cards=fallback_cards,
+                ),
             }
         ).encode("utf-8")
         req = Request(endpoint, data=body, headers={"Content-Type": "application/json"}, method="POST")
@@ -442,7 +540,7 @@ def _ollama_refined_insight_cards(*, run_id: str, freshness: str, stats: dict[st
         if not out:
             return None
         if len(out) == 1:
-            out.append(_coverage_caveat_card(run_id=run_id, freshness=freshness, stats=stats))
+            out.append(fallback_cards[-1])
         return out
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
         return None
@@ -463,77 +561,33 @@ def _read_current_dataset_insights(*, plane: UploadPlane) -> dict[str, Any]:
     export_zip = Path(str(current["export_zip"]))
     if not export_zip.exists():
         raise FileNotFoundError(f"dataset export zip missing: {export_zip}")
-
-    observations_count = 0
-    total_value_num = 0.0
-    unique_days: set[str] = set()
-    first_time: datetime | None = None
-    last_time: datetime | None = None
-    daily_totals: dict[str, float] = {}
+    dataset_dir = Path(str(current["path"]))
+    analysis = _ensure_dataset_analysis(dataset_dir=dataset_dir, export_zip=export_zip)
+    summary_obj = _read_json_or_empty(analysis["summary_json"])
+    note_text = _read_text_or_empty(analysis["doctor_note_md"])
     run_id = str(current.get("dataset") or "current")
+    if note_text:
+        note_fields = _parse_key_value_lines(note_text)
+        if note_fields.get("run_id"):
+            run_id = note_fields["run_id"]
 
-    with zipfile.ZipFile(export_zip, "r") as archive:
-        manifest_name = next((name for name in archive.namelist() if name.endswith("manifest.json")), None)
-        observations_name = next(
-            (name for name in archive.namelist() if name.endswith("observations.ndjson")),
-            None,
-        )
-        if manifest_name is None or observations_name is None:
-            raise ValueError("uploaded dataset is missing manifest.json or ndjson/observations.ndjson")
-
-        manifest_obj = json.loads(archive.read(manifest_name).decode("utf-8"))
-        if isinstance(manifest_obj, dict) and isinstance(manifest_obj.get("run_id"), str) and manifest_obj.get("run_id"):
-            run_id = manifest_obj["run_id"]
-
-        with archive.open(observations_name, "r") as handle:
-            for raw_line in handle:
-                line = raw_line.decode("utf-8").strip()
-                if not line:
-                    continue
-                row = json.loads(line)
-                if not isinstance(row, dict):
-                    continue
-                observations_count += 1
-                when = _parse_iso_utc(row.get("start_time")) or _parse_iso_utc(row.get("event_time")) or _parse_iso_utc(row.get("end_time"))
-                if when is not None:
-                    day_key = when.strftime("%Y-%m-%d")
-                    unique_days.add(day_key)
-                    first_time = when if first_time is None or when < first_time else first_time
-                    last_time = when if last_time is None or when > last_time else last_time
-                value_num = row.get("value_num")
-                if isinstance(value_num, (int, float)):
-                    total_value_num += float(value_num)
-                    if when is not None:
-                        daily_totals[day_key] = daily_totals.get(day_key, 0.0) + float(value_num)
-
-    size_bytes = int(current.get("size_bytes") or 0)
     updated_at = str(current.get("updated_at") or datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     freshness = f"Updated {updated_at}"
-    best_day = None
-    if daily_totals:
-        best_day_key, best_day_total = max(daily_totals.items(), key=lambda kv: (kv[1], kv[0]))
-        best_day = {"day": best_day_key, "total_value_num": round(float(best_day_total), 2)}
-    latest_day = None
-    if daily_totals:
-        latest_day_key = sorted(daily_totals.keys())[-1]
-        latest_day = {"day": latest_day_key, "total_value_num": round(float(daily_totals[latest_day_key]), 2)}
-    stats = {
-        "run_id": run_id,
-        "dataset": current.get("dataset"),
-        "size_bytes": size_bytes,
-        "observations_count": observations_count,
-        "total_value_num": total_value_num,
-        "active_days": len(unique_days),
-        "average_value_num_per_day": (total_value_num / len(unique_days)) if unique_days else 0.0,
-        "first_time": first_time,
-        "last_time": last_time,
-        "daily_totals": daily_totals,
-        "best_day": best_day,
-        "latest_day": latest_day,
-    }
-    cards = _ollama_refined_insight_cards(run_id=run_id, freshness=freshness, stats=stats)
+    fallback_cards = _artifact_grounded_insight_cards(
+        run_id=run_id,
+        freshness=freshness,
+        note_text=note_text,
+        summary_obj=summary_obj,
+    )
+    cards = _ollama_refined_insight_cards(
+        run_id=run_id,
+        freshness=freshness,
+        note_text=note_text,
+        summary_obj=summary_obj,
+        fallback_cards=fallback_cards,
+    )
     if cards is None:
-        cards = _heuristic_insight_cards(run_id=run_id, freshness=freshness, stats=stats)
+        cards = fallback_cards
 
     return {
         "status": "ok",

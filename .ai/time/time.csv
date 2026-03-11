@@ -171,3 +171,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,224,UNASSIGNED,15,codex,UNASSIGNED,"Update iPhone dashboard and insight timestamps to render in the device local timezone instead of UTC"
 2026-03-11,224,UNASSIGNED,25,codex,UNASSIGNED,"Validate local-time iOS formatting on the Mac simulator suite and attempt a physical-device rebuild/install for the connected iPhone"
 2026-03-11,224,UNASSIGNED,10,codex,UNASSIGNED,"Repair the missing Issue footer governance failure with a non-rewrite follow-up push under the same issue"
+2026-03-11,225,UNASSIGNED,20,codex,UNASSIGNED,"Rework ORIN iPhone insights to use deterministic analytics artifacts plus artifact-grounded Ollama refinement"
