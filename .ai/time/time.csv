@@ -176,3 +176,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,228,UNASSIGNED,25,codex,UNASSIGNED,"Fix the iPhone upload archive builder so ORIN receives correct run-relative manifest and NDJSON paths"
 2026-03-11,228,UNASSIGNED,35,codex,UNASSIGNED,"Tighten the iPhone upload repair so the app skips manifest-only stub runs and archives the newest complete export for ORIN"
 2026-03-11,228,UNASSIGNED,25,codex,UNASSIGNED,"Harden Upload Latest Run so it re-resolves the newest complete local export instead of trusting a stale on-screen snapshot"
+2026-03-11,226,UNASSIGNED,30,codex,UNASSIGNED,"Roll the live ORIN backend forward and validate end-to-end iPhone upload plus insights generation on the current deployment"
