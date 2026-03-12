@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -791,6 +792,76 @@ def _read_current_dataset_insights(
     }
 
 
+def _read_current_dataset_patients(*, plane: UploadPlane) -> dict[str, Any]:
+    current = plane.get_current_dataset()
+    export_zip = Path(str(current["export_zip"]))
+    if not export_zip.exists():
+        raise FileNotFoundError(f"dataset export zip missing: {export_zip}")
+    dataset_dir = Path(str(current["path"]))
+    analysis = _ensure_dataset_analysis(dataset_dir=dataset_dir, export_zip=export_zip)
+    coverage_by_person = analysis["reports_dir"] / "coverage_by_person.csv"
+    if not coverage_by_person.exists():
+        return {"dataset": current.get("dataset"), "patients": []}
+
+    patients: list[dict[str, Any]] = []
+    with coverage_by_person.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        ranked_rows: list[dict[str, Any]] = []
+        for row in reader:
+            canonical_person_id = (row.get("canonical_person_id") or "").strip()
+            if not canonical_person_id:
+                continue
+            row_count = 0
+            for key, raw_value in row.items():
+                if not key.endswith("_rows"):
+                    continue
+                try:
+                    row_count += int((raw_value or "0").strip() or "0")
+                except Exception:
+                    continue
+            if row_count <= 0:
+                continue
+            ranked_rows.append(
+                {
+                    "canonical_person_id": canonical_person_id,
+                    "row_count": row_count,
+                    "min_event_time": (row.get("min_event_time") or "").strip() or None,
+                    "max_event_time": (row.get("max_event_time") or "").strip() or None,
+                }
+            )
+
+    ranked_rows.sort(
+        key=lambda row: (
+            1 if row["canonical_person_id"] == "unresolved" else 0,
+            -int(row["row_count"]),
+            str(row["canonical_person_id"]),
+        )
+    )
+
+    resolved_index = 0
+    for row in ranked_rows:
+        canonical_person_id = str(row["canonical_person_id"])
+        if canonical_person_id == "unresolved":
+            display_label = "Unresolved records"
+        else:
+            resolved_index += 1
+            display_label = f"Patient {resolved_index}"
+        patients.append(
+            {
+                "canonical_person_id": canonical_person_id,
+                "display_label": display_label,
+                "row_count": int(row["row_count"]),
+                "min_event_time": row["min_event_time"],
+                "max_event_time": row["max_event_time"],
+            }
+        )
+
+    return {
+        "dataset": current.get("dataset"),
+        "patients": patients,
+    }
+
+
 class _Handler(BaseHTTPRequestHandler):
     _session_status_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)$")
     _chunk_put_re = re.compile(r"^/upload-sessions/([A-Za-z0-9]+)/chunks/(\d+)$")
@@ -925,6 +996,25 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json(500, {"error": "insights_failed", "detail": str(exc)})
                 self._log_event("request_failed", status=500, error="insights_failed")
+            return
+        if route == "/patients/current":
+            if not self._authorize_upload():
+                return
+            try:
+                obj = _read_current_dataset_patients(plane=self._upload_plane())
+                self._send_json(200, obj)
+                self._log_event(
+                    "request_succeeded",
+                    status=200,
+                    dataset=obj.get("dataset"),
+                    patient_count=len(obj.get("patients", [])) if isinstance(obj.get("patients"), list) else 0,
+                )
+            except UploadPlaneError as exc:
+                self._send_json(exc.status, {"error": exc.code, "detail": exc.detail})
+                self._log_event("request_failed", status=exc.status, error=exc.code)
+            except Exception as exc:
+                self._send_json(500, {"error": "patient_scope_failed", "detail": str(exc)})
+                self._log_event("request_failed", status=500, error="patient_scope_failed")
             return
         if self.path == "/datasets/archives":
             if not self._authorize_upload():

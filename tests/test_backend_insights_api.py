@@ -216,6 +216,36 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"], "unauthorized")
 
+    def test_patients_current_returns_share_safe_scope_options_for_current_dataset(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        status, payload = self._request("GET", "/patients/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["dataset"], "dataset_test")
+        self.assertEqual(
+            payload["patients"],
+            [
+                {
+                    "canonical_person_id": "person-a",
+                    "display_label": "Patient 1",
+                    "row_count": 2,
+                    "min_event_time": "2026-03-01T00:00:00Z",
+                    "max_event_time": "2026-03-11T00:00:00Z",
+                },
+                {
+                    "canonical_person_id": "person-b",
+                    "display_label": "Patient 2",
+                    "row_count": 1,
+                    "min_event_time": "2026-03-11T12:00:00Z",
+                    "max_event_time": "2026-03-11T12:00:00Z",
+                },
+            ],
+        )
+
     def test_insights_current_filters_by_window_days(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
         dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"

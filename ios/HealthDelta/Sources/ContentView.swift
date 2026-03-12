@@ -296,6 +296,10 @@ struct ContentView: View {
                     ProgressView(activeStatusLine)
                         .font(.footnote)
                         .tint(ClinicalCompassPalette.accent)
+                } else if let completedStatusLine = viewModel.completedStatusLine {
+                    Text(completedStatusLine)
+                        .font(.footnote)
+                        .foregroundStyle(ClinicalCompassPalette.muted)
                 }
 
                 HStack(spacing: 12) {
@@ -496,7 +500,8 @@ struct ContentView: View {
         buildPatientScopeOptions(
             localCanonicalPersonID: localCanonicalPersonID,
             manualCanonicalPersonID: normalizedCanonicalPersonID,
-            patientAliases: patientAliases
+            patientAliases: patientAliases,
+            remotePatientScopes: viewModel.remotePatientScopes
         )
     }
 
@@ -522,6 +527,9 @@ struct ContentView: View {
             }
             if normalizedCanonicalPersonID == localCanonicalPersonID {
                 return "This iPhone's record"
+            }
+            if let remotePatientScope = viewModel.remotePatientScopes.first(where: { $0.canonicalPersonID == normalizedCanonicalPersonID }) {
+                return remotePatientScope.displayLabel
             }
             return "Manual patient"
         }
@@ -588,7 +596,8 @@ struct PatientScopeOption: Identifiable, Equatable {
 func buildPatientScopeOptions(
     localCanonicalPersonID: String?,
     manualCanonicalPersonID: String?,
-    patientAliases: [String: String]
+    patientAliases: [String: String],
+    remotePatientScopes: [ORINPatientScope]
 ) -> [PatientScopeOption] {
     var options: [PatientScopeOption] = [
         PatientScopeOption(
@@ -598,6 +607,7 @@ func buildPatientScopeOptions(
             value: nil
         )
     ]
+    var seenCanonicalPersonIDs = Set<String>()
 
     if let localCanonicalPersonID, !localCanonicalPersonID.isEmpty {
         let localAlias = patientAliases[localCanonicalPersonID]
@@ -609,9 +619,23 @@ func buildPatientScopeOptions(
                 value: localCanonicalPersonID
             )
         )
+        seenCanonicalPersonIDs.insert(localCanonicalPersonID)
     }
 
-    if let manualCanonicalPersonID, !manualCanonicalPersonID.isEmpty, manualCanonicalPersonID != localCanonicalPersonID {
+    for remotePatientScope in remotePatientScopes where !seenCanonicalPersonIDs.contains(remotePatientScope.canonicalPersonID) {
+        let alias = patientAliases[remotePatientScope.canonicalPersonID]
+        options.append(
+            PatientScopeOption(
+                id: "remote-\(remotePatientScope.canonicalPersonID)",
+                title: alias?.isEmpty == false ? alias! : remotePatientScope.displayLabel,
+                subtitle: alias?.isEmpty == false ? "Local-only label for the selected ORIN patient." : "\(remotePatientScope.rowCount) rows in the current ORIN dataset.",
+                value: remotePatientScope.canonicalPersonID
+            )
+        )
+        seenCanonicalPersonIDs.insert(remotePatientScope.canonicalPersonID)
+    }
+
+    if let manualCanonicalPersonID, !manualCanonicalPersonID.isEmpty, !seenCanonicalPersonIDs.contains(manualCanonicalPersonID) {
         let manualAlias = patientAliases[manualCanonicalPersonID]
         options.append(
             PatientScopeOption(
@@ -981,12 +1005,17 @@ private struct SyncDetailsView: View {
 final class DashboardViewModel: ObservableObject {
     @Published var syncSnapshot: SyncStatusSnapshot?
     @Published var insightCards: [InsightCard] = []
+    @Published var remotePatientScopes: [ORINPatientScope] = []
     @Published var errorMessage: String?
     @Published var isExporting = false
     @Published var isUploading = false
     @Published var isFetchingInsights = false
     @Published var uploadStatusMessage: String?
     @Published var insightsStatusMessage: String?
+
+    var isShowingActiveProgress: Bool {
+        isExporting || isUploading || isFetchingInsights
+    }
 
     var exportProgressLabel: String? {
         isExporting ? "Exporting HealthKit data..." : nil
@@ -1001,7 +1030,17 @@ final class DashboardViewModel: ObservableObject {
     }
 
     var activeStatusLine: String? {
-        exportProgressLabel ?? uploadProgressLabel ?? insightsProgressLabel ?? uploadStatusMessage
+        guard isShowingActiveProgress else {
+            return nil
+        }
+        return exportProgressLabel ?? uploadProgressLabel ?? insightsProgressLabel
+    }
+
+    var completedStatusLine: String? {
+        guard !isShowingActiveProgress else {
+            return nil
+        }
+        return uploadStatusMessage
     }
 
     var clinicalOverviewTitle: String {
@@ -1130,19 +1169,22 @@ final class DashboardViewModel: ObservableObject {
     private let manualExporter: ManualHealthExporting
     private let runUploader: RunUploading
     private let insightsFetcher: ORINInsightsFetching
+    private let patientScopeFetcher: ORINPatientScopeFetching
 
     init(
         syncStore: SyncStatusLoading = SyncStatusStore(),
         insightsStore: InsightsLoading = InsightsStore(),
         manualExporter: ManualHealthExporting = ManualHealthExportService.live(),
         runUploader: RunUploading = ORINUploadService.live(),
-        insightsFetcher: ORINInsightsFetching = ORINInsightsService.live()
+        insightsFetcher: ORINInsightsFetching = ORINInsightsService.live(),
+        patientScopeFetcher: ORINPatientScopeFetching = ORINPatientScopeService.live()
     ) {
         self.syncStore = syncStore
         self.insightsStore = insightsStore
         self.manualExporter = manualExporter
         self.runUploader = runUploader
         self.insightsFetcher = insightsFetcher
+        self.patientScopeFetcher = patientScopeFetcher
     }
 
     func refresh() {
@@ -1177,6 +1219,7 @@ final class DashboardViewModel: ObservableObject {
         guard !bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
+        await refreshORINPatientScopes(baseURLString: baseURLString, bearerToken: bearerToken)
         await fetchORINInsights(
             baseURLString: baseURLString,
             bearerToken: bearerToken,
@@ -1231,6 +1274,7 @@ final class DashboardViewModel: ObservableObject {
             print("HealthDelta upload succeeded with dataset \(dataset)")
             uploadStatusMessage = "Uploaded \(snapshot.runID) to ORIN dataset \(dataset)."
             errorMessage = nil
+            await refreshORINPatientScopes(baseURLString: baseURLString, bearerToken: bearerToken)
             await fetchORINInsights(
                 baseURLString: baseURLString,
                 bearerToken: bearerToken,
@@ -1277,6 +1321,20 @@ final class DashboardViewModel: ObservableObject {
                 insightsStatusMessage = nil
             }
             errorMessage = "Unable to fetch ORIN insights. \(error.localizedDescription)"
+        }
+    }
+
+    func refreshORINPatientScopes(
+        baseURLString: String,
+        bearerToken: String
+    ) async {
+        do {
+            remotePatientScopes = try await patientScopeFetcher.fetchCurrentPatients(
+                baseURLString: baseURLString,
+                bearerToken: bearerToken
+            )
+        } catch {
+            remotePatientScopes = []
         }
     }
 

@@ -111,6 +111,7 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
   - repeated upload of the same iPhone run is duplicate-safe at the cumulative dataset level
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
+- `GET /patients/current` return deterministic share-safe patient scope options derived from the current dataset analysis artifacts
 - `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
   - optional query parameters:
     - `canonical_person_id=<id>` limit insight generation to one canonical person

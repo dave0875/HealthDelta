@@ -8,7 +8,8 @@ final class DashboardViewModelTests: XCTestCase {
         let options = buildPatientScopeOptions(
             localCanonicalPersonID: "local-person",
             manualCanonicalPersonID: "manual-person",
-            patientAliases: [:]
+            patientAliases: [:],
+            remotePatientScopes: []
         )
 
         XCTAssertEqual(options.map(\.title), [
@@ -24,7 +25,8 @@ final class DashboardViewModelTests: XCTestCase {
         let options = buildPatientScopeOptions(
             localCanonicalPersonID: "local-person",
             manualCanonicalPersonID: "local-person",
-            patientAliases: [:]
+            patientAliases: [:],
+            remotePatientScopes: []
         )
 
         XCTAssertEqual(options.map(\.title), [
@@ -40,7 +42,8 @@ final class DashboardViewModelTests: XCTestCase {
             patientAliases: [
                 "local-person": "Dad",
                 "manual-person": "Mom"
-            ]
+            ],
+            remotePatientScopes: []
         )
 
         XCTAssertEqual(options.map(\.title), [
@@ -50,6 +53,39 @@ final class DashboardViewModelTests: XCTestCase {
         ])
         XCTAssertEqual(options[1].subtitle, "Local-only label for this iPhone's record.")
         XCTAssertEqual(options[2].subtitle, "Local-only label for the selected ORIN patient.")
+    }
+
+    func testBuildPatientScopeOptionsIncludesRemoteORINPatients() {
+        let options = buildPatientScopeOptions(
+            localCanonicalPersonID: "local-person",
+            manualCanonicalPersonID: nil,
+            patientAliases: [:],
+            remotePatientScopes: [
+                ORINPatientScope(
+                    canonicalPersonID: "remote-person",
+                    displayLabel: "Patient 2",
+                    rowCount: 500,
+                    minEventTime: "2026-03-01T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+                ORINPatientScope(
+                    canonicalPersonID: "unresolved",
+                    displayLabel: "Unresolved records",
+                    rowCount: 30,
+                    minEventTime: "2026-03-10T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(options.map(\.title), [
+            "All patients",
+            "This iPhone's record",
+            "Patient 2",
+            "Unresolved records",
+        ])
+        XCTAssertEqual(options[2].subtitle, "500 rows in the current ORIN dataset.")
+        XCTAssertEqual(options[3].value, "unresolved")
     }
 
     func testExportNowRefreshesDashboardOnSuccess() async throws {
@@ -188,6 +224,61 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertFalse(viewModel.isUploading)
         XCTAssertNil(viewModel.uploadProgressLabel)
+    }
+
+    func testCompletedUploadStatusDoesNotCountAsActiveProgress() async throws {
+        let snapshot = SyncStatusSnapshot(
+            runID: "run_upload",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deltaStart: nil,
+            deltaEnd: nil,
+            totalRows: 2,
+            totalBytes: 64,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: ["observations": 2],
+            sourceFiles: ["ndjson/observations.ndjson"]
+        )
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: snapshot),
+            insightsStore: FakeInsightsStore(cards: []),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(dataset: "dataset_test"),
+            insightsFetcher: FakeInsightsFetcher(),
+            patientScopeFetcher: FakePatientScopeFetcher()
+        )
+
+        await viewModel.uploadLatestRun(baseURLString: "http://orin.local:8080", bearerToken: "token")
+
+        XCTAssertFalse(viewModel.isShowingActiveProgress)
+        XCTAssertNil(viewModel.activeStatusLine)
+        XCTAssertEqual(viewModel.completedStatusLine, "Uploaded run_upload to ORIN dataset dataset_test.")
+    }
+
+    func testRefreshDashboardLoadsRemotePatientScopesWhenConfigured() async throws {
+        let patients = [
+            ORINPatientScope(
+                canonicalPersonID: "person-a",
+                displayLabel: "Patient 1",
+                rowCount: 1200,
+                minEventTime: "2026-03-01T00:00:00Z",
+                maxEventTime: "2026-03-11T00:00:00Z"
+            )
+        ]
+        let patientFetcher = FakePatientScopeFetcher(result: patients)
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: nil),
+            insightsStore: FakeInsightsStore(cards: []),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: FakeInsightsFetcher(result: .cards([])),
+            patientScopeFetcher: patientFetcher
+        )
+
+        await viewModel.refreshDashboard(baseURLString: "http://orin.local:8080", bearerToken: "token")
+
+        XCTAssertEqual(viewModel.remotePatientScopes, patients)
+        XCTAssertEqual(patientFetcher.callCount, 1)
     }
 
     func testUploadLatestRunReloadsSyncSnapshotBeforeUploading() async throws {
@@ -621,6 +712,28 @@ private final class FakeInsightsFetcher: ORINInsightsFetching {
     ) async throws -> ORINInsightsFetchResult {
         lastCanonicalPersonID = canonicalPersonID
         lastWindowDays = windowDays
+        if let error {
+            throw error
+        }
+        return result
+    }
+}
+
+private final class FakePatientScopeFetcher: ORINPatientScopeFetching {
+    let result: [ORINPatientScope]
+    let error: Error?
+    private(set) var callCount = 0
+
+    init(result: [ORINPatientScope] = [], error: Error? = nil) {
+        self.result = result
+        self.error = error
+    }
+
+    func fetchCurrentPatients(
+        baseURLString: String,
+        bearerToken: String
+    ) async throws -> [ORINPatientScope] {
+        callCount += 1
         if let error {
             throw error
         }

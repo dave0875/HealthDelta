@@ -114,6 +114,7 @@ Current behavior:
 - For iPhone export uploads, ORIN preserves each raw uploaded run archive under the active dataset directory and materializes a cumulative `export.zip` for analysis.
 - Re-uploading the same iPhone run does not duplicate rows in the cumulative current dataset.
 - On success, the app shows the returned dataset identifier and can fetch ORIN-generated insight cards with `GET /insights/current`.
+- The app can also fetch live share-safe patient scope options from `GET /patients/current` so the patient picker reflects the current ORIN dataset instead of only local device identity state.
 - ORIN materializes deterministic analysis artifacts for the active dataset under:
   - `analysis/duckdb/run.duckdb`
   - `analysis/reports/summary.json`
@@ -127,7 +128,8 @@ Insight refresh behavior:
 - The top-right `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
 - The `Scope` card lets the operator choose:
   - `Evaluation window`: `All data`, `7 days`, `30 days`, or `90 days`
-  - `Patient scope`: `All patients`, the known local iPhone record when available, or a manual `canonical_person_id` override
+  - `Patient scope`: `All patients`, the known local iPhone record when available, live ORIN patient buckets, or a manual `canonical_person_id` override
+- ORIN-backed patient choices are share-safe and intentionally neutral, for example `Patient 1` or `Unresolved records`.
 - The `Patient scope` UI also supports a local-only patient label for the known iPhone record.
   - This label is stored only in the app sandbox.
   - It is never exported into NDJSON.
@@ -136,6 +138,7 @@ Insight refresh behavior:
 - Manual patient entry is intentionally secondary. Use it only when filtering to a different patient than the local iPhone export identity.
 - Those controls affect both explicit dashboard refreshes and the automatic ORIN fetch that runs after a successful upload.
 - On successful upload, the app immediately attempts an ORIN insights fetch.
+- The overview card shows a spinner only while export/upload/refresh work is actually active; completed upload status appears as plain text instead of a false in-progress indicator.
 
 Failure behavior:
 - Missing/invalid endpoint or token surfaces an error in the dashboard.
