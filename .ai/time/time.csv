@@ -181,3 +181,5 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,229,UNASSIGNED,20,codex,UNASSIGNED,"Make ORIN insight window and target patient configurable from the iPhone app while preserving current defaults"
 2026-03-11,230,UNASSIGNED,20,codex,UNASSIGNED,"Make ORIN accumulate incremental iPhone uploads into a cumulative current dataset instead of replacing prior state"
 2026-03-11,231,UNASSIGNED,20,codex,UNASSIGNED,"Replay the saved iPhone exports on the MacBook Air into live ORIN so the deployed cumulative dataset reflects the full available history"
+2026-03-12,232,UNASSIGNED,20,codex,UNASSIGNED,"Redesign the iPhone dashboard into the selected Clinical Compass care view while preserving current export/upload behavior"
+2026-03-12,232,UNASSIGNED,15,codex,UNASSIGNED,"Add a stronger health-related icon treatment to the Clinical Compass dashboard and correct the commit governance footer"

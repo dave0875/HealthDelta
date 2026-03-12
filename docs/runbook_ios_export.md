@@ -34,29 +34,33 @@ Anchor persistence artifacts:
 
 ## Current manual export flow
 
-The app’s first user-facing export path is a manual dashboard action:
+The app’s main screen is now the `Clinical Compass` dashboard. It keeps the primary care actions on the main screen and moves raw ORIN connection details into a secondary settings sheet.
+
+Manual export flow:
 
 1) Launch the app on the iPhone.
-2) Tap `Export Now` in the `Sync Status` section.
+2) In the `Clinical Compass` dashboard, tap `Export`.
 3) Approve Health access for the app if iOS prompts for it.
-4) Wait for the export to complete, then tap `Refresh` if needed.
+4) Wait for the export spinner to complete, then tap the top-right `Refresh` button if needed.
 
 Expected result:
 - the app writes a new run under `Documents/HealthDelta/<run_id>/`
 - `manifest.json` appears beside `ndjson/observations.ndjson`
 - the dashboard replaces `No sync data yet` with local sync details from the newest run
 
-If export fails or Health access is denied, the dashboard shows an error in the `Needs attention` section.
+If export fails or Health access is denied, the dashboard shows an error in the `Needs attention` card.
 
-## Direct upload to ORIN (first version)
+## Direct upload to ORIN
 
-The app also supports a first direct upload path for the newest completed run:
+The app supports direct upload for the newest completed run. The care-facing dashboard keeps upload actions visible, while the raw connection values live in `Connection settings`.
 
-1) Produce a local run with `Export Now`.
-2) In the `ORIN Upload` section, enter:
+1) Produce a local run with `Export`.
+2) Open `Connection settings` from the top-right slider icon.
+3) Enter:
    - `Upload endpoint` (example: `http://192.168.1.223:8080`)
    - `Upload token` (must match `HEALTHDELTA_UPLOAD_TOKEN` on ORIN)
-3) Tap `Upload Latest Run`.
+4) Dismiss the sheet.
+5) On the main dashboard, tap `Sync to ORIN`.
 
 Current behavior:
 - The app zips the completed run directory locally.
@@ -76,18 +80,18 @@ Current behavior:
 - When ORIN has a local Ollama runtime configured, it refines those artifact-grounded facts into more readable cards. If Ollama is unavailable or returns invalid output, the deterministic artifact-grounded cards are returned as-is.
 
 Insight refresh behavior:
-- The `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
-- The `Insights` section includes `Fetch from ORIN` for an explicit remote refresh.
-- The `Insights` section also lets the operator choose:
+- The top-right `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
+- The `Scope` card lets the operator choose:
   - `Evaluation window`: `All data`, `7 days`, `30 days`, or `90 days`
   - optional `Patient canonical_person_id`: leave blank to evaluate all people in the current dataset
-- Those controls affect both explicit `Fetch from ORIN` requests and the automatic ORIN fetch that runs after a successful upload.
+- Those controls affect both explicit dashboard refreshes and the automatic ORIN fetch that runs after a successful upload.
 - On successful upload, the app immediately attempts an ORIN insights fetch.
 
 Failure behavior:
 - Missing/invalid endpoint or token surfaces an error in the dashboard.
 - ORIN-side API failures are surfaced using the backend error detail when available.
 - If the ORIN backend is only published on `127.0.0.1`, iPhone uploads will fail until ORIN is redeployed with `HEALTHDELTA_PUBLISHED_BIND_HOST=0.0.0.0`.
+- The main dashboard intentionally does not show raw endpoint/token fields; those remain in `Connection settings` so the primary screen stays care-focused.
 
 Headless validation hook:
 - For operator validation from a tethered Mac, the app also honors these launch environment variables:

@@ -373,6 +373,74 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.insightCards, remoteCards)
         XCTAssertEqual(viewModel.insightsStatusMessage, "Showing ORIN-generated insights.")
     }
+
+    func testClinicalCompassPresentationShowsFirstExportStateWithoutData() async throws {
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: nil),
+            insightsStore: FakeInsightsStore(cards: []),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: FakeInsightsFetcher()
+        )
+
+        viewModel.refresh()
+
+        XCTAssertEqual(viewModel.clinicalOverviewTitle, "Ready for your first export")
+        XCTAssertTrue(viewModel.clinicalOverviewBody.contains("Export Now"))
+        XCTAssertEqual(viewModel.coverageIndicatorLabel, "No data")
+        XCTAssertEqual(viewModel.confidenceIndicatorLabel, "Unavailable")
+        XCTAssertEqual(viewModel.primaryTrendTitle, "Primary trend")
+    }
+
+    func testClinicalCompassPresentationDerivesCalmSummaryFromInsights() async throws {
+        let snapshot = SyncStatusSnapshot(
+            runID: "run_cumulative",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deltaStart: Date(timeIntervalSince1970: 1_690_000_000),
+            deltaEnd: Date(timeIntervalSince1970: 1_700_000_000),
+            totalRows: 230_383,
+            totalBytes: 13_792_887,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: ["observations": 230_383],
+            sourceFiles: ["ndjson/observations.ndjson"]
+        )
+        let cards = [
+            InsightCard(
+                id: "orin-overview",
+                title: "HealthDelta Summary",
+                body: "Daily activity is above your recent baseline.\nObserved window remains broad and longitudinal.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/ollama",
+                freshnessLabel: "Updated now"
+            ),
+            InsightCard(
+                id: "orin-summary",
+                title: "Summary",
+                body: "Rows by source: ios=230,383.\nShare-safe report unresolved clinical reference rows: 0.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/ollama",
+                freshnessLabel: "Updated now"
+            ),
+        ]
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: snapshot),
+            insightsStore: FakeInsightsStore(cards: cards),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: FakeInsightsFetcher()
+        )
+
+        viewModel.refresh()
+
+        XCTAssertEqual(viewModel.clinicalOverviewTitle, "Overview")
+        XCTAssertTrue(viewModel.clinicalOverviewBody.contains("recent baseline"))
+        XCTAssertEqual(viewModel.coverageIndicatorLabel, "Longitudinal")
+        XCTAssertEqual(viewModel.confidenceIndicatorLabel, "Moderate")
+        XCTAssertEqual(viewModel.primaryTrendTitle, "HealthDelta Summary")
+        XCTAssertTrue(viewModel.clinicalNotes.contains("Current record is activity-led."))
+        XCTAssertTrue(viewModel.clinicalNotes.contains { $0.contains("Rows by source") })
+    }
 }
 
 private actor AsyncGate {
