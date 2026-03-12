@@ -13,6 +13,36 @@ private enum ClinicalCompassPalette {
     static let caution = Color(red: 0.63, green: 0.38, blue: 0.24)
 }
 
+enum CareDomain: String, CaseIterable, Identifiable {
+    case combined
+    case fitness
+    case clinical
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .combined:
+            return "Combined"
+        case .fitness:
+            return "Fitness"
+        case .clinical:
+            return "Clinical"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .combined:
+            return "See the full bedside view across all available data."
+        case .fitness:
+            return "Focus on Apple Health wellness and activity signals."
+        case .clinical:
+            return "Focus on diagnoses, medications, labs, and care records."
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = DashboardViewModel()
     @AppStorage("orinUploadBaseURL") private var uploadBaseURL = ""
@@ -28,6 +58,7 @@ struct ContentView: View {
     @State private var patientAliasDraft = ""
     @State private var showsPatientSetupSheet = false
     @State private var patientSetupDrafts: [String: String] = [:]
+    @State private var selectedDomain: CareDomain = .combined
 
     var body: some View {
         NavigationStack {
@@ -42,6 +73,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         headerView
+                        domainSelectorCard
                         scopeCard
                         overviewCard
                         actionRow
@@ -137,6 +169,28 @@ struct ContentView: View {
             }
             .onChange(of: viewModel.remotePatientScopes) { _, _ in
                 preparePatientSetupIfNeeded()
+            }
+        }
+    }
+
+    private var domainSelectorCard: some View {
+        CompassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                CompassSectionHeader(
+                    eyebrow: "Care View",
+                    title: "Combined, Fitness, and Clinical"
+                )
+
+                Picker("Care domain", selection: $selectedDomain) {
+                    ForEach(CareDomain.allCases) { domain in
+                        Text(domain.title).tag(domain)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(selectedDomain.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(ClinicalCompassPalette.muted)
             }
         }
     }
@@ -328,16 +382,16 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(viewModel.clinicalOverviewTitle)
+                        Text(viewModel.overviewTitle(for: selectedDomain))
                             .font(.title2.weight(.semibold))
                             .fontDesign(.rounded)
                             .foregroundStyle(ClinicalCompassPalette.slate)
-                        Text(viewModel.clinicalOverviewBody)
+                        Text(viewModel.overviewBody(for: selectedDomain))
                             .font(.body)
                             .foregroundStyle(ClinicalCompassPalette.slate)
                     }
                     Spacer(minLength: 12)
-                    Image(systemName: "cross.case")
+                    Image(systemName: iconName(for: selectedDomain))
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(ClinicalCompassPalette.accent)
                 }
@@ -429,12 +483,12 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 CompassSectionHeader(
                     eyebrow: "Primary Trend",
-                    title: viewModel.primaryTrendTitle
+                    title: viewModel.primaryTitle(for: selectedDomain)
                 )
 
                 TrendAccent()
 
-                Text(viewModel.primaryTrendBody)
+                Text(viewModel.primaryBody(for: selectedDomain))
                     .font(.body)
                     .foregroundStyle(ClinicalCompassPalette.slate)
             }
@@ -445,16 +499,16 @@ struct ContentView: View {
         CompassCard {
             VStack(alignment: .leading, spacing: 14) {
                 CompassSectionHeader(
-                    eyebrow: "Clinical Notes",
-                    title: "What stands out"
+                    eyebrow: selectedDomain == .clinical ? "Clinical Notes" : (selectedDomain == .fitness ? "Fitness Notes" : "Notes"),
+                    title: notesTitle
                 )
 
-                if viewModel.clinicalNotes.isEmpty {
-                    Text("A more detailed note will appear here after refreshes complete.")
+                if viewModel.notes(for: selectedDomain).isEmpty {
+                    Text(emptyNotesBody)
                         .font(.body)
                         .foregroundStyle(ClinicalCompassPalette.muted)
                 } else {
-                    ForEach(viewModel.clinicalNotes.prefix(4), id: \.self) { note in
+                    ForEach(viewModel.notes(for: selectedDomain).prefix(4), id: \.self) { note in
                         HStack(alignment: .top, spacing: 10) {
                             Circle()
                                 .fill(ClinicalCompassPalette.accent)
@@ -475,7 +529,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 CompassSectionHeader(
                     eyebrow: "Data Scope",
-                    title: "Clinical context"
+                    title: selectedDomain == .combined ? "Current context" : "\(selectedDomain.title) context"
                 )
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -500,6 +554,39 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var notesTitle: String {
+        switch selectedDomain {
+        case .combined:
+            return "What stands out"
+        case .fitness:
+            return "Wellness details"
+        case .clinical:
+            return "Clinical details"
+        }
+    }
+
+    private var emptyNotesBody: String {
+        switch selectedDomain {
+        case .combined:
+            return "A more detailed note will appear here after refreshes complete."
+        case .fitness:
+            return "Apple Health data appears here after you grant read access for the supported HealthKit types and complete an export."
+        case .clinical:
+            return "Clinical notes appear here when the current ORIN scope includes imported clinical records."
+        }
+    }
+
+    private func iconName(for domain: CareDomain) -> String {
+        switch domain {
+        case .combined:
+            return "cross.case"
+        case .fitness:
+            return "figure.walk"
+        case .clinical:
+            return "stethoscope"
         }
     }
 
@@ -1238,6 +1325,26 @@ final class DashboardViewModel: ObservableObject {
         return "Ready for your first export"
     }
 
+    var hasFitnessDomainData: Bool {
+        if insightCards.contains(where: { $0.domain == .fitness }) {
+            return true
+        }
+        guard let syncSnapshot else {
+            return false
+        }
+        return (syncSnapshot.rowCounts["observations"] ?? 0) > 0
+    }
+
+    var hasClinicalDomainData: Bool {
+        if insightCards.contains(where: { $0.domain == .clinical }) {
+            return true
+        }
+        guard let syncSnapshot else {
+            return false
+        }
+        return syncSnapshot.rowCounts.keys.contains { $0 != "observations" }
+    }
+
     var clinicalOverviewBody: String {
         if let errorMessage {
             return errorMessage
@@ -1258,6 +1365,93 @@ final class DashboardViewModel: ObservableObject {
             return "A local record is available. Use Refresh to pull a fuller ORIN summary, or Export to capture a new bedside-ready snapshot."
         }
         return "Start with Export Now to create your first local health record. Once ORIN is connected, this screen will shift from setup to clinical guidance."
+    }
+
+    func cards(for domain: CareDomain) -> [InsightCard] {
+        switch domain {
+        case .combined:
+            let combinedCards = insightCards.filter { $0.domain == .combined }
+            return combinedCards.isEmpty ? insightCards : combinedCards
+        case .fitness:
+            return insightCards.filter { $0.domain == .fitness }
+        case .clinical:
+            return insightCards.filter { $0.domain == .clinical }
+        }
+    }
+
+    func primaryCard(for domain: CareDomain) -> InsightCard? {
+        cards(for: domain).first
+    }
+
+    func overviewTitle(for domain: CareDomain) -> String {
+        if errorMessage != nil {
+            return "Needs attention"
+        }
+        if isExporting {
+            return domain == .clinical ? "Updating your record" : "Creating a fresh export"
+        }
+        if isUploading {
+            return domain == .clinical ? "Syncing care data to ORIN" : "Syncing to ORIN"
+        }
+        if isFetchingInsights {
+            return domain == .fitness ? "Refreshing wellness view" : (domain == .clinical ? "Refreshing clinical view" : "Refreshing your care view")
+        }
+        switch domain {
+        case .combined:
+            if !cards(for: .combined).isEmpty {
+                return "Overview"
+            }
+            if syncSnapshot != nil {
+                return "Your record is ready"
+            }
+            return "Ready for your first export"
+        case .fitness:
+            if !cards(for: .fitness).isEmpty {
+                return "Fitness record"
+            }
+            if hasFitnessDomainData {
+                return "Fitness data is available"
+            }
+            return "Apple Health access needed"
+        case .clinical:
+            if !cards(for: .clinical).isEmpty {
+                return "Clinical record"
+            }
+            return "No clinical records in scope"
+        }
+    }
+
+    func overviewBody(for domain: CareDomain) -> String {
+        if let errorMessage {
+            return errorMessage
+        }
+        if isExporting {
+            return "HealthDelta is preparing a new on-device export so the care view can refresh with the latest observations."
+        }
+        if isUploading {
+            return "Your newest local run is moving to ORIN so the dashboard can shift from device status to longitudinal interpretation."
+        }
+        if isFetchingInsights {
+            return "ORIN is refreshing the current care summary using the selected patient and evaluation window."
+        }
+        if let card = primaryCard(for: domain) {
+            let base = conciseBody(card.body)
+            if domain == .fitness {
+                return base + " Apple Health data becomes available only after you grant read access for the supported HealthKit types."
+            }
+            return base
+        }
+        switch domain {
+        case .combined:
+            if syncSnapshot != nil {
+                return "A local record is available. Use Refresh to pull a fuller ORIN summary, or Export to capture a new bedside-ready snapshot."
+            }
+            return "Start with Export to create your first local health record. Once ORIN is connected, this screen will shift from setup to clinical guidance."
+        case .fitness:
+            return "Apple Health data becomes available only after you grant read access for the supported HealthKit types. Export creates the local wellness snapshot that ORIN can then summarize."
+        case .clinical:
+            return "Clinical records are not present in the current local or ORIN scope. The iPhone export path covers Apple Health fitness and wellness data; clinical records appear here only when ORIN includes imported clinical data."
+        }
     }
 
     var coverageIndicatorLabel: String {
@@ -1290,20 +1484,60 @@ final class DashboardViewModel: ObservableObject {
     }
 
     var primaryTrendTitle: String {
-        insightCards.first?.title ?? "Primary trend"
+        primaryTitle(for: .combined)
     }
 
     var primaryTrendBody: String {
-        if let card = insightCards.first {
-            return conciseBody(card.body)
-        }
-        if syncSnapshot != nil {
-            return "A fuller trend summary appears after ORIN refreshes the current scope."
-        }
-        return "No longitudinal trend is available yet."
+        primaryBody(for: .combined)
     }
 
     var clinicalNotes: [String] {
+        notes(for: .combined)
+    }
+
+    func primaryTitle(for domain: CareDomain) -> String {
+        if let card = primaryCard(for: domain) {
+            return card.title
+        }
+        switch domain {
+        case .combined:
+            return "Primary trend"
+        case .fitness:
+            return "Fitness summary"
+        case .clinical:
+            return "Clinical summary"
+        }
+    }
+
+    func primaryBody(for domain: CareDomain) -> String {
+        if let card = primaryCard(for: domain) {
+            return conciseBody(card.body)
+        }
+        switch domain {
+        case .combined:
+            if syncSnapshot != nil {
+                return "A fuller trend summary appears after ORIN refreshes the current scope."
+            }
+            return "No longitudinal trend is available yet."
+        case .fitness:
+            return "Use Export after granting Apple Health read access to capture a local wellness snapshot."
+        case .clinical:
+            return "Clinical details will appear here when the current ORIN scope contains imported clinical records."
+        }
+    }
+
+    func notes(for domain: CareDomain) -> [String] {
+        switch domain {
+        case .combined:
+            return combinedNotes()
+        case .fitness:
+            return fitnessNotes()
+        case .clinical:
+            return clinicalDomainNotes()
+        }
+    }
+
+    private func combinedNotes() -> [String] {
         var notes: [String] = []
         if isObservationOnlyRecord {
             notes.append("Current record is activity-led.")
@@ -1318,6 +1552,30 @@ final class DashboardViewModel: ObservableObject {
         }
         if insightCards.isEmpty, let insightsStatusMessage, !insightsStatusMessage.isEmpty {
             notes.append(insightsStatusMessage)
+        }
+        return deduped(notes).prefix(4).map { $0 }
+    }
+
+    private func fitnessNotes() -> [String] {
+        var notes: [String] = []
+        if let card = cards(for: .fitness).first {
+            notes.append(contentsOf: noteLines(from: card.body))
+        }
+        notes.append("Apple Health data appears only after you grant read access for the supported HealthKit types.")
+        if let syncSnapshot, syncSnapshot.anchorFiles > 0 {
+            notes.append("Incremental anchors help the iPhone continue wellness exports without repeating the full on-device history.")
+        }
+        return deduped(notes).prefix(4).map { $0 }
+    }
+
+    private func clinicalDomainNotes() -> [String] {
+        var notes: [String] = []
+        if let card = cards(for: .clinical).first {
+            notes.append(contentsOf: noteLines(from: card.body))
+        } else {
+            notes.append("Clinical records are not present in the current local or ORIN scope.")
+            notes.append("The iPhone export path is for Apple Health fitness and wellness data.")
+            notes.append("Clinical records appear here when ORIN includes imported clinical data from a separate ingest path.")
         }
         return deduped(notes).prefix(4).map { $0 }
     }

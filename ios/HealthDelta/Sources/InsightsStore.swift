@@ -1,5 +1,11 @@
 import Foundation
 
+enum InsightDomain: String, Codable, Equatable {
+    case combined
+    case fitness
+    case clinical
+}
+
 struct InsightCard: Identifiable, Equatable {
     let id: String
     let title: String
@@ -7,6 +13,25 @@ struct InsightCard: Identifiable, Equatable {
     let disclaimer: String
     let sourceLabel: String
     let freshnessLabel: String
+    let domain: InsightDomain
+
+    init(
+        id: String,
+        title: String,
+        body: String,
+        disclaimer: String,
+        sourceLabel: String,
+        freshnessLabel: String,
+        domain: InsightDomain = .combined
+    ) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.disclaimer = disclaimer
+        self.sourceLabel = sourceLabel
+        self.freshnessLabel = freshnessLabel
+        self.domain = domain
+    }
 }
 
 struct InsightsStore {
@@ -84,7 +109,8 @@ struct InsightsStore {
             body: bodyText,
             disclaimer: "For education only. This is not medical advice.",
             sourceLabel: sourceLabel,
-            freshnessLabel: Self.freshnessLabel(for: modified)
+            freshnessLabel: Self.freshnessLabel(for: modified),
+            domain: .combined
         )
     }
 

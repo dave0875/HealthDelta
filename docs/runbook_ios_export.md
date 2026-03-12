@@ -80,6 +80,17 @@ Known exclusions:
 
 The app’s main screen is now the `Clinical Compass` dashboard. It keeps the primary care actions on the main screen and moves raw ORIN connection details into a secondary settings sheet.
 
+The care-facing dashboard is organized into three explicit sections:
+
+- `Combined`
+  - a bedside summary across all currently available data in scope
+- `Fitness`
+  - Apple Health wellness and activity data that becomes available only after the user grants read access for the supported HealthKit types
+- `Clinical`
+  - imported clinical records and structured care context when those records are present in the current ORIN scope
+
+If the current scope does not include clinical records, the `Clinical` section intentionally shows a clear empty state instead of pretending clinical content exists.
+
 Manual export flow:
 
 1) Launch the app on the iPhone.

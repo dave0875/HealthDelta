@@ -45,6 +45,7 @@ final class InsightsStoreTests: XCTestCase {
         XCTAssertTrue(cards.allSatisfy { $0.disclaimer.contains("not medical advice") })
         XCTAssertEqual(cards[0].sourceLabel, "note/doctor_note.md")
         XCTAssertEqual(cards[1].sourceLabel, "reports/summary.md")
+        XCTAssertTrue(cards.allSatisfy { $0.domain == .combined })
         XCTAssertTrue(cards.allSatisfy { $0.freshnessLabel.contains("2024") })
     }
 

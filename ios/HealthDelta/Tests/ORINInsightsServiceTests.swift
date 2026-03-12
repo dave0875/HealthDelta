@@ -6,6 +6,42 @@ import XCTest
 final class ORINInsightsServiceTests: XCTestCase {
     func testFetchCurrentInsightsReturnsCardsOnSuccess() async throws {
         let payload = """
+        {"status":"ok","dataset":"dataset_1","cards":[{"id":"c1","title":"ORIN Overview","body":"Body","disclaimer":"For education only. This is not medical advice.","sourceLabel":"orin/datasets/current","freshnessLabel":"Updated now","domain":"fitness"}]}
+        """
+        let session = FakeHTTPSession(
+            queuedResponses: [
+                .init(statusCode: 200, body: Data(payload.utf8)),
+            ]
+        )
+        let service = ORINInsightsService(session: session)
+
+        let result = try await service.fetchCurrentInsights(
+            baseURLString: "http://orin.local:8080",
+            bearerToken: "token",
+            canonicalPersonID: nil,
+            windowDays: nil
+        )
+
+        XCTAssertEqual(
+            result,
+            .cards(
+                [
+                    InsightCard(
+                        id: "c1",
+                        title: "ORIN Overview",
+                        body: "Body",
+                        disclaimer: "For education only. This is not medical advice.",
+                        sourceLabel: "orin/datasets/current",
+                        freshnessLabel: "Updated now",
+                        domain: .fitness
+                    ),
+                ]
+            )
+        )
+    }
+
+    func testFetchCurrentInsightsDefaultsMissingDomainToCombined() async throws {
+        let payload = """
         {"status":"ok","dataset":"dataset_1","cards":[{"id":"c1","title":"ORIN Overview","body":"Body","disclaimer":"For education only. This is not medical advice.","sourceLabel":"orin/datasets/current","freshnessLabel":"Updated now"}]}
         """
         let session = FakeHTTPSession(
@@ -32,7 +68,8 @@ final class ORINInsightsServiceTests: XCTestCase {
                         body: "Body",
                         disclaimer: "For education only. This is not medical advice.",
                         sourceLabel: "orin/datasets/current",
-                        freshnessLabel: "Updated now"
+                        freshnessLabel: "Updated now",
+                        domain: .combined
                     ),
                 ]
             )

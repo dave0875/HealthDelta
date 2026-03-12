@@ -27,6 +27,7 @@ private struct InsightCardPayload: Decodable {
     let disclaimer: String
     let sourceLabel: String
     let freshnessLabel: String
+    let domain: InsightDomain?
 }
 
 private struct ORINInsightsErrorResponse: Decodable {
@@ -104,7 +105,8 @@ final class ORINInsightsService: ORINInsightsFetching {
                     body: $0.body,
                     disclaimer: $0.disclaimer,
                     sourceLabel: $0.sourceLabel,
-                    freshnessLabel: $0.freshnessLabel
+                    freshnessLabel: $0.freshnessLabel,
+                    domain: $0.domain ?? .combined
                 )
             }
         )

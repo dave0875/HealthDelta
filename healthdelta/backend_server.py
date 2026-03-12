@@ -364,6 +364,36 @@ def _summary_table_info(summary_obj: dict[str, Any], table_name: str) -> dict[st
     return table if isinstance(table, dict) else {}
 
 
+def _rows_by_source(summary_obj: dict[str, Any]) -> dict[str, int]:
+    observations = _summary_table_info(summary_obj, "observations")
+    raw = observations.get("rows_by_source")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): int(value or 0) for key, value in raw.items()}
+
+
+def _clinical_table_counts(summary_obj: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table_name in ["documents", "medications", "conditions", "encounters", "procedures", "diagnostic_reports"]:
+        info = _summary_table_info(summary_obj, table_name)
+        total_rows = int(info.get("total_rows") or 0)
+        if total_rows > 0:
+            counts[table_name] = total_rows
+    return counts
+
+
+def _domain_row_totals(summary_obj: dict[str, Any]) -> tuple[int, int]:
+    rows_by_source = _rows_by_source(summary_obj)
+    fitness_rows = int(rows_by_source.get("healthkit") or 0) + int(rows_by_source.get("ios") or 0)
+    clinical_rows = sum(
+        count
+        for source, count in rows_by_source.items()
+        if source not in {"healthkit", "ios", "unknown"}
+    )
+    clinical_rows += sum(_clinical_table_counts(summary_obj).values())
+    return fitness_rows, clinical_rows
+
+
 def _artifact_grounded_insight_cards(
     *,
     run_id: str,
@@ -376,58 +406,90 @@ def _artifact_grounded_insight_cards(
     total_rows = int(observations.get("total_rows") or 0)
     min_event_time = str(observations.get("min_event_time") or note_fields.get("event_time_range", "").split("..")[0] or "").strip()
     max_event_time = str(observations.get("max_event_time") or (note_fields.get("event_time_range", "").split("..")[-1] if ".." in note_fields.get("event_time_range", "") else "") or "").strip()
-    rows_by_source = observations.get("rows_by_source") if isinstance(observations.get("rows_by_source"), dict) else {}
+    rows_by_source = _rows_by_source(summary_obj)
     healthkit_rows = int(rows_by_source.get("healthkit") or note_fields.get("sources.healthkit") or 0)
     unresolved_total = 0
     reference_integrity = summary_obj.get("reference_integrity")
     if isinstance(reference_integrity, dict):
         unresolved_total = int(reference_integrity.get("unresolved_reference_rows_total") or 0)
+    clinical_table_counts = _clinical_table_counts(summary_obj)
+    fitness_rows, clinical_rows = _domain_row_totals(summary_obj)
 
     top_signal = note_fields.get("signals.top_observations", "")
     primary_signal = top_signal.split(";", 1)[0].split(":", 1)[0].replace("HKQuantityTypeIdentifier", "").strip() if top_signal else ""
 
-    doctor_lines = []
+    overview_lines = []
     if total_rows:
-        doctor_lines.append(f"ORIN analyzed {total_rows:,} observation rows from the latest uploaded run.")
+        overview_lines.append(f"ORIN analyzed {total_rows:,} observation rows in the current scope.")
     if min_event_time and max_event_time:
-        doctor_lines.append(f"Observed window: {min_event_time} to {max_event_time}.")
-    if primary_signal:
-        doctor_lines.append(f"Primary observed signal in this upload: {primary_signal}.")
-    if healthkit_rows:
-        doctor_lines.append(f"HealthKit contributed {healthkit_rows:,} rows to the current analysis.")
-    if not doctor_lines:
-        doctor_lines.append("ORIN generated a deterministic doctor-note analysis for the latest uploaded run.")
+        overview_lines.append(f"Observed window: {min_event_time} to {max_event_time}.")
+    if fitness_rows and clinical_rows:
+        overview_lines.append("Current scope contains both fitness/wellness data and clinical records.")
+    elif fitness_rows:
+        overview_lines.append("Current scope is currently fitness-led.")
+    elif clinical_rows:
+        overview_lines.append("Current scope is currently clinical-led.")
+    if not overview_lines:
+        overview_lines.append("ORIN generated a deterministic overview for the current scope.")
 
-    summary_lines = []
-    if isinstance(reference_integrity, dict):
-        summary_lines.append(f"Share-safe report unresolved clinical reference rows: {unresolved_total:,}.")
+    cards = [
+        {
+            "id": f"{run_id}-orin-overview",
+            "title": "Overview",
+            "body": _normalize_card_body("\n".join(overview_lines), fallback="ORIN generated a bedside overview."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/overview",
+            "freshnessLabel": freshness,
+            "domain": "combined",
+        }
+    ]
+
+    if fitness_rows:
+        fitness_lines = ["Apple Health fitness and wellness data is present in the current scope."]
+        if primary_signal:
+            fitness_lines.append(f"Primary observed fitness signal: {primary_signal}.")
+        if healthkit_rows:
+            fitness_lines.append(f"HealthKit contributed {healthkit_rows:,} rows to the current analysis.")
+        if min_event_time and max_event_time:
+            fitness_lines.append(f"Observed fitness window: {min_event_time} to {max_event_time}.")
+        cards.append(
+            {
+                "id": f"{run_id}-orin-fitness",
+                "title": "Fitness",
+                "body": _normalize_card_body("\n".join(fitness_lines), fallback="Fitness observations are present in the current scope."),
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/analysis/fitness",
+                "freshnessLabel": freshness,
+                "domain": "fitness",
+            }
+        )
+
+    if clinical_rows:
+        clinical_lines = ["Structured clinical context is present in the current scope."]
+        if clinical_table_counts:
+            table_parts = [f"{table_name}={count:,}" for table_name, count in sorted(clinical_table_counts.items())]
+            clinical_lines.append("Clinical tables: " + ", ".join(table_parts) + ".")
+        if isinstance(reference_integrity, dict):
+            clinical_lines.append(f"Share-safe unresolved clinical reference rows: {unresolved_total:,}.")
+        cards.append(
+            {
+                "id": f"{run_id}-orin-clinical",
+                "title": "Clinical",
+                "body": _normalize_card_body("\n".join(clinical_lines), fallback="Clinical records are present in the current scope."),
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/analysis/clinical",
+                "freshnessLabel": freshness,
+                "domain": "clinical",
+            }
+        )
+
     if isinstance(rows_by_source, dict) and rows_by_source:
         source_parts = [f"{source}={int(rows_by_source[source]):,}" for source in sorted(rows_by_source)]
-        summary_lines.append("Rows by source: " + ", ".join(source_parts) + ".")
-    notes = summary_obj.get("notes")
-    if isinstance(notes, dict) and isinstance(notes.get("privacy"), str):
-        summary_lines.append(notes["privacy"])
-    if not summary_lines:
-        summary_lines.append("ORIN generated a share-safe summary report for the latest uploaded run.")
-
-    return [
-        {
-            "id": f"{run_id}-orin-doctor-note",
-            "title": "Doctor's Note",
-            "body": _normalize_card_body("\n".join(doctor_lines), fallback="ORIN generated a doctor-note summary."),
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/analysis/note",
-            "freshnessLabel": freshness,
-        },
-        {
-            "id": f"{run_id}-orin-summary",
-            "title": "Summary",
-            "body": _normalize_card_body("\n".join(summary_lines), fallback="ORIN generated a summary report."),
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/analysis/reports",
-            "freshnessLabel": freshness,
-        },
-    ]
+        cards[0]["body"] = _normalize_card_body(
+            cards[0]["body"] + "\nRows by source: " + ", ".join(source_parts) + ".",
+            fallback=cards[0]["body"],
+        )
+    return cards
 
 
 def _filtered_observation_facts(
@@ -531,44 +593,86 @@ def _filtered_note_text(*, facts: dict[str, Any]) -> str:
 
 
 def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any]) -> list[dict[str, str]]:
-    doctor_lines = [f"ORIN analyzed {int(facts['total_rows']):,} observation rows for the selected scope."]
+    overview_lines = [f"ORIN analyzed {int(facts['total_rows']):,} observation rows for the selected scope."]
     if facts.get("canonical_person_id"):
-        doctor_lines.append("Filtered to the requested patient.")
+        overview_lines.append("Filtered to the requested patient.")
     if facts.get("window_days") is not None:
-        doctor_lines.append(f"Evaluation window: last {int(facts['window_days'])} days relative to the latest matching observation.")
+        overview_lines.append(f"Evaluation window: last {int(facts['window_days'])} days relative to the latest matching observation.")
     if facts.get("min_event_time") and facts.get("max_event_time"):
-        doctor_lines.append(f"Observed window: {facts['min_event_time']} to {facts['max_event_time']}.")
+        overview_lines.append(f"Observed window: {facts['min_event_time']} to {facts['max_event_time']}.")
     if facts.get("top_signal"):
-        doctor_lines.append(f"Primary observed signal in this scope: {facts['top_signal']}.")
+        overview_lines.append(f"Primary observed signal in this scope: {facts['top_signal']}.")
+
+    rows_by_source = facts.get("rows_by_source") or {}
+    fitness_rows = int(rows_by_source.get("healthkit") or 0) + int(rows_by_source.get("ios") or 0)
+    clinical_rows = sum(
+        int(count)
+        for source, count in rows_by_source.items()
+        if source not in {"healthkit", "ios", "unknown"}
+    )
+
+    cards = [
+        {
+            "id": f"{run_id}-orin-filtered-overview",
+            "title": "Overview",
+            "body": _normalize_card_body("\n".join(overview_lines), fallback="ORIN generated a scoped overview."),
+            "disclaimer": "For education only. This is not medical advice.",
+            "sourceLabel": "orin/analysis/overview",
+            "freshnessLabel": freshness,
+            "domain": "combined",
+        }
+    ]
+
+    if fitness_rows:
+        fitness_lines = [
+            f"Fitness observations in scope: {fitness_rows:,} rows.",
+            f"Active days in scope: {int(facts['active_days']):,}.",
+        ]
+        if facts.get("top_signal"):
+            fitness_lines.append(f"Primary observed fitness signal: {facts['top_signal']}.")
+        cards.append(
+            {
+                "id": f"{run_id}-orin-filtered-fitness",
+                "title": "Fitness",
+                "body": _normalize_card_body("\n".join(fitness_lines), fallback="Fitness observations are present in the selected scope."),
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/analysis/fitness",
+                "freshnessLabel": freshness,
+                "domain": "fitness",
+            }
+        )
+
+    if clinical_rows:
+        clinical_lines = [
+            f"Clinical-source observations in scope: {clinical_rows:,} rows.",
+            f"Distinct canonical people in scope: {int(facts['distinct_people']):,}.",
+            "Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.",
+        ]
+        cards.append(
+            {
+                "id": f"{run_id}-orin-filtered-clinical",
+                "title": "Clinical",
+                "body": _normalize_card_body("\n".join(clinical_lines), fallback="Clinical observations are present in the selected scope."),
+                "disclaimer": "For education only. This is not medical advice.",
+                "sourceLabel": "orin/analysis/clinical",
+                "freshnessLabel": freshness,
+                "domain": "clinical",
+            }
+        )
 
     summary_lines = [
         f"Active days in scope: {int(facts['active_days']):,}.",
         f"Distinct canonical people in scope: {int(facts['distinct_people']):,}.",
     ]
-    rows_by_source = facts.get("rows_by_source") or {}
     if rows_by_source:
         source_parts = [f"{source}={int(rows_by_source[source]):,}" for source in sorted(rows_by_source)]
         summary_lines.append("Rows by source: " + ", ".join(source_parts) + ".")
     summary_lines.append("Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.")
-
-    return [
-        {
-            "id": f"{run_id}-orin-filtered-doctor-note",
-            "title": "Doctor's Note",
-            "body": _normalize_card_body("\n".join(doctor_lines), fallback="ORIN generated a scoped doctor-note summary."),
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/analysis/note",
-            "freshnessLabel": freshness,
-        },
-        {
-            "id": f"{run_id}-orin-filtered-summary",
-            "title": "Summary",
-            "body": _normalize_card_body("\n".join(summary_lines), fallback="ORIN generated a scoped summary report."),
-            "disclaimer": "For education only. This is not medical advice.",
-            "sourceLabel": "orin/analysis/reports",
-            "freshnessLabel": freshness,
-        },
-    ]
+    cards[0]["body"] = _normalize_card_body(
+        cards[0]["body"] + "\n" + "\n".join(summary_lines),
+        fallback=cards[0]["body"],
+    )
+    return cards
 
 
 def _decode_json_object_from_text(raw: str) -> dict[str, Any] | None:
@@ -610,8 +714,9 @@ def _build_ollama_prompt(
             "Use only the artifact-grounded facts below.",
             "Do not mention names, identifiers, diagnoses, disease labels, or treatment instructions.",
             "Do not invent tables, signals, or trends that are not present.",
-            "Return exactly this shape with exactly 2 cards:",
-            '{"cards":[{"title":"Card title","body":"One or two short sentences."},{"title":"Card title","body":"One or two short sentences."}]}',
+            "Return between 2 and 3 cards.",
+            "Each card must include domain and domain must be one of combined, fitness, or clinical.",
+            'Return exactly this shape: {"cards":[{"title":"Card title","body":"One or two short sentences.","domain":"combined"}]}',
             "Facts:",
             json.dumps(payload, sort_keys=True),
         ]
@@ -665,10 +770,13 @@ def _ollama_refined_insight_cards(
                 continue
             title = row.get("title")
             body_text = row.get("body")
+            domain = row.get("domain")
             if not isinstance(title, str) or not title.strip():
                 continue
             if not isinstance(body_text, str) or not body_text.strip():
                 continue
+            if domain not in {"combined", "fitness", "clinical"}:
+                domain = "combined"
             out.append(
                 {
                     "id": f"{run_id}-orin-ollama-{idx}-{_slug_card_token(title)}",
@@ -680,6 +788,7 @@ def _ollama_refined_insight_cards(
                     "disclaimer": "For education only. This is not medical advice.",
                     "sourceLabel": "orin/ollama",
                     "freshnessLabel": freshness,
+                    "domain": str(domain),
                 }
             )
         if not out:

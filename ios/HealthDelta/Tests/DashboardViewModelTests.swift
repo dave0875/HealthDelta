@@ -565,7 +565,8 @@ final class DashboardViewModelTests: XCTestCase {
                 body: "Remote",
                 disclaimer: "For education only. This is not medical advice.",
                 sourceLabel: "orin/datasets/current",
-                freshnessLabel: "Updated remote"
+                freshnessLabel: "Updated remote",
+                domain: .combined
             )
         ]
         let viewModel = DashboardViewModel(
@@ -620,7 +621,8 @@ final class DashboardViewModelTests: XCTestCase {
                 body: "Daily activity is above your recent baseline.\nObserved window remains broad and longitudinal.",
                 disclaimer: "For education only. This is not medical advice.",
                 sourceLabel: "orin/ollama",
-                freshnessLabel: "Updated now"
+                freshnessLabel: "Updated now",
+                domain: .combined
             ),
             InsightCard(
                 id: "orin-summary",
@@ -628,7 +630,8 @@ final class DashboardViewModelTests: XCTestCase {
                 body: "Rows by source: ios=230,383.\nShare-safe report unresolved clinical reference rows: 0.",
                 disclaimer: "For education only. This is not medical advice.",
                 sourceLabel: "orin/ollama",
-                freshnessLabel: "Updated now"
+                freshnessLabel: "Updated now",
+                domain: .fitness
             ),
         ]
         let viewModel = DashboardViewModel(
@@ -648,6 +651,106 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.primaryTrendTitle, "HealthDelta Summary")
         XCTAssertTrue(viewModel.clinicalNotes.contains("Current record is activity-led."))
         XCTAssertTrue(viewModel.clinicalNotes.contains { $0.contains("Rows by source") })
+    }
+
+    func testDomainAwarePresentationShowsClinicalEmptyStateWhenOnlyFitnessDataIsAvailable() async throws {
+        let snapshot = SyncStatusSnapshot(
+            runID: "run_fitness",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deltaStart: Date(timeIntervalSince1970: 1_699_900_000),
+            deltaEnd: Date(timeIntervalSince1970: 1_700_000_000),
+            totalRows: 2_000,
+            totalBytes: 512_000,
+            fileCount: 1,
+            anchorFiles: 1,
+            rowCounts: ["observations": 2_000],
+            sourceFiles: ["ndjson/observations.ndjson"]
+        )
+        let cards = [
+            InsightCard(
+                id: "combined",
+                title: "Overview",
+                body: "Apple Health activity data is present.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/analysis/overview",
+                freshnessLabel: "Updated now",
+                domain: .combined
+            ),
+            InsightCard(
+                id: "fitness",
+                title: "Fitness",
+                body: "Heart rate, sleep, and workout observations are available in the current scope.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/analysis/fitness",
+                freshnessLabel: "Updated now",
+                domain: .fitness
+            ),
+        ]
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: snapshot),
+            insightsStore: FakeInsightsStore(cards: cards),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: FakeInsightsFetcher()
+        )
+
+        viewModel.refresh()
+
+        XCTAssertTrue(viewModel.hasFitnessDomainData)
+        XCTAssertFalse(viewModel.hasClinicalDomainData)
+        XCTAssertEqual(viewModel.overviewTitle(for: .clinical), "No clinical records in scope")
+        XCTAssertTrue(viewModel.overviewBody(for: .clinical).contains("Clinical records are not present"))
+        XCTAssertTrue(viewModel.overviewBody(for: .fitness).contains("after you grant read access"))
+        XCTAssertEqual(viewModel.primaryCard(for: .fitness)?.title, "Fitness")
+    }
+
+    func testDomainAwarePresentationUsesClinicalCardWhenClinicalDataExists() async throws {
+        let snapshot = SyncStatusSnapshot(
+            runID: "run_combined",
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deltaStart: Date(timeIntervalSince1970: 1_699_900_000),
+            deltaEnd: Date(timeIntervalSince1970: 1_700_000_000),
+            totalRows: 12_000,
+            totalBytes: 1_024_000,
+            fileCount: 3,
+            anchorFiles: 1,
+            rowCounts: ["observations": 10_000, "conditions": 500, "medications": 1_500],
+            sourceFiles: ["ndjson/observations.ndjson", "ndjson/conditions.ndjson", "ndjson/medications.ndjson"]
+        )
+        let cards = [
+            InsightCard(
+                id: "combined",
+                title: "Overview",
+                body: "The current dataset blends wellness and structured clinical history.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/analysis/overview",
+                freshnessLabel: "Updated now",
+                domain: .combined
+            ),
+            InsightCard(
+                id: "clinical",
+                title: "Clinical",
+                body: "Conditions and medications are present in the current scope.",
+                disclaimer: "For education only. This is not medical advice.",
+                sourceLabel: "orin/analysis/clinical",
+                freshnessLabel: "Updated now",
+                domain: .clinical
+            ),
+        ]
+        let viewModel = DashboardViewModel(
+            syncStore: FakeSyncStatusStore(snapshot: snapshot),
+            insightsStore: FakeInsightsStore(cards: cards),
+            manualExporter: FakeManualExporter(),
+            runUploader: FakeRunUploader(),
+            insightsFetcher: FakeInsightsFetcher()
+        )
+
+        viewModel.refresh()
+
+        XCTAssertTrue(viewModel.hasClinicalDomainData)
+        XCTAssertEqual(viewModel.primaryCard(for: .clinical)?.title, "Clinical")
+        XCTAssertEqual(viewModel.overviewTitle(for: .clinical), "Clinical record")
+        XCTAssertTrue(viewModel.overviewBody(for: .clinical).contains("Conditions and medications"))
     }
 }
 
