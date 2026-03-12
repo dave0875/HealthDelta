@@ -84,6 +84,11 @@ Insight refresh behavior:
 - The `Scope` card lets the operator choose:
   - `Evaluation window`: `All data`, `7 days`, `30 days`, or `90 days`
   - `Patient scope`: `All patients`, the known local iPhone record when available, or a manual `canonical_person_id` override
+- The `Patient scope` UI also supports a local-only patient label for the known iPhone record.
+  - This label is stored only in the app sandbox.
+  - It is never exported into NDJSON.
+  - It is never uploaded to ORIN.
+  - It is only a device-side readability aid for the care-facing dashboard.
 - Manual patient entry is intentionally secondary. Use it only when filtering to a different patient than the local iPhone export identity.
 - Those controls affect both explicit dashboard refreshes and the automatic ORIN fetch that runs after a successful upload.
 - On successful upload, the app immediately attempts an ORIN insights fetch.

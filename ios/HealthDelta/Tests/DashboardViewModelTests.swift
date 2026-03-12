@@ -7,7 +7,8 @@ final class DashboardViewModelTests: XCTestCase {
     func testBuildPatientScopeOptionsIncludesLocalAndManualChoices() {
         let options = buildPatientScopeOptions(
             localCanonicalPersonID: "local-person",
-            manualCanonicalPersonID: "manual-person"
+            manualCanonicalPersonID: "manual-person",
+            patientAliases: [:]
         )
 
         XCTAssertEqual(options.map(\.title), [
@@ -15,20 +16,40 @@ final class DashboardViewModelTests: XCTestCase {
             "This iPhone's record",
             "Manual patient selection",
         ])
-        XCTAssertEqual(options[1].subtitle, "local-person")
-        XCTAssertEqual(options[2].subtitle, "manual-person")
+        XCTAssertEqual(options[1].subtitle, "Add a local patient label to make this easier to recognize.")
+        XCTAssertEqual(options[2].subtitle, "A specific ORIN patient is selected with a manual canonical ID.")
     }
 
     func testBuildPatientScopeOptionsSkipsDuplicateManualChoice() {
         let options = buildPatientScopeOptions(
             localCanonicalPersonID: "local-person",
-            manualCanonicalPersonID: "local-person"
+            manualCanonicalPersonID: "local-person",
+            patientAliases: [:]
         )
 
         XCTAssertEqual(options.map(\.title), [
             "All patients",
             "This iPhone's record",
         ])
+    }
+
+    func testBuildPatientScopeOptionsUsesLocalOnlyAliasesWhenPresent() {
+        let options = buildPatientScopeOptions(
+            localCanonicalPersonID: "local-person",
+            manualCanonicalPersonID: "manual-person",
+            patientAliases: [
+                "local-person": "Dad",
+                "manual-person": "Mom"
+            ]
+        )
+
+        XCTAssertEqual(options.map(\.title), [
+            "All patients",
+            "Dad",
+            "Mom",
+        ])
+        XCTAssertEqual(options[1].subtitle, "Local-only label for this iPhone's record.")
+        XCTAssertEqual(options[2].subtitle, "Local-only label for the selected ORIN patient.")
     }
 
     func testExportNowRefreshesDashboardOnSuccess() async throws {

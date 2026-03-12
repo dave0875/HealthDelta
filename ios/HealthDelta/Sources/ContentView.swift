@@ -22,6 +22,9 @@ struct ContentView: View {
     @State private var showsConnectionSettings = false
     @State private var localCanonicalPersonID: String?
     @State private var showsManualPatientEntry = false
+    @State private var patientAliases: [String: String] = [:]
+    @State private var showsPatientAliasEditor = false
+    @State private var patientAliasDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -93,12 +96,19 @@ struct ContentView: View {
                     uploadStatusMessage: viewModel.uploadStatusMessage
                 )
             }
+            .sheet(isPresented: $showsPatientAliasEditor) {
+                PatientAliasSheet(
+                    canonicalPersonID: normalizedCanonicalPersonID,
+                    aliasDraft: $patientAliasDraft,
+                    onSave: savePatientAlias
+                )
+            }
             .task {
                 guard !didRunLaunchAutomation else {
                     return
                 }
                 didRunLaunchAutomation = true
-                refreshKnownPatientScope()
+                refreshLocalScopeMetadata()
                 await viewModel.refreshDashboard(
                     baseURLString: uploadBaseURL,
                     bearerToken: uploadToken,
@@ -232,6 +242,25 @@ struct ContentView: View {
                             )
 
                         Text("Only use a manual patient ID when you need a record other than this iPhone's local export identity.")
+                            .font(.footnote)
+                            .foregroundStyle(ClinicalCompassPalette.muted)
+                    }
+
+                    if let normalizedCanonicalPersonID {
+                        Button {
+                            patientAliasDraft = patientAliases[normalizedCanonicalPersonID] ?? ""
+                            showsPatientAliasEditor = true
+                        } label: {
+                            Label(
+                                patientAliases[normalizedCanonicalPersonID]?.isEmpty == false ? "Edit local patient label" : "Add local patient label",
+                                systemImage: "person.crop.square.badge.plus"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(ClinicalCompassPalette.accent)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("Patient labels stay on this iPhone only. They are not exported or uploaded to ORIN.")
                             .font(.footnote)
                             .foregroundStyle(ClinicalCompassPalette.muted)
                     }
@@ -466,7 +495,8 @@ struct ContentView: View {
     private var patientScopeOptions: [PatientScopeOption] {
         buildPatientScopeOptions(
             localCanonicalPersonID: localCanonicalPersonID,
-            manualCanonicalPersonID: normalizedCanonicalPersonID
+            manualCanonicalPersonID: normalizedCanonicalPersonID,
+            patientAliases: patientAliases
         )
     }
 
@@ -487,6 +517,9 @@ struct ContentView: View {
 
     private var patientScopeSummary: String {
         if let normalizedCanonicalPersonID {
+            if let alias = patientAliases[normalizedCanonicalPersonID], !alias.isEmpty {
+                return alias
+            }
             if normalizedCanonicalPersonID == localCanonicalPersonID {
                 return "This iPhone's record"
             }
@@ -502,14 +535,32 @@ struct ContentView: View {
 
     private func exportNow() async {
         await viewModel.exportNow()
-        refreshKnownPatientScope()
+        refreshLocalScopeMetadata()
     }
 
-    private func refreshKnownPatientScope() {
+    private func refreshLocalScopeMetadata() {
         do {
             localCanonicalPersonID = try CanonicalPersonIDStore.defaultInAppSandbox().loadIfPresent()
         } catch {
             localCanonicalPersonID = nil
+        }
+        do {
+            patientAliases = try PatientAliasStore.defaultInAppSandbox().loadAliases()
+        } catch {
+            patientAliases = [:]
+        }
+    }
+
+    private func savePatientAlias() {
+        guard let normalizedCanonicalPersonID else {
+            return
+        }
+        do {
+            try PatientAliasStore.defaultInAppSandbox().saveAlias(patientAliasDraft, for: normalizedCanonicalPersonID)
+            refreshLocalScopeMetadata()
+            showsPatientAliasEditor = false
+        } catch {
+            viewModel.errorMessage = "Unable to save the local patient label."
         }
     }
 
@@ -536,7 +587,8 @@ struct PatientScopeOption: Identifiable, Equatable {
 
 func buildPatientScopeOptions(
     localCanonicalPersonID: String?,
-    manualCanonicalPersonID: String?
+    manualCanonicalPersonID: String?,
+    patientAliases: [String: String]
 ) -> [PatientScopeOption] {
     var options: [PatientScopeOption] = [
         PatientScopeOption(
@@ -548,28 +600,73 @@ func buildPatientScopeOptions(
     ]
 
     if let localCanonicalPersonID, !localCanonicalPersonID.isEmpty {
+        let localAlias = patientAliases[localCanonicalPersonID]
         options.append(
             PatientScopeOption(
                 id: "local-patient",
-                title: "This iPhone's record",
-                subtitle: localCanonicalPersonID,
+                title: localAlias?.isEmpty == false ? localAlias! : "This iPhone's record",
+                subtitle: localAlias?.isEmpty == false ? "Local-only label for this iPhone's record." : "Add a local patient label to make this easier to recognize.",
                 value: localCanonicalPersonID
             )
         )
     }
 
     if let manualCanonicalPersonID, !manualCanonicalPersonID.isEmpty, manualCanonicalPersonID != localCanonicalPersonID {
+        let manualAlias = patientAliases[manualCanonicalPersonID]
         options.append(
             PatientScopeOption(
                 id: "manual-patient",
-                title: "Manual patient selection",
-                subtitle: manualCanonicalPersonID,
+                title: manualAlias?.isEmpty == false ? manualAlias! : "Manual patient selection",
+                subtitle: manualAlias?.isEmpty == false ? "Local-only label for the selected ORIN patient." : "A specific ORIN patient is selected with a manual canonical ID.",
                 value: manualCanonicalPersonID
             )
         )
     }
 
     return options
+}
+
+private struct PatientAliasSheet: View {
+    let canonicalPersonID: String?
+    @Binding var aliasDraft: String
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Local patient label") {
+                    TextField("For example: Me, Dad, Primary record", text: $aliasDraft)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+
+                    Text("This label stays on this iPhone only and is never exported or uploaded.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Current patient") {
+                    Text(canonicalPersonID ?? "No patient selected")
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                }
+            }
+            .navigationTitle("Patient Label")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        onSave()
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct ConnectionSettingsSheet: View {
