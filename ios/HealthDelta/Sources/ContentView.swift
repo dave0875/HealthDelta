@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum ClinicalCompassPalette {
     static let backgroundTop = Color(red: 0.93, green: 0.96, blue: 0.95)
@@ -25,6 +26,8 @@ struct ContentView: View {
     @State private var patientAliases: [String: String] = [:]
     @State private var showsPatientAliasEditor = false
     @State private var patientAliasDraft = ""
+    @State private var showsPatientSetupSheet = false
+    @State private var patientSetupDrafts: [String: String] = [:]
 
     var body: some View {
         NavigationStack {
@@ -103,6 +106,13 @@ struct ContentView: View {
                     onSave: savePatientAlias
                 )
             }
+            .sheet(isPresented: $showsPatientSetupSheet) {
+                PatientSetupSheet(
+                    unlabeledScopes: unlabeledRemoteScopes,
+                    drafts: $patientSetupDrafts,
+                    onSave: savePatientSetupLabels
+                )
+            }
             .task {
                 guard !didRunLaunchAutomation else {
                     return
@@ -124,6 +134,9 @@ struct ContentView: View {
                         windowDays: normalizedWindowDays
                     )
                 }
+            }
+            .onChange(of: viewModel.remotePatientScopes) { _, _ in
+                preparePatientSetupIfNeeded()
             }
         }
     }
@@ -211,6 +224,43 @@ struct ContentView: View {
                                 applyPatientScope(option)
                             }
                         }
+                    }
+
+                    if !unlabeledRemoteScopes.isEmpty {
+                        Button {
+                            preparePatientSetupIfNeeded(force: true)
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(ClinicalCompassPalette.caution)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Label \(unlabeledRemoteScopes.count) ORIN patient\(unlabeledRemoteScopes.count == 1 ? "" : "s")")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(ClinicalCompassPalette.slate)
+                                    Text("Names stay on this iPhone only. Add local labels once so you never have to work from generic patient buckets.")
+                                        .font(.footnote)
+                                        .foregroundStyle(ClinicalCompassPalette.muted)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(ClinicalCompassPalette.accent)
+                            }
+                            .padding(14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(Color.white.opacity(0.92))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(ClinicalCompassPalette.border.opacity(0.8), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Button {
@@ -505,6 +555,14 @@ struct ContentView: View {
         )
     }
 
+    private var unlabeledRemoteScopes: [ORINPatientScope] {
+        unlabeledRemotePatientScopes(
+            localCanonicalPersonID: localCanonicalPersonID,
+            patientAliases: patientAliases,
+            remotePatientScopes: viewModel.remotePatientScopes
+        )
+    }
+
     private var hasManualPatientOverride: Bool {
         guard let normalizedCanonicalPersonID else {
             return false
@@ -557,6 +615,8 @@ struct ContentView: View {
         } catch {
             patientAliases = [:]
         }
+        seedLocalPatientAliasIfNeeded()
+        preparePatientSetupIfNeeded()
     }
 
     private func savePatientAlias() {
@@ -569,6 +629,60 @@ struct ContentView: View {
             showsPatientAliasEditor = false
         } catch {
             viewModel.errorMessage = "Unable to save the local patient label."
+        }
+    }
+
+    private func seedLocalPatientAliasIfNeeded() {
+        guard let localCanonicalPersonID else {
+            return
+        }
+        let currentAlias = patientAliases[localCanonicalPersonID]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard currentAlias.isEmpty else {
+            return
+        }
+        guard let suggested = suggestedLocalPatientAlias(fromDeviceName: UIDevice.current.name), !suggested.isEmpty else {
+            return
+        }
+        do {
+            try PatientAliasStore.defaultInAppSandbox().saveAlias(suggested, for: localCanonicalPersonID)
+            patientAliases = try PatientAliasStore.defaultInAppSandbox().loadAliases()
+        } catch {
+            viewModel.errorMessage = "Unable to seed the local patient label from this device."
+        }
+    }
+
+    private func preparePatientSetupIfNeeded(force: Bool = false) {
+        let unlabeled = unlabeledRemoteScopes
+        if unlabeled.isEmpty {
+            showsPatientSetupSheet = false
+            patientSetupDrafts = [:]
+            return
+        }
+        for scope in unlabeled {
+            if patientSetupDrafts[scope.canonicalPersonID] == nil {
+                patientSetupDrafts[scope.canonicalPersonID] = ""
+            }
+        }
+        if force || !showsPatientSetupSheet {
+            showsPatientSetupSheet = true
+        }
+    }
+
+    private func savePatientSetupLabels() {
+        do {
+            let store = try PatientAliasStore.defaultInAppSandbox()
+            for scope in unlabeledRemoteScopes {
+                let alias = patientSetupDrafts[scope.canonicalPersonID] ?? ""
+                try store.saveAlias(alias, for: scope.canonicalPersonID)
+            }
+            patientAliases = try store.loadAliases()
+            if unlabeledRemoteScopes.isEmpty {
+                showsPatientSetupSheet = false
+            } else {
+                preparePatientSetupIfNeeded(force: false)
+            }
+        } catch {
+            viewModel.errorMessage = "Unable to save local patient labels."
         }
     }
 
@@ -624,11 +738,14 @@ func buildPatientScopeOptions(
 
     for remotePatientScope in remotePatientScopes where !seenCanonicalPersonIDs.contains(remotePatientScope.canonicalPersonID) {
         let alias = patientAliases[remotePatientScope.canonicalPersonID]
+        guard alias?.isEmpty == false else {
+            continue
+        }
         options.append(
             PatientScopeOption(
                 id: "remote-\(remotePatientScope.canonicalPersonID)",
-                title: alias?.isEmpty == false ? alias! : remotePatientScope.displayLabel,
-                subtitle: alias?.isEmpty == false ? "Local-only label for the selected ORIN patient." : "\(remotePatientScope.rowCount) rows in the current ORIN dataset.",
+                title: alias!,
+                subtitle: "Local-only label for the selected ORIN patient.",
                 value: remotePatientScope.canonicalPersonID
             )
         )
@@ -648,6 +765,62 @@ func buildPatientScopeOptions(
     }
 
     return options
+}
+
+private struct PatientSetupSheet: View {
+    let unlabeledScopes: [ORINPatientScope]
+    @Binding var drafts: [String: String]
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Local-only patient names") {
+                    Text("Give each ORIN patient a name you recognize. These labels stay on this iPhone and are never uploaded.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(unlabeledScopes, id: \.canonicalPersonID) { scope in
+                    Section {
+                        TextField("Local patient label", text: Binding(
+                            get: { drafts[scope.canonicalPersonID] ?? "" },
+                            set: { drafts[scope.canonicalPersonID] = $0 }
+                        ))
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("\(scope.rowCount) rows in current ORIN data")
+                            Text("Observed \(scope.minEventTime) to \(scope.maxEventTime)")
+                            Text("Share-safe bucket: \(scope.displayLabel)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Patient to label")
+                    }
+                }
+            }
+            .navigationTitle("Patient Names")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Not now") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        onSave()
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct PatientAliasSheet: View {

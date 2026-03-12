@@ -188,3 +188,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-12,235,UNASSIGNED,20,codex,UNASSIGNED,"Expand the iPhone HealthKit export path beyond step count so Apple Health data is captured more broadly and remains usable on ORIN"
 2026-03-12,236,UNASSIGNED,20,codex,UNASSIGNED,"Make patient scope reflect live ORIN dataset buckets and show overview progress only for active work"
 2026-03-12,237,UNASSIGNED,20,codex,UNASSIGNED,"Make ORIN cumulative iPhone uploads inherit a manual Apple bootstrap dataset instead of discarding it on the next delta upload"
+2026-03-12,238,UNASSIGNED,20,codex,UNASSIGNED,"Replace generic ORIN patient labels on iPhone with a durable local-only patient naming flow"

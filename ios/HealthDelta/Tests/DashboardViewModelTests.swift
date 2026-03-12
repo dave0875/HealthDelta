@@ -59,6 +59,37 @@ final class DashboardViewModelTests: XCTestCase {
         let options = buildPatientScopeOptions(
             localCanonicalPersonID: "local-person",
             manualCanonicalPersonID: nil,
+            patientAliases: ["remote-person": "Mom"],
+            remotePatientScopes: [
+                ORINPatientScope(
+                    canonicalPersonID: "remote-person",
+                    displayLabel: "Patient 2",
+                    rowCount: 500,
+                    minEventTime: "2026-03-01T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+                ORINPatientScope(
+                    canonicalPersonID: "unresolved",
+                    displayLabel: "Unresolved records",
+                    rowCount: 30,
+                    minEventTime: "2026-03-10T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(options.map(\.title), [
+            "All patients",
+            "This iPhone's record",
+            "Mom",
+        ])
+        XCTAssertEqual(options[2].subtitle, "Local-only label for the selected ORIN patient.")
+    }
+
+    func testBuildPatientScopeOptionsHidesUnlabeledRemotePatientsFromPrimarySelector() {
+        let options = buildPatientScopeOptions(
+            localCanonicalPersonID: "local-person",
+            manualCanonicalPersonID: nil,
             patientAliases: [:],
             remotePatientScopes: [
                 ORINPatientScope(
@@ -81,11 +112,49 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertEqual(options.map(\.title), [
             "All patients",
             "This iPhone's record",
-            "Patient 2",
-            "Unresolved records",
         ])
-        XCTAssertEqual(options[2].subtitle, "500 rows in the current ORIN dataset.")
-        XCTAssertEqual(options[3].value, "unresolved")
+    }
+
+    func testUnlabeledRemotePatientScopesReturnsOnlyMissingAliases() {
+        let unlabeled = unlabeledRemotePatientScopes(
+            localCanonicalPersonID: "local-person",
+            patientAliases: ["remote-person": "Mom"],
+            remotePatientScopes: [
+                ORINPatientScope(
+                    canonicalPersonID: "local-person",
+                    displayLabel: "Patient 1",
+                    rowCount: 120,
+                    minEventTime: "2026-03-01T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+                ORINPatientScope(
+                    canonicalPersonID: "remote-person",
+                    displayLabel: "Patient 2",
+                    rowCount: 500,
+                    minEventTime: "2026-03-01T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+                ORINPatientScope(
+                    canonicalPersonID: "unresolved",
+                    displayLabel: "Unresolved records",
+                    rowCount: 30,
+                    minEventTime: "2026-03-10T00:00:00Z",
+                    maxEventTime: "2026-03-11T00:00:00Z"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(unlabeled.map(\.canonicalPersonID), ["unresolved"])
+    }
+
+    func testSuggestedLocalPatientAliasUsesPossessiveDeviceName() {
+        XCTAssertEqual(suggestedLocalPatientAlias(fromDeviceName: "David's iPhone 15"), "David")
+        XCTAssertEqual(suggestedLocalPatientAlias(fromDeviceName: "Lennon’s MacBook Air"), "Lennon")
+    }
+
+    func testSuggestedLocalPatientAliasFallsBackToFirstWord() {
+        XCTAssertEqual(suggestedLocalPatientAlias(fromDeviceName: "David iPhone"), "David")
+        XCTAssertNil(suggestedLocalPatientAlias(fromDeviceName: "   "))
     }
 
     func testExportNowRefreshesDashboardOnSuccess() async throws {

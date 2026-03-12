@@ -132,6 +132,8 @@ Insight refresh behavior:
   - `Patient scope`: `All patients`, the known local iPhone record when available, live ORIN patient buckets, or a manual `canonical_person_id` override
 - ORIN-backed patient choices are share-safe and intentionally neutral, for example `Patient 1` or `Unresolved records`.
 - The `Patient scope` UI also supports a local-only patient label for the known iPhone record.
+- The app seeds the known iPhone record label from device-local context when possible and keeps that label on-device only.
+- Generic ORIN bucket labels like `Patient 1` are not meant to be the primary iPhone-facing names; unlabeled ORIN buckets are routed through a local-only patient-label setup flow before they become selectable by name.
   - This label is stored only in the app sandbox.
   - It is never exported into NDJSON.
   - It is never uploaded to ORIN.
