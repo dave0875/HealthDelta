@@ -4,6 +4,33 @@ import XCTest
 
 @MainActor
 final class DashboardViewModelTests: XCTestCase {
+    func testBuildPatientScopeOptionsIncludesLocalAndManualChoices() {
+        let options = buildPatientScopeOptions(
+            localCanonicalPersonID: "local-person",
+            manualCanonicalPersonID: "manual-person"
+        )
+
+        XCTAssertEqual(options.map(\.title), [
+            "All patients",
+            "This iPhone's record",
+            "Manual patient selection",
+        ])
+        XCTAssertEqual(options[1].subtitle, "local-person")
+        XCTAssertEqual(options[2].subtitle, "manual-person")
+    }
+
+    func testBuildPatientScopeOptionsSkipsDuplicateManualChoice() {
+        let options = buildPatientScopeOptions(
+            localCanonicalPersonID: "local-person",
+            manualCanonicalPersonID: "local-person"
+        )
+
+        XCTAssertEqual(options.map(\.title), [
+            "All patients",
+            "This iPhone's record",
+        ])
+    }
+
     func testExportNowRefreshesDashboardOnSuccess() async throws {
         let expectedSnapshot = SyncStatusSnapshot(
             runID: "run_test",

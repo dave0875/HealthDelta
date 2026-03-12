@@ -20,6 +20,8 @@ struct ContentView: View {
     @AppStorage("orinInsightsWindowDays") private var insightsWindowDays = 0
     @State private var didRunLaunchAutomation = false
     @State private var showsConnectionSettings = false
+    @State private var localCanonicalPersonID: String?
+    @State private var showsManualPatientEntry = false
 
     var body: some View {
         NavigationStack {
@@ -96,6 +98,7 @@ struct ContentView: View {
                     return
                 }
                 didRunLaunchAutomation = true
+                refreshKnownPatientScope()
                 await viewModel.refreshDashboard(
                     baseURLString: uploadBaseURL,
                     bearerToken: uploadToken,
@@ -167,42 +170,72 @@ struct ContentView: View {
                     title: "Patient & Window"
                 )
 
-                HStack(spacing: 12) {
-                    Menu {
-                        Button("All data") { insightsWindowDays = 0 }
-                        Button("7 days") { insightsWindowDays = 7 }
-                        Button("30 days") { insightsWindowDays = 30 }
-                        Button("90 days") { insightsWindowDays = 90 }
+                Menu {
+                    Button("All data") { insightsWindowDays = 0 }
+                    Button("7 days") { insightsWindowDays = 7 }
+                    Button("30 days") { insightsWindowDays = 30 }
+                    Button("90 days") { insightsWindowDays = 90 }
+                } label: {
+                    ScopeSelectionButton(
+                        title: "Evaluation window",
+                        value: windowLabel,
+                        detail: "Choose how much ORIN history is summarized.",
+                        systemImage: "calendar"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Patient scope")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ClinicalCompassPalette.muted)
+                        .textCase(.uppercase)
+
+                    VStack(spacing: 10) {
+                        ForEach(patientScopeOptions) { option in
+                            PatientScopeButton(
+                                title: option.title,
+                                subtitle: option.subtitle,
+                                isSelected: option.value == normalizedCanonicalPersonID
+                            ) {
+                                applyPatientScope(option)
+                            }
+                        }
+                    }
+
+                    Button {
+                        showsManualPatientEntry.toggle()
                     } label: {
-                        ScopePill(
-                            title: "Window",
-                            value: windowLabel,
-                            systemImage: "calendar"
+                        Label(
+                            showsManualPatientEntry || hasManualPatientOverride ? "Hide manual patient ID" : "Enter a different patient ID",
+                            systemImage: "pencil.line"
                         )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(ClinicalCompassPalette.accent)
                     }
                     .buttonStyle(.plain)
 
-                    ScopePill(
-                        title: "Patient",
-                        value: normalizedCanonicalPersonID ?? "All patients",
-                        systemImage: "person.text.rectangle"
-                    )
-                }
-
-                TextField("Patient canonical_person_id (optional)", text: $insightsCanonicalPersonID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.subheadline.monospaced())
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.white.opacity(0.92))
-                            .overlay(
+                    if showsManualPatientEntry || hasManualPatientOverride {
+                        TextField("Manual canonical_person_id", text: $insightsCanonicalPersonID)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.footnote.monospaced())
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(ClinicalCompassPalette.border.opacity(0.8), lineWidth: 1)
+                                    .fill(Color.white.opacity(0.92))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(ClinicalCompassPalette.border.opacity(0.8), lineWidth: 1)
+                                    )
                             )
-                    )
+
+                        Text("Only use a manual patient ID when you need a record other than this iPhone's local export identity.")
+                            .font(.footnote)
+                            .foregroundStyle(ClinicalCompassPalette.muted)
+                    }
+                }
 
                 Text("Window and patient scope shape both ORIN refreshes and remote summaries.")
                     .font(.footnote)
@@ -267,7 +300,7 @@ struct ContentView: View {
                 isBusy: viewModel.isExporting
             ) {
                 Task {
-                    await viewModel.exportNow()
+                    await exportNow()
                 }
             }
             .disabled(viewModel.isExporting)
@@ -363,7 +396,7 @@ struct ContentView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 10) {
-                    LabeledValueRow(label: "Patient", value: normalizedCanonicalPersonID ?? "All patients")
+                    LabeledValueRow(label: "Patient", value: patientScopeSummary)
                     LabeledValueRow(label: "Window", value: windowLabel)
                     LabeledValueRow(label: "Latest sync", value: viewModel.latestSyncLabel)
                     LabeledValueRow(label: "Anchors", value: viewModel.anchorStatusLabel)
@@ -430,12 +463,54 @@ struct ContentView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private var patientScopeOptions: [PatientScopeOption] {
+        buildPatientScopeOptions(
+            localCanonicalPersonID: localCanonicalPersonID,
+            manualCanonicalPersonID: normalizedCanonicalPersonID
+        )
+    }
+
+    private var hasManualPatientOverride: Bool {
+        guard let normalizedCanonicalPersonID else {
+            return false
+        }
+        return normalizedCanonicalPersonID != localCanonicalPersonID
+    }
+
     private var normalizedWindowDays: Int? {
         insightsWindowDays > 0 ? insightsWindowDays : nil
     }
 
     private var windowLabel: String {
         normalizedWindowDays.map { "\($0) days" } ?? "All data"
+    }
+
+    private var patientScopeSummary: String {
+        if let normalizedCanonicalPersonID {
+            if normalizedCanonicalPersonID == localCanonicalPersonID {
+                return "This iPhone's record"
+            }
+            return "Manual patient"
+        }
+        return "All patients"
+    }
+
+    private func applyPatientScope(_ option: PatientScopeOption) {
+        insightsCanonicalPersonID = option.value ?? ""
+        showsManualPatientEntry = false
+    }
+
+    private func exportNow() async {
+        await viewModel.exportNow()
+        refreshKnownPatientScope()
+    }
+
+    private func refreshKnownPatientScope() {
+        do {
+            localCanonicalPersonID = try CanonicalPersonIDStore.defaultInAppSandbox().loadIfPresent()
+        } catch {
+            localCanonicalPersonID = nil
+        }
     }
 
     private var connectionSummary: String {
@@ -450,6 +525,51 @@ struct ContentView: View {
             return "Connection settings are optional until you want remote sync and ORIN-generated summaries."
         }
     }
+}
+
+struct PatientScopeOption: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let value: String?
+}
+
+func buildPatientScopeOptions(
+    localCanonicalPersonID: String?,
+    manualCanonicalPersonID: String?
+) -> [PatientScopeOption] {
+    var options: [PatientScopeOption] = [
+        PatientScopeOption(
+            id: "all-patients",
+            title: "All patients",
+            subtitle: "Use the full ORIN dataset in scope.",
+            value: nil
+        )
+    ]
+
+    if let localCanonicalPersonID, !localCanonicalPersonID.isEmpty {
+        options.append(
+            PatientScopeOption(
+                id: "local-patient",
+                title: "This iPhone's record",
+                subtitle: localCanonicalPersonID,
+                value: localCanonicalPersonID
+            )
+        )
+    }
+
+    if let manualCanonicalPersonID, !manualCanonicalPersonID.isEmpty, manualCanonicalPersonID != localCanonicalPersonID {
+        options.append(
+            PatientScopeOption(
+                id: "manual-patient",
+                title: "Manual patient selection",
+                subtitle: manualCanonicalPersonID,
+                value: manualCanonicalPersonID
+            )
+        )
+    }
+
+    return options
 }
 
 private struct ConnectionSettingsSheet: View {
@@ -533,25 +653,32 @@ private struct CompassSectionHeader: View {
     }
 }
 
-private struct ScopePill: View {
+private struct ScopeSelectionButton: View {
     let title: String
     let value: String
+    let detail: String
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
+                .font(.headline)
                 .foregroundStyle(ClinicalCompassPalette.accent)
-            VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 20, height: 20)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(ClinicalCompassPalette.muted)
+                    .textCase(.uppercase)
                 Text(value)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(ClinicalCompassPalette.slate)
-                    .lineLimit(1)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(ClinicalCompassPalette.muted)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 12)
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(ClinicalCompassPalette.muted)
@@ -566,6 +693,51 @@ private struct ScopePill: View {
                         .stroke(ClinicalCompassPalette.border.opacity(0.8), lineWidth: 1)
                 )
         )
+    }
+}
+
+private struct PatientScopeButton: View {
+    let title: String
+    let subtitle: String?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.headline)
+                    .foregroundStyle(isSelected ? ClinicalCompassPalette.accent : ClinicalCompassPalette.border)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(ClinicalCompassPalette.slate)
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(title == "This iPhone's record" || title == "Manual patient selection" ? .footnote.monospaced() : .footnote)
+                            .foregroundStyle(ClinicalCompassPalette.muted)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isSelected ? ClinicalCompassPalette.accentSoft.opacity(0.45) : Color.white.opacity(0.92))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(isSelected ? ClinicalCompassPalette.accent.opacity(0.45) : ClinicalCompassPalette.border.opacity(0.8), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -29,6 +29,10 @@ final class CanonicalPersonIDStore {
         return id
     }
 
+    func loadIfPresent() throws -> String? {
+        try load()
+    }
+
     private func load() throws -> String? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil
@@ -52,4 +56,3 @@ final class CanonicalPersonIDStore {
         try data.write(to: fileURL, options: [.atomic])
     }
 }
-

@@ -83,7 +83,8 @@ Insight refresh behavior:
 - The top-right `Refresh` action reloads local sync state and, when both ORIN endpoint and token are configured, also fetches the latest ORIN insight cards.
 - The `Scope` card lets the operator choose:
   - `Evaluation window`: `All data`, `7 days`, `30 days`, or `90 days`
-  - optional `Patient canonical_person_id`: leave blank to evaluate all people in the current dataset
+  - `Patient scope`: `All patients`, the known local iPhone record when available, or a manual `canonical_person_id` override
+- Manual patient entry is intentionally secondary. Use it only when filtering to a different patient than the local iPhone export identity.
 - Those controls affect both explicit dashboard refreshes and the automatic ORIN fetch that runs after a successful upload.
 - On successful upload, the app immediately attempts an ORIN insights fetch.
 
