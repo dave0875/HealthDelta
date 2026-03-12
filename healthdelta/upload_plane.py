@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 import uuid
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -131,6 +133,7 @@ class UploadPlane:
             )
 
         expected_sha = obj.get("sha256")
+        actual_sha: str | None = None
         if expected_sha:
             actual_sha = hashlib.sha256(assembled.read_bytes()).hexdigest()
             if actual_sha != expected_sha:
@@ -139,13 +142,24 @@ class UploadPlane:
                     "sha256_mismatch",
                     f"assembled sha256 {actual_sha} does not match expected {expected_sha}",
                 )
+        if actual_sha is None:
+            actual_sha = hashlib.sha256(assembled.read_bytes()).hexdigest()
 
         short_id = session_id[:6]
         dataset_name = f"dataset_{_timestamp_slug()}_{short_id}"
         dataset_dir = self.datasets_root / dataset_name
         dataset_dir.mkdir(parents=True, exist_ok=False)
-        destination = dataset_dir / "export.zip"
-        shutil.move(str(assembled), str(destination))
+        current_dataset_name = self._current_dataset_name()
+        if not self._materialize_cumulative_ios_dataset(
+            dataset_dir=dataset_dir,
+            raw_upload_zip=assembled,
+            raw_upload_sha=actual_sha,
+            current_dataset_name=current_dataset_name,
+        ):
+            destination = dataset_dir / "export.zip"
+            shutil.move(str(assembled), str(destination))
+        elif assembled.exists():
+            assembled.unlink()
 
         self._set_current_dataset(dataset_name)
         obj["status"] = "finalized"
@@ -283,3 +297,218 @@ class UploadPlane:
             name = self.current_fallback.read_text(encoding="utf-8").strip()
             return name or None
         return None
+
+    def _materialize_cumulative_ios_dataset(
+        self,
+        *,
+        dataset_dir: Path,
+        raw_upload_zip: Path,
+        raw_upload_sha: str,
+        current_dataset_name: str | None,
+    ) -> bool:
+        new_upload = self._read_ios_export_zip(raw_upload_zip)
+        if new_upload is None:
+            return False
+
+        previous_rows: list[dict[str, Any]] = []
+        previous_source_runs: list[dict[str, Any]] = []
+        if current_dataset_name:
+            current_dataset_dir = self.datasets_root / current_dataset_name
+            self._copy_raw_uploads_forward(current_dataset_dir=current_dataset_dir, next_dataset_dir=dataset_dir)
+            previous_export = current_dataset_dir / "export.zip"
+            previous_upload = self._read_ios_export_zip(previous_export)
+            if previous_upload is not None:
+                previous_rows = previous_upload["rows"]
+                previous_source_runs = self._normalize_source_runs(previous_upload["manifest"])
+
+        raw_uploads_dir = dataset_dir / "raw_uploads"
+        raw_uploads_dir.mkdir(parents=True, exist_ok=True)
+        preserved_raw_zip = raw_uploads_dir / f"{raw_upload_sha}.zip"
+        if not preserved_raw_zip.exists():
+            shutil.copy2(raw_upload_zip, preserved_raw_zip)
+
+        merged_rows = self._merge_ios_rows(previous_rows, new_upload["rows"])
+        source_runs = self._merge_source_runs(
+            previous_source_runs,
+            {
+                "run_id": new_upload["run_id"],
+                "raw_upload_sha256": raw_upload_sha,
+            },
+        )
+        self._write_cumulative_ios_export(
+            export_zip=dataset_dir / "export.zip",
+            rows=merged_rows,
+            source_runs=source_runs,
+        )
+        metadata = {
+            "mode": "cumulative_ios_current",
+            "raw_uploads": [path.name for path in sorted(raw_uploads_dir.glob("*.zip"))],
+            "source_runs": source_runs,
+            "row_counts": {"observations": len(merged_rows)},
+        }
+        (dataset_dir / "cumulative_sources.json").write_text(
+            json.dumps(metadata, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return True
+
+    def _read_ios_export_zip(self, export_zip: Path) -> dict[str, Any] | None:
+        if not export_zip.exists():
+            return None
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                extract_root = Path(tmp)
+                self._safe_extract_zip(export_zip=export_zip, extract_root=extract_root)
+                candidates = sorted(
+                    {
+                        manifest.parent
+                        for manifest in extract_root.rglob("manifest.json")
+                        if manifest.is_file() and (manifest.parent / "ndjson" / "observations.ndjson").exists()
+                    },
+                    key=lambda p: p.as_posix(),
+                )
+                if not candidates:
+                    return None
+                run_dir = candidates[0]
+                manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+                if not isinstance(manifest, dict):
+                    return None
+                observations_path = run_dir / "ndjson" / "observations.ndjson"
+                rows = []
+                for line in observations_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    obj = json.loads(line)
+                    if not isinstance(obj, dict):
+                        continue
+                    rows.append(obj)
+                run_id = manifest.get("run_id")
+                if not isinstance(run_id, str) or not run_id:
+                    run_id = run_dir.name
+                return {
+                    "run_id": run_id,
+                    "manifest": manifest,
+                    "rows": rows,
+                }
+        except (OSError, ValueError, json.JSONDecodeError, zipfile.BadZipFile, UploadPlaneError):
+            return None
+
+    def _copy_raw_uploads_forward(self, *, current_dataset_dir: Path, next_dataset_dir: Path) -> None:
+        src = current_dataset_dir / "raw_uploads"
+        if not src.exists():
+            return
+        dst = next_dataset_dir / "raw_uploads"
+        dst.mkdir(parents=True, exist_ok=True)
+        for raw_zip in sorted(src.glob("*.zip")):
+            target = dst / raw_zip.name
+            if target.exists():
+                continue
+            shutil.copy2(raw_zip, target)
+
+    def _merge_ios_rows(
+        self,
+        previous_rows: list[dict[str, Any]],
+        new_rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen_record_keys: set[str] = set()
+        for row in previous_rows + new_rows:
+            normalized = dict(row)
+            record_key = self._resolve_record_key(normalized)
+            if not record_key or record_key in seen_record_keys:
+                continue
+            normalized["record_key"] = record_key
+            seen_record_keys.add(record_key)
+            merged.append(normalized)
+        return merged
+
+    def _resolve_record_key(self, row: dict[str, Any]) -> str:
+        for key in ("record_key", "event_key", "source_id"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        payload = json.dumps(row, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _normalize_source_runs(self, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+        source_runs = manifest.get("source_runs")
+        if isinstance(source_runs, list):
+            normalized: list[dict[str, Any]] = []
+            for row in source_runs:
+                if not isinstance(row, dict):
+                    continue
+                run_id = row.get("run_id")
+                raw_sha = row.get("raw_upload_sha256")
+                if isinstance(run_id, str) and run_id and isinstance(raw_sha, str) and raw_sha:
+                    normalized.append({"run_id": run_id, "raw_upload_sha256": raw_sha})
+            if normalized:
+                return normalized
+        run_id = manifest.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return [{"run_id": run_id, "raw_upload_sha256": ""}]
+        return []
+
+    def _merge_source_runs(
+        self,
+        previous_source_runs: list[dict[str, Any]],
+        new_source_run: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for row in previous_source_runs + [new_source_run]:
+            run_id = row.get("run_id")
+            raw_sha = row.get("raw_upload_sha256")
+            if not isinstance(run_id, str) or not run_id:
+                continue
+            if not isinstance(raw_sha, str):
+                raw_sha = ""
+            key = (run_id, raw_sha)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append({"run_id": run_id, "raw_upload_sha256": raw_sha})
+        return merged
+
+    def _write_cumulative_ios_export(
+        self,
+        *,
+        export_zip: Path,
+        rows: list[dict[str, Any]],
+        source_runs: list[dict[str, Any]],
+    ) -> None:
+        run_id = "run_orin_cumulative_current"
+        observations_text = ""
+        if rows:
+            observations_text = "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+        observations_bytes = observations_text.encode("utf-8")
+        manifest = {
+            "run_id": run_id,
+            "files": [
+                {
+                    "path": "ndjson/observations.ndjson",
+                    "size_bytes": len(observations_bytes),
+                    "sha256": hashlib.sha256(observations_bytes).hexdigest(),
+                }
+            ],
+            "row_counts": {"observations": len(rows)},
+            "source_runs": source_runs,
+        }
+        with zipfile.ZipFile(export_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(f"{run_id}/manifest.json", json.dumps(manifest, sort_keys=True))
+            archive.writestr(f"{run_id}/ndjson/observations.ndjson", observations_text)
+
+    def _safe_extract_zip(self, *, export_zip: Path, extract_root: Path) -> None:
+        extract_root.mkdir(parents=True, exist_ok=True)
+        resolved_root = extract_root.resolve()
+        with zipfile.ZipFile(export_zip, "r") as archive:
+            for member in archive.infolist():
+                rel = Path(member.filename)
+                target = (extract_root / rel).resolve()
+                if target != resolved_root and resolved_root not in target.parents:
+                    raise UploadPlaneError(400, "invalid_upload_archive", f"unsafe zip member path: {member.filename}")
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member, "r") as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)

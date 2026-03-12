@@ -63,6 +63,8 @@ Current behavior:
 - It creates an upload session with `POST /upload-sessions`.
 - It uploads the archive in sequential chunks with `PUT /upload-sessions/{id}/chunks/{index}`.
 - It finalizes the dataset with `POST /upload-sessions/{id}/finalize`.
+- For iPhone export uploads, ORIN preserves each raw uploaded run archive under the active dataset directory and materializes a cumulative `export.zip` for analysis.
+- Re-uploading the same iPhone run does not duplicate rows in the cumulative current dataset.
 - On success, the app shows the returned dataset identifier and can fetch ORIN-generated insight cards with `GET /insights/current`.
 - ORIN materializes deterministic analysis artifacts for the active dataset under:
   - `analysis/duckdb/run.duckdb`
@@ -70,6 +72,7 @@ Current behavior:
   - `analysis/reports/summary.md`
   - `analysis/note/doctor_note.md`
 - `GET /insights/current` derives its fallback cards from those ORIN-side artifacts, not directly from the raw uploaded NDJSON.
+- By default, those insights are grounded in ORIN's cumulative current dataset, not only the newest incremental iPhone delta.
 - When ORIN has a local Ollama runtime configured, it refines those artifact-grounded facts into more readable cards. If Ollama is unavailable or returns invalid output, the deterministic artifact-grounded cards are returned as-is.
 
 Insight refresh behavior:

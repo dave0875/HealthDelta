@@ -179,3 +179,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-11,226,UNASSIGNED,30,codex,UNASSIGNED,"Roll the live ORIN backend forward and validate end-to-end iPhone upload plus insights generation on the current deployment"
 2026-03-11,226,UNASSIGNED,15,codex,UNASSIGNED,"Record single-issue CI proof for the already-landed ORIN rollout after a mixed-issue push tripped governance"
 2026-03-11,229,UNASSIGNED,20,codex,UNASSIGNED,"Make ORIN insight window and target patient configurable from the iPhone app while preserving current defaults"
+2026-03-11,230,UNASSIGNED,20,codex,UNASSIGNED,"Make ORIN accumulate incremental iPhone uploads into a cumulative current dataset instead of replacing prior state"

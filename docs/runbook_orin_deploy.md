@@ -107,6 +107,8 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `POST /upload-sessions` create resumable session
 - `PUT /upload-sessions/{id}/chunks/{index}` upload chunk bytes
 - `POST /upload-sessions/{id}/finalize` assemble + verify + publish dataset
+  - for iPhone export uploads, finalize preserves the raw uploaded run archive and materializes a cumulative current `export.zip`
+  - repeated upload of the same iPhone run is duplicate-safe at the cumulative dataset level
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset
 - `GET /insights/current` generate and return the current dataset's iPhone-facing insight cards
@@ -119,6 +121,7 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
     - `analysis/reports/summary.json`
     - `analysis/reports/summary.md`
     - `analysis/note/doctor_note.md`
+  - for cumulative iPhone datasets, those artifacts analyze the merged current view rather than only the newest raw uploaded run
   - the endpoint's fallback cards are derived from those deterministic ORIN-side artifacts, not from raw upload aggregates
   - when Ollama is configured and reachable, it receives only artifact-grounded inputs (`doctor_note`, `summary_json`, fallback cards) and returns refined share-safe cards
   - otherwise it falls back to deterministic artifact-grounded cards

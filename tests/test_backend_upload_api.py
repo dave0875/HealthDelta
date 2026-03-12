@@ -7,11 +7,35 @@ import tempfile
 import threading
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from healthdelta.backend_server import make_server
+
+
+def _write_ios_export_bytes(*, run_id: str, rows: list[dict[str, object]]) -> bytes:
+    observations = "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
+    manifest = {
+        "run_id": run_id,
+        "files": [
+            {
+                "path": "ndjson/observations.ndjson",
+                "size_bytes": len(observations.encode("utf-8")),
+                "sha256": hashlib.sha256(observations.encode("utf-8")).hexdigest(),
+            }
+        ],
+        "row_counts": {"observations": len(rows)},
+    }
+    path = Path(tempfile.mkdtemp()) / f"{run_id}.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(f"{run_id}/manifest.json", json.dumps(manifest, sort_keys=True))
+        archive.writestr(f"{run_id}/ndjson/observations.ndjson", observations)
+    payload = path.read_bytes()
+    path.unlink()
+    path.parent.rmdir()
+    return payload
 
 
 class TestBackendUploadAPI(unittest.TestCase):
@@ -97,6 +121,106 @@ class TestBackendUploadAPI(unittest.TestCase):
         status, payload = self._request("GET", "/datasets/archives", auth=False)
         self.assertEqual(status, 503)
         self.assertEqual(payload["error"], "upload_unavailable")
+
+    def test_upload_finalize_accumulates_ios_current_dataset(self) -> None:
+        first_payload = _write_ios_export_bytes(
+            run_id="run_1",
+            rows=[
+                {
+                    "schema_version": 1,
+                    "record_key": "rk1",
+                    "canonical_person_id": "person-1",
+                    "source": "healthkit",
+                    "source_id": "HKSample/uuid-1",
+                    "sample_type": "HKQuantityTypeIdentifierStepCount",
+                    "start_time": "2026-03-10T00:00:00Z",
+                    "end_time": "2026-03-10T00:15:00Z",
+                    "value_num": 10,
+                    "unit": "count",
+                },
+                {
+                    "schema_version": 1,
+                    "record_key": "rk2",
+                    "canonical_person_id": "person-1",
+                    "source": "healthkit",
+                    "source_id": "HKSample/uuid-2",
+                    "sample_type": "HKQuantityTypeIdentifierStepCount",
+                    "start_time": "2026-03-10T01:00:00Z",
+                    "end_time": "2026-03-10T01:15:00Z",
+                    "value_num": 20,
+                    "unit": "count",
+                },
+            ],
+        )
+        second_payload = _write_ios_export_bytes(
+            run_id="run_2",
+            rows=[
+                {
+                    "schema_version": 1,
+                    "record_key": "rk2",
+                    "canonical_person_id": "person-1",
+                    "source": "healthkit",
+                    "source_id": "HKSample/uuid-2",
+                    "sample_type": "HKQuantityTypeIdentifierStepCount",
+                    "start_time": "2026-03-10T01:00:00Z",
+                    "end_time": "2026-03-10T01:15:00Z",
+                    "value_num": 20,
+                    "unit": "count",
+                },
+                {
+                    "schema_version": 1,
+                    "record_key": "rk3",
+                    "canonical_person_id": "person-1",
+                    "source": "healthkit",
+                    "source_id": "HKSample/uuid-3",
+                    "sample_type": "HKQuantityTypeIdentifierStepCount",
+                    "start_time": "2026-03-11T00:00:00Z",
+                    "end_time": "2026-03-11T00:15:00Z",
+                    "value_num": 30,
+                    "unit": "count",
+                },
+            ],
+        )
+
+        def upload_and_finalize(payload: bytes) -> None:
+            sha = hashlib.sha256(payload).hexdigest()
+            status, created = self._request(
+                "POST",
+                "/upload-sessions",
+                body=json.dumps({"total_size": len(payload), "sha256": sha}).encode("utf-8"),
+            )
+            self.assertEqual(status, 201)
+            sid = created["id"]
+            put_status, _ = self._request("PUT", f"/upload-sessions/{sid}/chunks/0", body=payload)
+            self.assertEqual(put_status, 200)
+            fin_status, finalized = self._request("POST", f"/upload-sessions/{sid}/finalize", body=b"{}")
+            self.assertEqual(fin_status, 200)
+            self.assertEqual(finalized["status"], "finalized")
+
+        upload_and_finalize(first_payload)
+        upload_and_finalize(second_payload)
+
+        current_status, current = self._request("GET", "/datasets/current")
+        self.assertEqual(current_status, 200)
+        export_zip = Path(current["export_zip"])
+        with tempfile.TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(export_zip, "r") as archive:
+                archive.extractall(tmp)
+            manifest_path = next(Path(tmp).rglob("manifest.json"))
+            observations_path = manifest_path.parent / "ndjson" / "observations.ndjson"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            rows = [
+                json.loads(line)
+                for line in observations_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        self.assertEqual(manifest["row_counts"], {"observations": 3})
+        self.assertEqual([row["record_key"] for row in rows], ["rk1", "rk2", "rk3"])
+
+        insights_status, insights = self._request("GET", "/insights/current")
+        self.assertEqual(insights_status, 200)
+        self.assertEqual(insights["status"], "ok")
+        self.assertIn("3 observation rows", insights["cards"][0]["body"])
 
 
 if __name__ == "__main__":
