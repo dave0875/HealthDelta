@@ -23,6 +23,15 @@ def _timestamp_slug() -> str:
     return datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _jsonable_observation_value(key: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if key in {"event_time", "effective_start", "effective_end"} and isinstance(value, datetime):
+        normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return normalized.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return value
+
+
 @dataclass
 class UploadPlaneError(Exception):
     status: int
@@ -309,6 +318,11 @@ class UploadPlane:
         new_upload = self._read_ios_export_zip(raw_upload_zip)
         if new_upload is None:
             return False
+        new_rows = self._dedupe_ios_rows(new_upload["rows"])
+        new_source_run = {
+            "run_id": new_upload["run_id"],
+            "raw_upload_sha256": raw_upload_sha,
+        }
 
         previous_rows: list[dict[str, Any]] = []
         previous_source_runs: list[dict[str, Any]] = []
@@ -320,6 +334,30 @@ class UploadPlane:
             if previous_upload is not None:
                 previous_rows = previous_upload["rows"]
                 previous_source_runs = self._normalize_source_runs(previous_upload["manifest"])
+            else:
+                bootstrap_source_runs = self._bootstrap_source_runs(
+                    current_dataset_dir=current_dataset_dir,
+                    current_dataset_name=current_dataset_name,
+                )
+                merged_source_runs = self._merge_source_runs(bootstrap_source_runs, new_source_run)
+                merged_row_count = self._write_cumulative_ios_export_from_bootstrap_analysis(
+                    current_dataset_dir=current_dataset_dir,
+                    export_zip=dataset_dir / "export.zip",
+                    new_rows=new_rows,
+                    source_runs=merged_source_runs,
+                )
+                if merged_row_count is not None:
+                    metadata = {
+                        "mode": "cumulative_ios_current",
+                        "raw_uploads": [path.name for path in sorted((dataset_dir / "raw_uploads").glob("*.zip"))],
+                        "source_runs": merged_source_runs,
+                        "row_counts": {"observations": merged_row_count},
+                    }
+                    (dataset_dir / "cumulative_sources.json").write_text(
+                        json.dumps(metadata, sort_keys=True, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    return True
 
         raw_uploads_dir = dataset_dir / "raw_uploads"
         raw_uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -327,14 +365,8 @@ class UploadPlane:
         if not preserved_raw_zip.exists():
             shutil.copy2(raw_upload_zip, preserved_raw_zip)
 
-        merged_rows = self._merge_ios_rows(previous_rows, new_upload["rows"])
-        source_runs = self._merge_source_runs(
-            previous_source_runs,
-            {
-                "run_id": new_upload["run_id"],
-                "raw_upload_sha256": raw_upload_sha,
-            },
-        )
+        merged_rows = self._merge_ios_rows(previous_rows, new_rows)
+        source_runs = self._merge_source_runs(previous_source_runs, new_source_run)
         self._write_cumulative_ios_export(
             export_zip=dataset_dir / "export.zip",
             rows=merged_rows,
@@ -351,6 +383,24 @@ class UploadPlane:
             encoding="utf-8",
         )
         return True
+
+    def _bootstrap_source_runs(
+        self,
+        *,
+        current_dataset_dir: Path,
+        current_dataset_name: str,
+    ) -> list[dict[str, Any]]:
+        cumulative_sources = current_dataset_dir / "cumulative_sources.json"
+        if cumulative_sources.exists():
+            try:
+                obj = json.loads(cumulative_sources.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                obj = {}
+            if isinstance(obj, dict):
+                normalized = self._normalize_source_runs(obj)
+                if normalized:
+                    return normalized
+        return [{"run_id": current_dataset_name, "raw_upload_sha256": ""}]
 
     def _read_ios_export_zip(self, export_zip: Path) -> dict[str, Any] | None:
         if not export_zip.exists():
@@ -405,6 +455,19 @@ class UploadPlane:
                 continue
             shutil.copy2(raw_zip, target)
 
+    def _dedupe_ios_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen_record_keys: set[str] = set()
+        for row in rows:
+            normalized = dict(row)
+            record_key = self._resolve_record_key(normalized)
+            if not record_key or record_key in seen_record_keys:
+                continue
+            normalized["record_key"] = record_key
+            seen_record_keys.add(record_key)
+            deduped.append(normalized)
+        return deduped
+
     def _merge_ios_rows(
         self,
         previous_rows: list[dict[str, Any]],
@@ -421,6 +484,168 @@ class UploadPlane:
             seen_record_keys.add(record_key)
             merged.append(normalized)
         return merged
+
+    def _write_cumulative_ios_export_from_bootstrap_analysis(
+        self,
+        *,
+        current_dataset_dir: Path,
+        export_zip: Path,
+        new_rows: list[dict[str, Any]],
+        source_runs: list[dict[str, Any]],
+    ) -> int | None:
+        baseline_db = current_dataset_dir / "analysis" / "duckdb" / "run.duckdb"
+        if not baseline_db.exists():
+            return None
+
+        try:
+            import duckdb
+        except ImportError:
+            return None
+
+        columns = [
+            "schema_version",
+            "record_key",
+            "canonical_person_id",
+            "source",
+            "source_system",
+            "source_file",
+            "event_time",
+            "run_id",
+            "event_key",
+            "source_id",
+            "record_id",
+            "record_type",
+            "observation_id",
+            "subject_reference",
+            "encounter_id",
+            "effective_start",
+            "effective_end",
+            "sample_type",
+            "sample_kind",
+            "resource_type",
+            "code_system",
+            "code",
+            "display",
+            "value",
+            "value_num",
+            "value_text",
+            "category_value",
+            "activity_type",
+            "duration_seconds",
+            "total_energy_burned_num",
+            "total_energy_burned_unit",
+            "total_distance_num",
+            "total_distance_unit",
+            "unit",
+            "section_code",
+            "section_display",
+            "section_title",
+            "components_json",
+            "code_coding_json",
+            "type_coding_json",
+            "status",
+        ]
+        baseline_sql = """
+            SELECT
+              schema_version,
+              record_key,
+              canonical_person_id,
+              source,
+              source_system,
+              source_file,
+              event_time,
+              run_id,
+              COALESCE(event_key, record_key) AS event_key,
+              source_id,
+              record_id,
+              record_type,
+              observation_id,
+              subject_reference,
+              encounter_id,
+              effective_start,
+              effective_end,
+              hk_type AS sample_type,
+              sample_kind,
+              resource_type,
+              code_system,
+              code,
+              display,
+              value,
+              value_num,
+              value_text,
+              category_value,
+              activity_type,
+              duration_seconds,
+              total_energy_burned_num,
+              total_energy_burned_unit,
+              total_distance_num,
+              total_distance_unit,
+              unit,
+              section_code,
+              section_display,
+              section_title,
+              components_json,
+              code_coding_json,
+              type_coding_json,
+              status
+            FROM observations
+            WHERE COALESCE(record_key, '') <> ''
+            ORDER BY COALESCE(event_time, effective_start, effective_end), record_key
+        """
+
+        con = duckdb.connect(str(baseline_db), read_only=True)
+        try:
+            baseline_count_row = con.execute(
+                "SELECT COUNT(*) FROM observations WHERE COALESCE(record_key, '') <> ''"
+            ).fetchone()
+            baseline_row_count = int(baseline_count_row[0] or 0) if baseline_count_row else 0
+            existing_record_keys: set[str] = set()
+            if new_rows:
+                candidate_keys = [row["record_key"] for row in new_rows if isinstance(row.get("record_key"), str)]
+                if candidate_keys:
+                    placeholders = ",".join(["?"] * len(candidate_keys))
+                    existing_record_keys = {
+                        str(row[0])
+                        for row in con.execute(
+                            f"SELECT record_key FROM observations WHERE record_key IN ({placeholders})",
+                            candidate_keys,
+                        ).fetchall()
+                        if row and row[0]
+                    }
+
+            with tempfile.TemporaryDirectory() as tmp:
+                observations_path = Path(tmp) / "observations.ndjson"
+                with observations_path.open("w", encoding="utf-8") as out:
+                    cursor = con.execute(baseline_sql)
+                    while True:
+                        batch = cursor.fetchmany(5000)
+                        if not batch:
+                            break
+                        for values in batch:
+                            obj = {
+                                key: _jsonable_observation_value(key, value)
+                                for key, value in zip(columns, values)
+                                if _jsonable_observation_value(key, value) is not None
+                            }
+                            out.write(json.dumps(obj, sort_keys=True) + "\n")
+
+                    appended_count = 0
+                    for row in new_rows:
+                        record_key = row["record_key"]
+                        if record_key in existing_record_keys:
+                            continue
+                        out.write(json.dumps(row, sort_keys=True) + "\n")
+                        appended_count += 1
+
+                self._write_cumulative_ios_export_from_ndjson(
+                    export_zip=export_zip,
+                    observations_path=observations_path,
+                    row_count=baseline_row_count + appended_count,
+                    source_runs=source_runs,
+                )
+            return baseline_row_count + appended_count
+        finally:
+            con.close()
 
     def _resolve_record_key(self, row: dict[str, Any]) -> str:
         for key in ("record_key", "event_key", "source_id"):
@@ -476,11 +701,28 @@ class UploadPlane:
         rows: list[dict[str, Any]],
         source_runs: list[dict[str, Any]],
     ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            observations_path = Path(tmp) / "observations.ndjson"
+            with observations_path.open("w", encoding="utf-8") as out:
+                for row in rows:
+                    out.write(json.dumps(row, sort_keys=True) + "\n")
+            self._write_cumulative_ios_export_from_ndjson(
+                export_zip=export_zip,
+                observations_path=observations_path,
+                row_count=len(rows),
+                source_runs=source_runs,
+            )
+
+    def _write_cumulative_ios_export_from_ndjson(
+        self,
+        *,
+        export_zip: Path,
+        observations_path: Path,
+        row_count: int,
+        source_runs: list[dict[str, Any]],
+    ) -> None:
         run_id = "run_orin_cumulative_current"
-        observations_text = ""
-        if rows:
-            observations_text = "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n"
-        observations_bytes = observations_text.encode("utf-8")
+        observations_bytes = observations_path.read_bytes() if observations_path.exists() else b""
         manifest = {
             "run_id": run_id,
             "files": [
@@ -490,12 +732,12 @@ class UploadPlane:
                     "sha256": hashlib.sha256(observations_bytes).hexdigest(),
                 }
             ],
-            "row_counts": {"observations": len(rows)},
+            "row_counts": {"observations": row_count},
             "source_runs": source_runs,
         }
         with zipfile.ZipFile(export_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr(f"{run_id}/manifest.json", json.dumps(manifest, sort_keys=True))
-            archive.writestr(f"{run_id}/ndjson/observations.ndjson", observations_text)
+            archive.write(observations_path, arcname=f"{run_id}/ndjson/observations.ndjson")
 
     def _safe_extract_zip(self, *, export_zip: Path, extract_root: Path) -> None:
         extract_root.mkdir(parents=True, exist_ok=True)

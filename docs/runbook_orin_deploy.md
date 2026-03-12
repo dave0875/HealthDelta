@@ -108,6 +108,7 @@ All endpoints require `Authorization: Bearer <HEALTHDELTA_UPLOAD_TOKEN>`.
 - `PUT /upload-sessions/{id}/chunks/{index}` upload chunk bytes
 - `POST /upload-sessions/{id}/finalize` assemble + verify + publish dataset
   - for iPhone export uploads, finalize preserves the raw uploaded run archive and materializes a cumulative current `export.zip`
+  - if the previous `current` dataset is a manually installed Apple bootstrap with share-safe analysis artifacts, finalize uses that bootstrap as the cumulative baseline for the first later iPhone delta
   - repeated upload of the same iPhone run is duplicate-safe at the cumulative dataset level
 - `GET /upload-sessions/{id}` inspect session status
 - `GET /datasets/current` show active dataset

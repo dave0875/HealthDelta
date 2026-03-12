@@ -7,6 +7,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+import duckdb
+
 from healthdelta.upload_plane import UploadPlane
 
 
@@ -43,6 +45,127 @@ def _read_current_ios_dataset(export_zip: Path) -> tuple[dict[str, object], list
             if line.strip()
         ]
         return manifest, rows
+
+
+def _seed_bootstrap_current_dataset(
+    plane: UploadPlane,
+    *,
+    dataset_name: str,
+    rows: list[dict[str, object]],
+) -> None:
+    dataset_dir = plane.datasets_root / dataset_name
+    dataset_dir.mkdir(parents=True, exist_ok=False)
+    with zipfile.ZipFile(dataset_dir / "export.zip", "w") as archive:
+        archive.writestr("apple/export.xml", "<HealthData></HealthData>")
+
+    analysis_db = dataset_dir / "analysis" / "duckdb" / "run.duckdb"
+    analysis_db.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(analysis_db))
+    try:
+        con.execute(
+            """
+            CREATE TABLE observations (
+              schema_version INTEGER,
+              record_key VARCHAR,
+              canonical_person_id VARCHAR,
+              source VARCHAR,
+              source_system VARCHAR,
+              source_file VARCHAR,
+              event_time TIMESTAMP,
+              run_id VARCHAR,
+              event_key VARCHAR,
+              source_id VARCHAR,
+              record_id VARCHAR,
+              record_type VARCHAR,
+              observation_id VARCHAR,
+              subject_reference VARCHAR,
+              encounter_id VARCHAR,
+              effective_start TIMESTAMP,
+              effective_end TIMESTAMP,
+              hk_type VARCHAR,
+              sample_kind VARCHAR,
+              resource_type VARCHAR,
+              code_system VARCHAR,
+              code VARCHAR,
+              display VARCHAR,
+              value VARCHAR,
+              value_num DOUBLE,
+              value_text VARCHAR,
+              category_value INTEGER,
+              activity_type VARCHAR,
+              duration_seconds DOUBLE,
+              total_energy_burned_num DOUBLE,
+              total_energy_burned_unit VARCHAR,
+              total_distance_num DOUBLE,
+              total_distance_unit VARCHAR,
+              unit VARCHAR,
+              section_code VARCHAR,
+              section_display VARCHAR,
+              section_title VARCHAR,
+              components_json VARCHAR,
+              code_coding_json VARCHAR,
+              type_coding_json VARCHAR,
+              status VARCHAR
+            )
+            """
+        )
+        con.executemany(
+            """
+            INSERT INTO observations VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                [
+                    row.get("schema_version"),
+                    row.get("record_key"),
+                    row.get("canonical_person_id"),
+                    row.get("source"),
+                    row.get("source_system"),
+                    row.get("source_file"),
+                    row.get("event_time"),
+                    row.get("run_id"),
+                    row.get("event_key"),
+                    row.get("source_id"),
+                    row.get("record_id"),
+                    row.get("record_type"),
+                    row.get("observation_id"),
+                    row.get("subject_reference"),
+                    row.get("encounter_id"),
+                    row.get("effective_start"),
+                    row.get("effective_end"),
+                    row.get("hk_type"),
+                    row.get("sample_kind"),
+                    row.get("resource_type"),
+                    row.get("code_system"),
+                    row.get("code"),
+                    row.get("display"),
+                    row.get("value"),
+                    row.get("value_num"),
+                    row.get("value_text"),
+                    row.get("category_value"),
+                    row.get("activity_type"),
+                    row.get("duration_seconds"),
+                    row.get("total_energy_burned_num"),
+                    row.get("total_energy_burned_unit"),
+                    row.get("total_distance_num"),
+                    row.get("total_distance_unit"),
+                    row.get("unit"),
+                    row.get("section_code"),
+                    row.get("section_display"),
+                    row.get("section_title"),
+                    row.get("components_json"),
+                    row.get("code_coding_json"),
+                    row.get("type_coding_json"),
+                    row.get("status"),
+                ]
+                for row in rows
+            ],
+        )
+    finally:
+        con.close()
+
+    plane._set_current_dataset(dataset_name)
 
 
 class TestUploadPlane(unittest.TestCase):
@@ -196,6 +319,103 @@ class TestUploadPlane(unittest.TestCase):
             self.assertEqual([row["record_key"] for row in rows], ["rk1"])
             raw_uploads = sorted((Path(current["path"]) / "raw_uploads").glob("*.zip"))
             self.assertEqual(len(raw_uploads), 1)
+
+    def test_finalize_session_accumulates_ios_delta_on_bootstrap_current_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plane = UploadPlane(Path(tmp))
+            _seed_bootstrap_current_dataset(
+                plane,
+                dataset_name="dataset_bootstrap",
+                rows=[
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk1",
+                        "canonical_person_id": "patient-a",
+                        "source": "ios",
+                        "event_time": "2026-03-10 00:15:00",
+                        "run_id": "bootstrap-run",
+                        "event_key": "rk1",
+                        "source_id": "HKSample/bootstrap-1",
+                        "effective_start": "2026-03-10 00:00:00",
+                        "effective_end": "2026-03-10 00:15:00",
+                        "hk_type": "HKQuantityTypeIdentifierStepCount",
+                        "sample_kind": "quantity",
+                        "display": "Steps",
+                        "value": "10.0",
+                        "value_num": 10.0,
+                        "unit": "count",
+                    },
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk2",
+                        "canonical_person_id": "patient-b",
+                        "source": "ios",
+                        "event_time": "2026-03-10 01:15:00",
+                        "run_id": "bootstrap-run",
+                        "event_key": "rk2",
+                        "source_id": "HKSample/bootstrap-2",
+                        "effective_start": "2026-03-10 01:00:00",
+                        "effective_end": "2026-03-10 01:15:00",
+                        "hk_type": "HKQuantityTypeIdentifierHeartRate",
+                        "sample_kind": "quantity",
+                        "display": "Heart Rate",
+                        "value": "70.0",
+                        "value_num": 70.0,
+                        "unit": "count/min",
+                    },
+                ],
+            )
+
+            delta_zip = Path(tmp) / "delta.zip"
+            delta_payload = _write_ios_export_zip(
+                delta_zip,
+                run_id="run_delta",
+                rows=[
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk2",
+                        "canonical_person_id": "patient-b",
+                        "source": "healthkit",
+                        "source_id": "HKSample/bootstrap-2",
+                        "sample_type": "HKQuantityTypeIdentifierHeartRate",
+                        "start_time": "2026-03-10T01:00:00Z",
+                        "end_time": "2026-03-10T01:15:00Z",
+                        "value_num": 70,
+                        "unit": "count/min",
+                    },
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk3",
+                        "canonical_person_id": "patient-c",
+                        "source": "healthkit",
+                        "source_id": "HKSample/delta-3",
+                        "sample_type": "HKCategoryTypeIdentifierSleepAnalysis",
+                        "sample_kind": "category",
+                        "start_time": "2026-03-11T00:00:00Z",
+                        "end_time": "2026-03-11T07:00:00Z",
+                        "category_value": 1,
+                    },
+                ],
+            )
+
+            session = plane.create_session(
+                total_size=len(delta_payload),
+                sha256=hashlib.sha256(delta_payload).hexdigest(),
+            )
+            plane.put_chunk(session["id"], 0, delta_payload)
+            plane.finalize_session(session["id"])
+
+            current = plane.get_current_dataset()
+            manifest, rows = _read_current_ios_dataset(Path(current["export_zip"]))
+            self.assertEqual(manifest["row_counts"], {"observations": 3})
+            self.assertEqual([row["record_key"] for row in rows], ["rk1", "rk2", "rk3"])
+            self.assertEqual(
+                manifest["source_runs"],
+                [
+                    {"run_id": "dataset_bootstrap", "raw_upload_sha256": ""},
+                    {"run_id": "run_delta", "raw_upload_sha256": hashlib.sha256(delta_payload).hexdigest()},
+                ],
+            )
 
     def test_archive_current_clears_pointer_and_lists_archive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

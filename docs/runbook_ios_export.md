@@ -112,6 +112,7 @@ Current behavior:
 - It uploads the archive in sequential chunks with `PUT /upload-sessions/{id}/chunks/{index}`.
 - It finalizes the dataset with `POST /upload-sessions/{id}/finalize`.
 - For iPhone export uploads, ORIN preserves each raw uploaded run archive under the active dataset directory and materializes a cumulative `export.zip` for analysis.
+- If the live ORIN `current` dataset is a manually installed Apple bootstrap with canonical analysis artifacts already built, the next iPhone upload inherits that bootstrap baseline instead of discarding it.
 - Re-uploading the same iPhone run does not duplicate rows in the cumulative current dataset.
 - On success, the app shows the returned dataset identifier and can fetch ORIN-generated insight cards with `GET /insights/current`.
 - The app can also fetch live share-safe patient scope options from `GET /patients/current` so the patient picker reflects the current ORIN dataset instead of only local device identity state.
