@@ -26,11 +26,55 @@ Minimum artifacts (current iOS skeleton):
   - one JSON object per line
   - includes `canonical_person_id`, stable HealthKit `source_id`, and `record_key`
   - `record_key` is derived from the stable HealthKit sample identity rather than only visible time/value fields
+  - now carries a broader HealthKit sample set in the same stream, organized by fields like:
+    - `sample_type`
+    - `sample_kind` (`quantity`, `category`, `workout`)
+    - `value_num`
+    - `value_text`
+    - `category_value`
+    - `activity_type`
+    - `duration_seconds`
+    - `total_energy_burned_num` / `total_energy_burned_unit`
+    - `total_distance_num` / `total_distance_unit`
 - `manifest.json`
   - deterministic summary of run outputs (run_id, hashes/sizes, row counts)
 
 Anchor persistence artifacts:
 - Anchors are persisted separately by the iOS app (file-backed anchor store). These files are required for incremental continuation on-device, but are not required for Python ingestion.
+
+## Supported HealthKit export coverage
+
+The iPhone export path no longer requests only step count. It now exports a defined broader set of high-value HealthKit sample types through the same deterministic `observations.ndjson` contract.
+
+Currently supported:
+
+- Quantity types
+  - `HKQuantityTypeIdentifierStepCount`
+  - `HKQuantityTypeIdentifierHeartRate`
+  - `HKQuantityTypeIdentifierRestingHeartRate`
+  - `HKQuantityTypeIdentifierWalkingHeartRateAverage`
+  - `HKQuantityTypeIdentifierHeartRateVariabilitySDNN`
+  - `HKQuantityTypeIdentifierRespiratoryRate`
+  - `HKQuantityTypeIdentifierOxygenSaturation`
+  - `HKQuantityTypeIdentifierActiveEnergyBurned`
+  - `HKQuantityTypeIdentifierBasalEnergyBurned`
+  - `HKQuantityTypeIdentifierDistanceWalkingRunning`
+  - `HKQuantityTypeIdentifierBodyMass`
+  - `HKQuantityTypeIdentifierBodyFatPercentage`
+  - `HKQuantityTypeIdentifierBodyMassIndex`
+  - `HKQuantityTypeIdentifierHeight`
+  - `HKQuantityTypeIdentifierBodyTemperature`
+  - `HKQuantityTypeIdentifierBloodPressureSystolic`
+  - `HKQuantityTypeIdentifierBloodPressureDiastolic`
+- Category types
+  - `HKCategoryTypeIdentifierSleepAnalysis`
+- Workout types
+  - `HKWorkoutTypeIdentifier`
+
+Known exclusions:
+- Apple Clinical Records are not part of this iPhone incremental export path.
+- The supported set is intentionally defined and tested; it is not a blind dump of every possible HealthKit object type.
+- Only share-safe deterministic fields are exported. Raw opaque HealthKit metadata is not dumped wholesale.
 
 ## Current manual export flow
 
@@ -40,7 +84,7 @@ Manual export flow:
 
 1) Launch the app on the iPhone.
 2) In the `Clinical Compass` dashboard, tap `Export`.
-3) Approve Health access for the app if iOS prompts for it.
+3) Approve Health access for the broader supported type set if iOS prompts for it.
 4) Wait for the export spinner to complete, then tap the top-right `Refresh` button if needed.
 
 Expected result:

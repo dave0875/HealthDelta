@@ -18,18 +18,23 @@ final class ManualHealthExportServiceTests: XCTestCase {
             exporter: exporter,
             layoutProvider: { layout },
             runIDProvider: { "run_test" },
-            sampleTypeProvider: {
-                HKQuantityType.quantityType(forIdentifier: .stepCount)!
+            samplePlansProvider: {
+                [
+                    HealthKitExportPlan(key: "steps", type: HKQuantityType.quantityType(forIdentifier: .stepCount)!),
+                    HealthKitExportPlan(key: "heart_rate", type: HKQuantityType.quantityType(forIdentifier: .heartRate)!),
+                    HealthKitExportPlan(key: "sleep_analysis", type: HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!),
+                    HealthKitExportPlan(key: "workouts", type: HKObjectType.workoutType()),
+                ]
             }
         )
 
         let runID = try await service.runManualExport()
 
         XCTAssertEqual(runID, "run_test")
-        XCTAssertEqual(auth.requestedTypeCount, 1)
+        XCTAssertEqual(auth.requestedTypeCount, 4)
         XCTAssertEqual(exporter.lastRunID, "run_test")
-        XCTAssertEqual(exporter.lastKey, "steps")
-        XCTAssertEqual(exporter.callCount, 1)
+        XCTAssertEqual(exporter.seenKeys, ["steps", "heart_rate", "sleep_analysis", "workouts"])
+        XCTAssertEqual(exporter.callCount, 4)
     }
 
     func testRunManualExportThrowsWhenAuthorizationDenied() async throws {
@@ -43,8 +48,8 @@ final class ManualHealthExportServiceTests: XCTestCase {
                 IOSExportLayout(baseDirectoryURL: URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
             },
             runIDProvider: { "run_test" },
-            sampleTypeProvider: {
-                HKQuantityType.quantityType(forIdentifier: .stepCount)!
+            samplePlansProvider: {
+                [HealthKitExportPlan(key: "steps", type: HKQuantityType.quantityType(forIdentifier: .stepCount)!)]
             }
         )
 
@@ -75,19 +80,18 @@ private final class FakeHealthKitAuthorizer: HealthKitAuthorizing {
 
 private final class FakeIncrementalRunExporter: IncrementalRunExporting {
     private(set) var lastRunID: String?
-    private(set) var lastKey: String?
+    private(set) var seenKeys: [String] = []
     private(set) var callCount = 0
 
     func runOnce(
         runID: String,
         layout: IOSExportLayout,
-        key: String,
-        type: HKSampleType,
+        plan: HealthKitExportPlan,
         predicate: NSPredicate?,
         limit: Int
     ) async throws -> Bool {
         lastRunID = runID
-        lastKey = key
+        seenKeys.append(plan.key)
         callCount += 1
         return true
     }

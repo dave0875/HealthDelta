@@ -186,12 +186,21 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                   effective_start TIMESTAMP,
                   effective_end TIMESTAMP,
                   hk_type VARCHAR,
+                  sample_kind VARCHAR,
                   resource_type VARCHAR,
                   code_system VARCHAR,
                   code VARCHAR,
                   display VARCHAR,
                   value VARCHAR,
                   value_num DOUBLE,
+                  value_text VARCHAR,
+                  category_value INTEGER,
+                  activity_type VARCHAR,
+                  duration_seconds DOUBLE,
+                  total_energy_burned_num DOUBLE,
+                  total_energy_burned_unit VARCHAR,
+                  total_distance_num DOUBLE,
+                  total_distance_unit VARCHAR,
                   unit VARCHAR,
                   section_code VARCHAR,
                   section_display VARCHAR,
@@ -251,6 +260,15 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
             _add_column_if_missing(con, "observations", "effective_end", "TIMESTAMP")
             _add_column_if_missing(con, "observations", "code_system", "VARCHAR")
             _add_column_if_missing(con, "observations", "display", "VARCHAR")
+            _add_column_if_missing(con, "observations", "sample_kind", "VARCHAR")
+            _add_column_if_missing(con, "observations", "value_text", "VARCHAR")
+            _add_column_if_missing(con, "observations", "category_value", "INTEGER")
+            _add_column_if_missing(con, "observations", "activity_type", "VARCHAR")
+            _add_column_if_missing(con, "observations", "duration_seconds", "DOUBLE")
+            _add_column_if_missing(con, "observations", "total_energy_burned_num", "DOUBLE")
+            _add_column_if_missing(con, "observations", "total_energy_burned_unit", "VARCHAR")
+            _add_column_if_missing(con, "observations", "total_distance_num", "DOUBLE")
+            _add_column_if_missing(con, "observations", "total_distance_unit", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_code", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_display", "VARCHAR")
             _add_column_if_missing(con, "observations", "section_title", "VARCHAR")
@@ -264,6 +282,50 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
         with progress.phase("duckdb: load observations"):
             task = progress.task("duckdb: load observations", unit="rows")
             append_only = not db_existed or replace
+            observation_columns = [
+                "schema_version",
+                "record_key",
+                "canonical_person_id",
+                "source",
+                "source_system",
+                "source_file",
+                "event_time",
+                "run_id",
+                "event_key",
+                "source_id",
+                "record_id",
+                "record_type",
+                "observation_id",
+                "subject_reference",
+                "encounter_id",
+                "effective_start",
+                "effective_end",
+                "hk_type",
+                "sample_kind",
+                "resource_type",
+                "code_system",
+                "code",
+                "display",
+                "value",
+                "value_num",
+                "value_text",
+                "category_value",
+                "activity_type",
+                "duration_seconds",
+                "total_energy_burned_num",
+                "total_energy_burned_unit",
+                "total_distance_num",
+                "total_distance_unit",
+                "unit",
+                "section_code",
+                "section_display",
+                "section_title",
+                "components_json",
+                "code_coding_json",
+                "type_coding_json",
+                "status",
+            ]
+            observation_columns_sql = ",\n                      ".join(observation_columns)
             if ios_mode and append_only:
                 con.execute(
                     """
@@ -290,38 +352,9 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       FROM read_ndjson_objects(?)
                     )
                     INSERT INTO observations (
-                      schema_version,
-                      record_key,
-                      canonical_person_id,
-                      source,
-                      source_system,
-                      source_file,
-                      event_time,
-                      run_id,
-                      event_key,
-                      source_id,
-                      record_id,
-                      record_type,
-                      observation_id,
-                      subject_reference,
-                      encounter_id,
-                      effective_start,
-                      effective_end,
-                      hk_type,
-                      resource_type,
-                      code_system,
-                      code,
-                      display,
-                      value,
-                      value_num,
-                      unit,
-                      section_code,
-                      section_display,
-                      section_title,
-                      components_json,
-                      code_coding_json,
-                      type_coding_json,
-                      status
+                      """
+                    + observation_columns_sql
+                    + """
                     )
                     SELECT
                       TRY_CAST(json_extract_string(payload, '$.schema_version') AS INTEGER),
@@ -345,18 +378,32 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       NULL,
                       NULL,
                       json_extract_string(payload, '$.sample_type'),
-                      NULL,
+                      json_extract_string(payload, '$.sample_kind'),
                       NULL,
                       NULL,
                       NULL,
                       COALESCE(
+                        json_extract_string(payload, '$.display'),
+                        json_extract_string(payload, '$.value_text'),
+                        json_extract_string(payload, '$.activity_type')
+                      ),
+                      COALESCE(
                         json_extract_string(payload, '$.value'),
+                        json_extract_string(payload, '$.value_text'),
                         json_extract_string(payload, '$.value_num')
                       ),
                       COALESCE(
                         TRY_CAST(json_extract_string(payload, '$.value_num') AS DOUBLE),
                         TRY_CAST(json_extract_string(payload, '$.value') AS DOUBLE)
                       ),
+                      json_extract_string(payload, '$.value_text'),
+                      TRY_CAST(json_extract_string(payload, '$.category_value') AS INTEGER),
+                      json_extract_string(payload, '$.activity_type'),
+                      TRY_CAST(json_extract_string(payload, '$.duration_seconds') AS DOUBLE),
+                      TRY_CAST(json_extract_string(payload, '$.total_energy_burned_num') AS DOUBLE),
+                      json_extract_string(payload, '$.total_energy_burned_unit'),
+                      TRY_CAST(json_extract_string(payload, '$.total_distance_num') AS DOUBLE),
+                      json_extract_string(payload, '$.total_distance_unit'),
                       json_extract_string(payload, '$.unit'),
                       NULL,
                       NULL,
@@ -377,79 +424,17 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
             else:
                 batch_rows: list[list[object]] = []
                 seen_record_keys: set[str] = set()
-                insert_prefix = """
+                insert_prefix = f"""
                     INSERT INTO observations (
-                      schema_version,
-                      record_key,
-                      canonical_person_id,
-                      source,
-                      source_system,
-                      source_file,
-                      event_time,
-                      run_id,
-                      event_key,
-                      source_id,
-                      record_id,
-                      record_type,
-                      observation_id,
-                      subject_reference,
-                      encounter_id,
-                      effective_start,
-                      effective_end,
-                      hk_type,
-                      resource_type,
-                      code_system,
-                      code,
-                      display,
-                      value,
-                      value_num,
-                      unit,
-                      section_code,
-                      section_display,
-                      section_title,
-                      components_json,
-                      code_coding_json,
-                      type_coding_json,
-                      status
+                      {observation_columns_sql}
                     )
                     VALUES
                     """
-                dedupe_sql = """
+                dedupe_sql = f"""
                     INSERT INTO observations (
-                      schema_version,
-                      record_key,
-                      canonical_person_id,
-                      source,
-                      source_system,
-                      source_file,
-                      event_time,
-                      run_id,
-                      event_key,
-                      source_id,
-                      record_id,
-                      record_type,
-                      observation_id,
-                      subject_reference,
-                      encounter_id,
-                      effective_start,
-                      effective_end,
-                      hk_type,
-                      resource_type,
-                      code_system,
-                      code,
-                      display,
-                      value,
-                      value_num,
-                      unit,
-                      section_code,
-                      section_display,
-                      section_title,
-                      components_json,
-                      code_coding_json,
-                      type_coding_json,
-                      status
+                      {observation_columns_sql}
                     )
-                    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    SELECT {",".join(["?"] * len(observation_columns))}
                     WHERE NOT EXISTS (SELECT 1 FROM observations WHERE record_key=?);
                     """
                 for obj in _iter_ndjson(observations_path):
@@ -496,12 +481,23 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                         _parse_event_time(obj.get("effective_end")),
                         (obj.get("hk_type") if isinstance(obj.get("hk_type"), str) else None)
                         or (obj.get("sample_type") if isinstance(obj.get("sample_type"), str) else None),
+                        obj.get("sample_kind") if isinstance(obj.get("sample_kind"), str) else None,
                         obj.get("resource_type") if isinstance(obj.get("resource_type"), str) else None,
                         obj.get("code_system") if isinstance(obj.get("code_system"), str) else None,
                         obj.get("code") if isinstance(obj.get("code"), str) else None,
-                        obj.get("display") if isinstance(obj.get("display"), str) else None,
+                        (obj.get("display") if isinstance(obj.get("display"), str) else None)
+                        or (obj.get("value_text") if isinstance(obj.get("value_text"), str) else None)
+                        or (obj.get("activity_type") if isinstance(obj.get("activity_type"), str) else None),
                         value_str,
                         value_num,
+                        obj.get("value_text") if isinstance(obj.get("value_text"), str) else None,
+                        obj.get("category_value") if isinstance(obj.get("category_value"), int) else None,
+                        obj.get("activity_type") if isinstance(obj.get("activity_type"), str) else None,
+                        float(obj.get("duration_seconds")) if isinstance(obj.get("duration_seconds"), (int, float)) else None,
+                        float(obj.get("total_energy_burned_num")) if isinstance(obj.get("total_energy_burned_num"), (int, float)) else None,
+                        obj.get("total_energy_burned_unit") if isinstance(obj.get("total_energy_burned_unit"), str) else None,
+                        float(obj.get("total_distance_num")) if isinstance(obj.get("total_distance_num"), (int, float)) else None,
+                        obj.get("total_distance_unit") if isinstance(obj.get("total_distance_unit"), str) else None,
                         obj.get("unit") if isinstance(obj.get("unit"), str) else None,
                         obj.get("section_code") if isinstance(obj.get("section_code"), str) else None,
                         obj.get("section_display") if isinstance(obj.get("section_display"), str) else None,

@@ -23,8 +23,7 @@ protocol IncrementalRunExporting {
     func runOnce(
         runID: String,
         layout: IOSExportLayout,
-        key: String,
-        type: HKSampleType,
+        plan: HealthKitExportPlan,
         predicate: NSPredicate?,
         limit: Int
     ) async throws -> Bool
@@ -33,7 +32,7 @@ protocol IncrementalRunExporting {
 enum ManualHealthExportError: LocalizedError, Equatable {
     case healthDataUnavailable
     case authorizationDenied
-    case stepCountUnavailable
+    case noSupportedTypesAvailable
 
     var errorDescription: String? {
         switch self {
@@ -41,8 +40,8 @@ enum ManualHealthExportError: LocalizedError, Equatable {
             return "Health data is not available on this device."
         case .authorizationDenied:
             return "Health access was denied. Enable Health permissions and try again."
-        case .stepCountUnavailable:
-            return "Step count data is unavailable on this device."
+        case .noSupportedTypesAvailable:
+            return "No supported Health data types are available on this device."
         }
     }
 }
@@ -77,7 +76,7 @@ final class ManualHealthExportService: ManualHealthExporting {
     private let exporter: IncrementalRunExporting
     private let layoutProvider: () throws -> IOSExportLayout
     private let runIDProvider: () -> String
-    private let sampleTypeProvider: () throws -> HKSampleType
+    private let samplePlansProvider: () -> [HealthKitExportPlan]
 
     init(
         healthDataAvailable: @escaping () -> Bool,
@@ -85,14 +84,14 @@ final class ManualHealthExportService: ManualHealthExporting {
         exporter: IncrementalRunExporting,
         layoutProvider: @escaping () throws -> IOSExportLayout,
         runIDProvider: @escaping () -> String,
-        sampleTypeProvider: @escaping () throws -> HKSampleType
+        samplePlansProvider: @escaping () -> [HealthKitExportPlan]
     ) {
         self.healthDataAvailable = healthDataAvailable
         self.authorizationClient = authorizationClient
         self.exporter = exporter
         self.layoutProvider = layoutProvider
         self.runIDProvider = runIDProvider
-        self.sampleTypeProvider = sampleTypeProvider
+        self.samplePlansProvider = samplePlansProvider
     }
 
     static func live() -> ManualHealthExportService {
@@ -106,12 +105,7 @@ final class ManualHealthExportService: ManualHealthExporting {
             ),
             layoutProvider: { try IOSExportLayout.defaultInAppSandbox() },
             runIDProvider: { Self.defaultRunID() },
-            sampleTypeProvider: {
-                guard let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
-                    throw ManualHealthExportError.stepCountUnavailable
-                }
-                return type
-            }
+            samplePlansProvider: { HealthKitExportCatalog.supportedPlans() }
         )
     }
 
@@ -121,22 +115,27 @@ final class ManualHealthExportService: ManualHealthExporting {
             throw ManualHealthExportError.healthDataUnavailable
         }
 
-        let sampleType = try sampleTypeProvider()
-        let authorized = try await authorizationClient.requestReadAuthorization(for: [sampleType])
+        let plans = samplePlansProvider()
+        guard !plans.isEmpty else {
+            throw ManualHealthExportError.noSupportedTypesAvailable
+        }
+
+        let authorized = try await authorizationClient.requestReadAuthorization(for: Set(plans.map { $0.type as HKObjectType }))
         guard authorized else {
             throw ManualHealthExportError.authorizationDenied
         }
 
         let runID = runIDProvider()
         let layout = try layoutProvider()
-        _ = try await exporter.runOnce(
-            runID: runID,
-            layout: layout,
-            key: "steps",
-            type: sampleType,
-            predicate: nil,
-            limit: HKObjectQueryNoLimit
-        )
+        for plan in plans {
+            _ = try await exporter.runOnce(
+                runID: runID,
+                layout: layout,
+                plan: plan,
+                predicate: nil,
+                limit: HKObjectQueryNoLimit
+            )
+        }
         return runID
     }
 

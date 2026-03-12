@@ -22,17 +22,16 @@ final class IncrementalNDJSONExporter {
 
     @discardableResult
     func runOnce(
-        key: String,
-        type: HKSampleType,
+        plan: HealthKitExportPlan,
         predicate: NSPredicate? = nil,
         limit: Int = HKObjectQueryNoLimit,
         outputURL: URL
     ) async throws -> Bool {
-        let currentAnchor = anchorStore.load(forKey: key)
-        let result = try await queryClient.execute(type: type, predicate: predicate, anchor: currentAnchor, limit: limit)
+        let currentAnchor = anchorStore.load(forKey: plan.key)
+        let result = try await queryClient.execute(type: plan.type, predicate: predicate, anchor: currentAnchor, limit: limit)
 
         // Persist anchor regardless of whether anything changed (deterministic bytes).
-        try anchorStore.save(anchor: result.newAnchor, forKey: key)
+        try anchorStore.save(anchor: result.newAnchor, forKey: plan.key)
 
         guard result.didChange else {
             return false
@@ -51,15 +50,14 @@ final class IncrementalNDJSONExporter {
     func runOnce(
         runID: String,
         layout: IOSExportLayout,
-        key: String,
-        type: HKSampleType,
+        plan: HealthKitExportPlan,
         predicate: NSPredicate? = nil,
         limit: Int = HKObjectQueryNoLimit
     ) async throws -> Bool {
         try layout.ensureDirectories(runID: runID)
         let outputURL = layout.observationsNDJSONURL(runID: runID)
 
-        let changed = try await runOnce(key: key, type: type, predicate: predicate, limit: limit, outputURL: outputURL)
+        let changed = try await runOnce(plan: plan, predicate: predicate, limit: limit, outputURL: outputURL)
         try IOSExportManifestWriter(layout: layout).writeManifestIfChanged(runID: runID)
         return changed
     }
@@ -81,11 +79,35 @@ final class IncrementalNDJSONExporter {
         ]
 
         if let qs = sample as? HKQuantitySample {
-            // For the skeleton, prefer a stable numeric representation for synthetic tests.
-            let unit = HKUnit.count()
-            let value = qs.quantity.doubleValue(for: unit)
-            row["value_num"] = value
-            row["unit"] = "count"
+            row["sample_kind"] = "quantity"
+            if let preferred = HealthKitExportCatalog.preferredUnit(for: typeId) {
+                row["value_num"] = qs.quantity.doubleValue(for: preferred.unit)
+                row["unit"] = preferred.label
+            }
+        } else if let category = sample as? HKCategorySample {
+            row["sample_kind"] = "category"
+            row["category_value"] = category.value
+            row["value_num"] = Double(category.value)
+            let label = HealthKitExportCatalog.categoryValueLabel(for: typeId, value: category.value) ?? String(category.value)
+            row["value"] = label
+            row["value_text"] = label
+        } else if let workout = sample as? HKWorkout {
+            let activityLabel = HealthKitExportCatalog.workoutActivityLabel(for: workout.workoutActivityType)
+            row["sample_kind"] = "workout"
+            row["activity_type"] = activityLabel
+            row["value"] = activityLabel
+            row["value_text"] = activityLabel
+            row["duration_seconds"] = workout.duration
+            row["value_num"] = workout.duration
+            row["unit"] = "s"
+            if let totalEnergyBurned = workout.totalEnergyBurned {
+                row["total_energy_burned_num"] = totalEnergyBurned.doubleValue(for: .kilocalorie())
+                row["total_energy_burned_unit"] = "kcal"
+            }
+            if let totalDistance = workout.totalDistance {
+                row["total_distance_num"] = totalDistance.doubleValue(for: .meter())
+                row["total_distance_unit"] = "m"
+            }
         }
 
         row["record_key"] = recordKey(for: row)

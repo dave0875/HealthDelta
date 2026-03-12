@@ -50,6 +50,7 @@ final class IOSExportManifestTests: XCTestCase {
 
     func testExporterWritesManifestAlongsideNDJSON() async throws {
         let type = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let plan = HealthKitExportPlan(key: "steps", type: type)
         let sample = HKQuantitySample(
             type: type,
             quantity: HKQuantity(unit: .count(), doubleValue: 1),
@@ -73,7 +74,7 @@ final class IOSExportManifestTests: XCTestCase {
             canonicalPersonIDProvider: { "123e4567-e89b-42d3-a456-426614174000" }
         )
 
-        let changed = try await exporter.runOnce(runID: "run_1", layout: layout, key: "steps", type: type)
+        let changed = try await exporter.runOnce(runID: "run_1", layout: layout, plan: plan)
         XCTAssertTrue(changed)
 
         let manifestURL = layout.manifestURL(runID: "run_1")

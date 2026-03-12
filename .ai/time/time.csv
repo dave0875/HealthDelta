@@ -185,3 +185,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-12,232,UNASSIGNED,15,codex,UNASSIGNED,"Add a stronger health-related icon treatment to the Clinical Compass dashboard and correct the commit governance footer"
 2026-03-12,233,UNASSIGNED,20,codex,UNASSIGNED,"Make the Clinical Compass patient and window scope controls readable, explicit, and lower-friction"
 2026-03-12,234,UNASSIGNED,20,codex,UNASSIGNED,"Add local-only patient display aliases on iPhone so Clinical Compass can show humane labels without exporting them"
+2026-03-12,235,UNASSIGNED,20,codex,UNASSIGNED,"Expand the iPhone HealthKit export path beyond step count so Apple Health data is captured more broadly and remains usable on ORIN"

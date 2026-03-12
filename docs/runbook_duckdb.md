@@ -55,9 +55,17 @@ In this mode, HealthDelta loads from the `ndjson/` subdirectory and applies a su
 - `source` → `observations.source`
 - `source_id` → `observations.source_id`
 - `sample_type` → `observations.hk_type`
+- `sample_kind` → `observations.sample_kind`
 - `start_time` → `observations.event_time`
 - `record_key` → `observations.record_key` (dedupe key)
 - `value_num` / `unit` → `observations.value_num` / `observations.unit`
+- richer iPhone-only logical fields are preserved when present:
+  - `value_text`
+  - `category_value`
+  - `activity_type`
+  - `duration_seconds`
+  - `total_energy_burned_num` / `total_energy_burned_unit`
+  - `total_distance_num` / `total_distance_unit`
 - `run_id` is taken from iOS `manifest.json` `run_id` (applied to all rows)
 - `source_file` is set to `ndjson/observations.ndjson` (relative to the iOS export root)
 
@@ -104,12 +112,21 @@ Additional columns:
 - `effective_start` (TIMESTAMP)
 - `effective_end` (TIMESTAMP)
 - `hk_type` (VARCHAR)
+- `sample_kind` (VARCHAR)
 - `resource_type` (VARCHAR)
 - `code_system` (VARCHAR)
 - `code` (VARCHAR)
 - `display` (VARCHAR)
 - `value` (VARCHAR)
 - `value_num` (DOUBLE)
+- `value_text` (VARCHAR)
+- `category_value` (INTEGER)
+- `activity_type` (VARCHAR)
+- `duration_seconds` (DOUBLE)
+- `total_energy_burned_num` (DOUBLE)
+- `total_energy_burned_unit` (VARCHAR)
+- `total_distance_num` (DOUBLE)
+- `total_distance_unit` (VARCHAR)
 - `unit` (VARCHAR)
 - `components_json` (VARCHAR)
 - `code_coding_json` (VARCHAR)

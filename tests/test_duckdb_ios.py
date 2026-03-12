@@ -167,3 +167,102 @@ class TestDuckdbLoaderIOS(unittest.TestCase):
             rows = list(csv.DictReader(q.stdout.splitlines()))
             self.assertEqual(rows[0]["n"], str(total_rows))
             self.assertEqual(rows[0]["run_id"], "run-batch")
+
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_duckdb_build_preserves_category_and_workout_ios_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ios_run = root / "ios_run"
+            ndjson_dir = ios_run / "ndjson"
+            ndjson_dir.mkdir(parents=True, exist_ok=True)
+
+            _write_text(ios_run / "manifest.json", '{"run_id":"run-broad","files":[],"row_counts":{"observations":3}}')
+            observations = "\n".join(
+                [
+                    '{"schema_version":1,"record_key":"rk-heart","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-heart","sample_type":"HKQuantityTypeIdentifierHeartRate","sample_kind":"quantity","start_time":"2020-01-01T00:00:00Z","end_time":"2020-01-01T00:00:00Z","value_num":72,"unit":"count/min"}',
+                    '{"schema_version":1,"record_key":"rk-sleep","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-sleep","sample_type":"HKCategoryTypeIdentifierSleepAnalysis","sample_kind":"category","start_time":"2020-01-02T00:00:00Z","end_time":"2020-01-02T08:00:00Z","value":"asleep_core","value_text":"asleep_core","value_num":4,"category_value":4}',
+                    '{"schema_version":1,"record_key":"rk-workout","canonical_person_id":"person-1","source":"healthkit","source_id":"HKSample/uuid-workout","sample_type":"HKWorkoutTypeIdentifier","sample_kind":"workout","start_time":"2020-01-03T00:00:00Z","end_time":"2020-01-03T00:30:00Z","value":"running","value_text":"running","value_num":1800,"duration_seconds":1800,"activity_type":"running","total_energy_burned_num":450,"total_energy_burned_unit":"kcal","total_distance_num":5000,"total_distance_unit":"m","unit":"s"}',
+                ]
+            )
+            _write_text(ndjson_dir / "observations.ndjson", observations + "\n")
+
+            db_path = root / "out.duckdb"
+            build = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "duckdb", "build", "--input", str(ios_run), "--db", str(db_path), "--replace"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+
+            q = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "query",
+                    "--db",
+                    str(db_path),
+                    "--sql",
+                    (
+                        "SELECT hk_type, sample_kind, display, value, value_num, category_value, "
+                        "activity_type, duration_seconds, total_energy_burned_num, total_energy_burned_unit, "
+                        "total_distance_num, total_distance_unit, unit "
+                        "FROM observations ORDER BY record_key;"
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(q.returncode, 0, msg=f"stdout={q.stdout}\nstderr={q.stderr}")
+            rows = list(csv.DictReader(q.stdout.splitlines()))
+            self.assertEqual(
+                rows,
+                [
+                    {
+                        "hk_type": "HKQuantityTypeIdentifierHeartRate",
+                        "sample_kind": "quantity",
+                        "display": "",
+                        "value": "72",
+                        "value_num": "72.0",
+                        "category_value": "",
+                        "activity_type": "",
+                        "duration_seconds": "",
+                        "total_energy_burned_num": "",
+                        "total_energy_burned_unit": "",
+                        "total_distance_num": "",
+                        "total_distance_unit": "",
+                        "unit": "count/min",
+                    },
+                    {
+                        "hk_type": "HKCategoryTypeIdentifierSleepAnalysis",
+                        "sample_kind": "category",
+                        "display": "asleep_core",
+                        "value": "asleep_core",
+                        "value_num": "4.0",
+                        "category_value": "4",
+                        "activity_type": "",
+                        "duration_seconds": "",
+                        "total_energy_burned_num": "",
+                        "total_energy_burned_unit": "",
+                        "total_distance_num": "",
+                        "total_distance_unit": "",
+                        "unit": "",
+                    },
+                    {
+                        "hk_type": "HKWorkoutTypeIdentifier",
+                        "sample_kind": "workout",
+                        "display": "running",
+                        "value": "running",
+                        "value_num": "1800.0",
+                        "category_value": "",
+                        "activity_type": "running",
+                        "duration_seconds": "1800.0",
+                        "total_energy_burned_num": "450.0",
+                        "total_energy_burned_unit": "kcal",
+                        "total_distance_num": "5000.0",
+                        "total_distance_unit": "m",
+                        "unit": "s",
+                    },
+                ],
+            )
