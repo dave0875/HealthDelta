@@ -970,8 +970,8 @@ def _read_current_dataset_patients(*, plane: UploadPlane) -> dict[str, Any]:
         return {"dataset": current.get("dataset"), "patients": []}
 
     patients: list[dict[str, Any]] = []
-    def _ranked_rows_from_csv() -> list[dict[str, Any]]:
-        with coverage_by_person.open("r", encoding="utf-8", newline="") as handle:
+    def _ranked_rows_from_csv(path: Path) -> list[dict[str, Any]]:
+        with path.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             ranked_rows: list[dict[str, Any]] = []
             for row in reader:
@@ -999,10 +999,12 @@ def _read_current_dataset_patients(*, plane: UploadPlane) -> dict[str, Any]:
         return ranked_rows
 
     try:
-        ranked_rows = _ranked_rows_from_csv()
+        ranked_rows = _ranked_rows_from_csv(coverage_by_person)
     except PermissionError:
-        build_report(db_path=str(analysis["db_path"]), out_dir=str(analysis["reports_dir"]), mode="share")
-        ranked_rows = _ranked_rows_from_csv()
+        fallback_reports_dir = plane.data_root / "runtime_cache" / str(current.get("dataset") or "current") / "reports"
+        fallback_reports_dir.mkdir(parents=True, exist_ok=True)
+        build_report(db_path=str(analysis["db_path"]), out_dir=str(fallback_reports_dir), mode="share")
+        ranked_rows = _ranked_rows_from_csv(fallback_reports_dir / "coverage_by_person.csv")
 
     ranked_rows.sort(
         key=lambda row: (

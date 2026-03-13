@@ -336,7 +336,9 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(status, 200)
 
         coverage_by_person = dataset_dir / "analysis" / "reports" / "coverage_by_person.csv"
+        reports_dir = coverage_by_person.parent
         coverage_by_person.chmod(0)
+        reports_dir.chmod(0o555)
         self.assertEqual(stat.S_IMODE(coverage_by_person.stat().st_mode), 0)
 
         status, payload = self._request("GET", "/patients/current")
@@ -352,7 +354,10 @@ class TestBackendInsightsAPI(unittest.TestCase):
                 "max_event_time": "2026-03-11T00:00:00Z",
             },
         )
-        self.assertEqual(stat.S_IMODE(coverage_by_person.stat().st_mode), 0o644)
+
+        fallback_coverage = Path(self._tmp.name) / "runtime_cache" / "dataset_test" / "reports" / "coverage_by_person.csv"
+        self.assertTrue(fallback_coverage.exists())
+        self.assertEqual(stat.S_IMODE(fallback_coverage.stat().st_mode), 0o644)
 
     def test_insights_current_filters_by_window_days(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
