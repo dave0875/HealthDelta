@@ -91,6 +91,12 @@ The care-facing dashboard is organized into three explicit sections:
 
 If the current scope does not include clinical records, the `Clinical` section intentionally shows a clear empty state instead of pretending clinical content exists.
 
+The opening screen is intentionally health-centered:
+
+- the landing view leads with `Combined`, `Fitness`, and `Clinical` health content
+- operational details like patient/window scope and sync metadata live in secondary surfaces instead of occupying the main screen
+- raw ORIN connection values remain in `Connection settings`
+
 Manual export flow:
 
 1) Launch the app on the iPhone.

@@ -59,6 +59,7 @@ struct ContentView: View {
     @State private var showsPatientSetupSheet = false
     @State private var patientSetupDrafts: [String: String] = [:]
     @State private var selectedDomain: CareDomain = .combined
+    @State private var showsScopeSheet = false
 
     var body: some View {
         NavigationStack {
@@ -74,13 +75,10 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         headerView
                         domainSelectorCard
-                        scopeCard
                         overviewCard
-                        actionRow
                         primaryTrendCard
                         clinicalNotesCard
-                        dataScopeCard
-                        connectionStatusCard
+                        actionRow
 
                         if let errorMessage = viewModel.errorMessage {
                             attentionCard(message: errorMessage)
@@ -122,6 +120,14 @@ struct ContentView: View {
                             .font(.headline)
                     }
                     .accessibilityLabel("Connection settings")
+
+                    Button {
+                        showsScopeSheet = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.headline)
+                    }
+                    .accessibilityLabel("Adjust scope")
                 }
             }
             .sheet(isPresented: $showsConnectionSettings) {
@@ -130,6 +136,28 @@ struct ContentView: View {
                     uploadToken: $uploadToken,
                     uploadStatusMessage: viewModel.uploadStatusMessage
                 )
+            }
+            .sheet(isPresented: $showsScopeSheet) {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            scopeCard
+                            dataScopeCard
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 20)
+                    }
+                    .background(
+                        LinearGradient(
+                            colors: [ClinicalCompassPalette.backgroundTop, ClinicalCompassPalette.backgroundBottom],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .ignoresSafeArea()
+                    )
+                    .navigationTitle("Care Context")
+                    .navigationBarTitleDisplayMode(.inline)
+                }
             }
             .sheet(isPresented: $showsPatientAliasEditor) {
                 PatientAliasSheet(
@@ -188,9 +216,25 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text(selectedDomain.subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(ClinicalCompassPalette.muted)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(selectedDomain.subtitle)
+                            .font(.footnote)
+                            .foregroundStyle(ClinicalCompassPalette.muted)
+                        Text("\(patientScopeSummary) • \(windowLabel)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(ClinicalCompassPalette.accent)
+                    }
+
+                    Spacer()
+
+                    Button("Adjust scope") {
+                        showsScopeSheet = true
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ClinicalCompassPalette.accent)
+                }
             }
         }
     }
@@ -232,7 +276,7 @@ struct ContentView: View {
                     .foregroundStyle(ClinicalCompassPalette.accent)
                     .textCase(.uppercase)
 
-                Text("A calmer view of your current record, recent trend, and data quality.")
+                Text("A calmer view of what matters in your health right now.")
                     .font(.callout)
                     .foregroundStyle(ClinicalCompassPalette.muted)
             }
@@ -400,29 +444,6 @@ struct ContentView: View {
                     ProgressView(activeStatusLine)
                         .font(.footnote)
                         .tint(ClinicalCompassPalette.accent)
-                } else if let completedStatusLine = viewModel.completedStatusLine {
-                    Text(completedStatusLine)
-                        .font(.footnote)
-                        .foregroundStyle(ClinicalCompassPalette.muted)
-                }
-
-                HStack(spacing: 12) {
-                    StatusBadge(
-                        title: "Coverage",
-                        value: viewModel.coverageIndicatorLabel,
-                        tint: ClinicalCompassPalette.accent
-                    )
-                    StatusBadge(
-                        title: "Confidence",
-                        value: viewModel.confidenceIndicatorLabel,
-                        tint: viewModel.confidenceIndicatorLabel == "Review needed" ? ClinicalCompassPalette.caution : ClinicalCompassPalette.accent
-                    )
-                }
-
-                if let message = viewModel.insightsStatusMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(ClinicalCompassPalette.muted)
                 }
             }
         }
@@ -871,6 +892,9 @@ private struct PatientSetupSheet: View {
 
                 ForEach(unlabeledScopes, id: \.canonicalPersonID) { scope in
                     Section {
+                        let minEventTime = scope.minEventTime ?? "Unknown start"
+                        let maxEventTime = scope.maxEventTime ?? "Unknown end"
+
                         TextField("Local patient label", text: Binding(
                             get: { drafts[scope.canonicalPersonID] ?? "" },
                             set: { drafts[scope.canonicalPersonID] = $0 }
@@ -880,7 +904,7 @@ private struct PatientSetupSheet: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text("\(scope.rowCount) rows in current ORIN data")
-                            Text("Observed \(scope.minEventTime) to \(scope.maxEventTime)")
+                            Text("Observed \(minEventTime) to \(maxEventTime)")
                             Text("Share-safe bucket: \(scope.displayLabel)")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
