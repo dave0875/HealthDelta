@@ -149,6 +149,75 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertTrue((dataset_dir / "analysis" / "reports" / "summary.md").exists())
         self.assertTrue((dataset_dir / "analysis" / "note" / "doctor_note.md").exists())
 
+    def test_insights_current_clinical_card_uses_recent_clinical_happenings_from_note(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_clinical"
+        (dataset_dir / "analysis" / "reports").mkdir(parents=True, exist_ok=True)
+        (dataset_dir / "analysis" / "note").mkdir(parents=True, exist_ok=True)
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        (dataset_dir / "analysis" / "reports" / "summary.json").write_text(
+            json.dumps(
+                {
+                    "tables": {
+                        "observations": {
+                            "total_rows": 12,
+                            "min_event_time": "2026-02-09T09:00:00Z",
+                            "max_event_time": "2026-03-06T10:00:00Z",
+                            "rows_by_source": {"ios": 12},
+                        }
+                    }
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        (dataset_dir / "analysis" / "reports" / "summary.md").write_text("summary\n", encoding="utf-8")
+        (dataset_dir / "analysis" / "note" / "doctor_note.md").write_text(
+            "\n".join(
+                [
+                    "HealthDelta Doctor's Note",
+                    "run_id=dataset_clinical",
+                    "generated_at=2026-03-06T10:00:00Z",
+                    "",
+                    "Summary",
+                    "- Recent clinical activity spans 1 share-safe patient bucket across 4 active days in the latest 60-day window.",
+                    "- Recent clinical themes included oxygenation monitoring, blood counts and differentials, serum chemistries, blood-bank and transfusion workflow.",
+                    "- Highest recent clinical activity occurred on 2026-02-24 (3 rows), 2026-02-09 (3 rows), 2026-02-27 (3 rows).",
+                    "",
+                    "Facts",
+                    "people=1",
+                    "active_days=4",
+                    "event_time_range=2026-02-09T09:00:00Z..2026-03-06T10:00:00Z",
+                    "domain_mix=clinical",
+                    "totals.observations=12",
+                    "totals.documents=0",
+                    "totals.medications=0",
+                    "totals.conditions=0",
+                    "totals.encounters=0",
+                    "totals.procedures=0",
+                    "totals.diagnostic_reports=0",
+                    "sources.healthkit=0",
+                    "sources.fhir=12",
+                    "sources.cda=0",
+                    "recent_clinical.patient_buckets=1",
+                    "recent_clinical.active_days=4",
+                    "recent_clinical.top_themes=oxygenation monitoring;blood counts and differentials;serum chemistries;blood-bank and transfusion workflow",
+                    "recent_clinical.top_days=2026-02-24:3;2026-02-09:3;2026-02-27:3",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        plane._set_current_dataset("dataset_clinical")
+
+        status, payload = self._request("GET", "/insights/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        clinical = [card for card in payload["cards"] if card["domain"] == "clinical"][0]
+        self.assertIn("Recent clinical themes: oxygenation monitoring, blood counts and differentials, serum chemistries, blood-bank and transfusion workflow.", clinical["body"])
+        self.assertIn("Highest recent clinical activity: 2026-02-24 (3 rows), 2026-02-09 (3 rows), 2026-02-27 (3 rows).", clinical["body"])
+
     def test_insights_current_prefers_ollama_refined_cards_when_available(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
         dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"

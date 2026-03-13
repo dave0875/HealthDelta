@@ -54,6 +54,189 @@ def _humanize_signal_label(label: str) -> str:
     return label
 
 
+_RECENT_CLINICAL_THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("oxygenation monitoring", ("spo2", "oxygen saturation")),
+    (
+        "blood counts and differentials",
+        (
+            "hemoglobin",
+            "hematocrit",
+            "leukocyte",
+            "lymphocyte",
+            "neutrophil",
+            "eosinophil",
+            "basophil",
+            "monocyte",
+            "erythrocyte",
+            "platelet",
+            "mch",
+            "mcv",
+            "mchc",
+            "nucleated erythrocyte",
+            "rdw",
+        ),
+    ),
+    (
+        "serum chemistries",
+        (
+            "glucose",
+            "creatinine",
+            "sodium",
+            "potassium",
+            "chloride",
+            "calcium",
+            "magnesium",
+            "phosphate",
+            "carbon dioxide",
+            "urea nitrogen",
+            "anion gap",
+            "albumin",
+            "bilirubin",
+            "protein",
+            "aspartate aminotransferase",
+            "alanine aminotransferase",
+            "alkaline phosphatase",
+            "lactate dehydrogenase",
+            "urate",
+            "glomerular filtration rate",
+        ),
+    ),
+    (
+        "blood-bank and transfusion workflow",
+        (
+            "crossmatch",
+            "abo and rh",
+            "blood group antibody",
+            "blood component",
+            "transfusion",
+            "isbt",
+            "dispense status",
+            "product type",
+            "unit ",
+            "unit blood type",
+            "unit expiration",
+            "issue date and time",
+        ),
+    ),
+    ("infectious testing", ("influenza", "bacteria identified", "culture", "virus", "sars", "covid")),
+    ("cardiac monitoring", ("ekg", "ecg", "troponin")),
+)
+
+
+def _clinical_theme_for_display(label: str) -> str | None:
+    lowered = label.strip().lower()
+    if not lowered:
+        return None
+    for theme, needles in _RECENT_CLINICAL_THEME_RULES:
+        if any(needle in lowered for needle in needles):
+            return theme
+    return None
+
+
+def _join_human_list(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _recent_clinical_happenings(con, *, present: set[str]) -> dict[str, Any] | None:
+    if "observations" not in present:
+        return None
+    recent_max = _scalar(con, "SELECT MAX(event_time) FROM observations WHERE source='fhir';")
+    if not isinstance(recent_max, dt.datetime):
+        return None
+    if recent_max.tzinfo is None:
+        recent_max = recent_max.replace(tzinfo=dt.timezone.utc)
+    recent_max = recent_max.astimezone(dt.timezone.utc).replace(microsecond=0)
+    window_days = 60
+    recent_min = recent_max - dt.timedelta(days=window_days)
+    params = [recent_min, recent_max]
+    total_rows = int(
+        _scalar(
+            con,
+            """
+            SELECT COUNT(*)
+            FROM observations
+            WHERE source='fhir' AND event_time >= ? AND event_time <= ?;
+            """,
+            params,
+        )
+        or 0
+    )
+    if total_rows < 10:
+        return None
+    patient_buckets = int(
+        _scalar(
+            con,
+            """
+            SELECT COUNT(DISTINCT canonical_person_id)
+            FROM observations
+            WHERE source='fhir' AND event_time >= ? AND event_time <= ? AND canonical_person_id IS NOT NULL;
+            """,
+            params,
+        )
+        or 0
+    )
+    active_days = int(
+        _scalar(
+            con,
+            """
+            SELECT COUNT(DISTINCT CAST(event_time AS DATE))
+            FROM observations
+            WHERE source='fhir' AND event_time >= ? AND event_time <= ?;
+            """,
+            params,
+        )
+        or 0
+    )
+    theme_counts: dict[str, int] = {}
+    for label, count in _rows(
+        con,
+        """
+        SELECT display, COUNT(*) AS n
+        FROM observations
+        WHERE source='fhir' AND event_time >= ? AND event_time <= ? AND display IS NOT NULL
+        GROUP BY display
+        ORDER BY n DESC, display ASC;
+        """,
+        params,
+    ):
+        if not isinstance(label, str):
+            continue
+        theme = _clinical_theme_for_display(label)
+        if theme is None:
+            continue
+        theme_counts[theme] = theme_counts.get(theme, 0) + int(count or 0)
+    top_themes = [theme for theme, _ in sorted(theme_counts.items(), key=lambda item: (-item[1], item[0]))[:4]]
+    top_days = [
+        (str(day), int(count or 0))
+        for day, count in _rows(
+            con,
+            """
+            SELECT CAST(event_time AS DATE) AS event_day, COUNT(*) AS n
+            FROM observations
+            WHERE source='fhir' AND event_time >= ? AND event_time <= ?
+            GROUP BY event_day
+            ORDER BY n DESC, event_day ASC
+            LIMIT 3;
+            """,
+            params,
+        )
+        if day is not None
+    ]
+    return {
+        "window_days": window_days,
+        "patient_buckets": patient_buckets,
+        "active_days": active_days,
+        "top_themes": top_themes,
+        "top_days": top_days,
+    }
+
+
 def _connect_read_only(db_path: Path):
     try:
         import duckdb
@@ -191,7 +374,7 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
                     for label, n in _rows(
                         con,
                         """
-                        SELECT COALESCE(hk_type, resource_type, code, 'unknown') AS label,
+                        SELECT COALESCE(hk_type, display, resource_type, code, 'unknown') AS label,
                                COUNT(*) AS n
                         FROM observations
                         GROUP BY label
@@ -203,6 +386,9 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
                 raw.sort(key=lambda x: (-x[1], 0 if x[0].startswith("HK") else 1, x[0]))
                 top_signal_rows = raw[:5]
                 signals = ";".join([f"{k}:{v}" for k, v in top_signal_rows])
+
+        with progress.phase("note: compute recent clinical happenings"):
+            recent_clinical = _recent_clinical_happenings(con, present=present)
 
         clinical_table_counts = {
             key: totals[key]
@@ -257,6 +443,24 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
             lines.append("- Current data is limited and does not yet support a richer bedside summary.")
         lines.append(_summary_signal_line())
         lines.append(_summary_clinical_line())
+        if recent_clinical:
+            patient_buckets = int(recent_clinical["patient_buckets"])
+            active_days_recent = int(recent_clinical["active_days"])
+            window_days_recent = int(recent_clinical["window_days"])
+            lines.append(
+                f"- Recent clinical activity spans {patient_buckets} share-safe patient bucket{'s' if patient_buckets != 1 else ''} across {active_days_recent} active day{'s' if active_days_recent != 1 else ''} in the latest {window_days_recent}-day window."
+            )
+            top_themes = [str(item) for item in recent_clinical.get("top_themes") or [] if isinstance(item, str) and item.strip()]
+            if top_themes:
+                lines.append(f"- Recent clinical themes included {_join_human_list(top_themes)}.")
+            top_days = [
+                (str(day), int(count))
+                for day, count in recent_clinical.get("top_days") or []
+                if isinstance(day, str)
+            ]
+            if top_days:
+                day_parts = [f"{day} ({count} row{'s' if count != 1 else ''})" for day, count in top_days]
+                lines.append("- Highest recent clinical activity occurred on " + ", ".join(day_parts) + ".")
         lines.append(f"- Source mix includes {source_summary}.")
         lines.append("- Share-safe note: no names, dates of birth, identifiers, or free-text clinical narratives are included.")
         lines.append("")
@@ -280,6 +484,20 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         lines.append(f"sources.cda={sources['cda']}")
         if signals:
             lines.append(f"signals.top_observations={signals}")
+        if recent_clinical:
+            lines.append(f"recent_clinical.window_days={int(recent_clinical['window_days'])}")
+            lines.append(f"recent_clinical.patient_buckets={int(recent_clinical['patient_buckets'])}")
+            lines.append(f"recent_clinical.active_days={int(recent_clinical['active_days'])}")
+            top_themes = [str(item) for item in recent_clinical.get("top_themes") or [] if isinstance(item, str) and item.strip()]
+            if top_themes:
+                lines.append("recent_clinical.top_themes=" + ";".join(top_themes))
+            top_days = [
+                f"{day}:{int(count)}"
+                for day, count in recent_clinical.get("top_days") or []
+                if isinstance(day, str)
+            ]
+            if top_days:
+                lines.append("recent_clinical.top_days=" + ";".join(top_days))
 
         text = "\n".join(lines) + "\n"
         with progress.phase("note: write artifacts"):

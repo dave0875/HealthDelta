@@ -407,13 +407,38 @@ def _artifact_grounded_insight_cards(
     min_event_time = str(observations.get("min_event_time") or note_fields.get("event_time_range", "").split("..")[0] or "").strip()
     max_event_time = str(observations.get("max_event_time") or (note_fields.get("event_time_range", "").split("..")[-1] if ".." in note_fields.get("event_time_range", "") else "") or "").strip()
     rows_by_source = _rows_by_source(summary_obj)
+    explicit_note_sources: dict[str, int] = {}
+    for source_name in ["healthkit", "fhir", "cda"]:
+        raw_value = note_fields.get(f"sources.{source_name}", "").strip()
+        if not raw_value:
+            continue
+        try:
+            explicit_note_sources[source_name] = int(raw_value)
+        except ValueError:
+            continue
+    if explicit_note_sources:
+        rows_by_source.update(explicit_note_sources)
+        explicit_total = sum(explicit_note_sources.values())
+        if int(rows_by_source.get("ios") or 0) == explicit_total:
+            rows_by_source.pop("ios", None)
     healthkit_rows = int(rows_by_source.get("healthkit") or note_fields.get("sources.healthkit") or 0)
     unresolved_total = 0
     reference_integrity = summary_obj.get("reference_integrity")
     if isinstance(reference_integrity, dict):
         unresolved_total = int(reference_integrity.get("unresolved_reference_rows_total") or 0)
     clinical_table_counts = _clinical_table_counts(summary_obj)
-    fitness_rows, clinical_rows = _domain_row_totals(summary_obj)
+    fitness_rows = int(rows_by_source.get("healthkit") or 0) + int(rows_by_source.get("ios") or 0)
+    clinical_rows = sum(
+        int(count)
+        for source, count in rows_by_source.items()
+        if source not in {"healthkit", "ios", "unknown"}
+    )
+    clinical_rows += sum(clinical_table_counts.values())
+    recent_clinical_themes = note_fields.get("recent_clinical.top_themes", "").strip()
+    recent_clinical_days = note_fields.get("recent_clinical.top_days", "").strip()
+    recent_clinical_buckets = note_fields.get("recent_clinical.patient_buckets", "").strip()
+    recent_clinical_active_days = note_fields.get("recent_clinical.active_days", "").strip()
+    recent_clinical_window_days = note_fields.get("recent_clinical.window_days", "").strip()
 
     top_signal = note_fields.get("signals.top_observations", "")
     primary_signal = top_signal.split(";", 1)[0].split(":", 1)[0].replace("HKQuantityTypeIdentifier", "").strip() if top_signal else ""
@@ -469,6 +494,35 @@ def _artifact_grounded_insight_cards(
         if clinical_table_counts:
             table_parts = [f"{table_name}={count:,}" for table_name, count in sorted(clinical_table_counts.items())]
             clinical_lines.append("Clinical tables: " + ", ".join(table_parts) + ".")
+        if recent_clinical_buckets:
+            detail = f"Recent clinical activity spans {recent_clinical_buckets} share-safe patient bucket"
+            if recent_clinical_buckets != "1":
+                detail += "s"
+            if recent_clinical_active_days:
+                detail += f" across {recent_clinical_active_days} active day"
+                if recent_clinical_active_days != "1":
+                    detail += "s"
+            if recent_clinical_window_days:
+                detail += f" in the latest {recent_clinical_window_days}-day window."
+            else:
+                detail += "."
+            clinical_lines.append(detail)
+        if recent_clinical_themes:
+            clinical_lines.append("Recent clinical themes: " + recent_clinical_themes.replace(";", ", ") + ".")
+        if recent_clinical_days:
+            parts: list[str] = []
+            for token in recent_clinical_days.split(";"):
+                token = token.strip()
+                if not token or ":" not in token:
+                    continue
+                day, count = token.split(":", 1)
+                try:
+                    n = int(count)
+                except ValueError:
+                    continue
+                parts.append(f"{day} ({n} row{'s' if n != 1 else ''})")
+            if parts:
+                clinical_lines.append("Highest recent clinical activity: " + ", ".join(parts) + ".")
         if isinstance(reference_integrity, dict):
             clinical_lines.append(f"Share-safe unresolved clinical reference rows: {unresolved_total:,}.")
         cards.append(

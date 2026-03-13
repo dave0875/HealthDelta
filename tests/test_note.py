@@ -164,6 +164,87 @@ class TestDoctorNote(unittest.TestCase):
             self.assertEqual(txt.read_bytes(), before_txt)
             self.assertEqual(md.read_bytes(), before_md)
 
+    @unittest.skipUnless(_duckdb_available(), "duckdb not installed in this environment")
+    def test_note_surfaces_recent_clinical_happenings_when_labeled_fhir_observations_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ndjson_dir = root / "ndjson"
+            ndjson_dir.mkdir(parents=True, exist_ok=True)
+
+            run_id = "run-clinical"
+            recent_rows: list[str] = []
+            labels = [
+                ("2026-02-24T09:00:00Z", "SpO2", "%", 96),
+                ("2026-02-24T10:00:00Z", "SpO2", "%", 97),
+                ("2026-02-24T11:00:00Z", "SpO2", "%", 98),
+                ("2026-02-09T09:00:00Z", "Hemoglobin [Mass/volume] in Blood", "g/dL", 10.1),
+                ("2026-02-09T10:00:00Z", "Hemoglobin [Mass/volume] in Blood", "g/dL", 9.8),
+                ("2026-02-09T11:00:00Z", "Leukocytes [#/volume] in Blood by Automated count", "K/UL", 3.2),
+                ("2026-02-27T08:00:00Z", "Glucose [Mass/volume] in Serum or Plasma", "mg/dL", 141),
+                ("2026-02-27T09:00:00Z", "Creatinine [Mass/volume] in Serum or Plasma", "mg/dL", 1.4),
+                ("2026-02-27T10:00:00Z", "Sodium [Moles/volume] in Serum or Plasma", "mmol/L", 135),
+                ("2026-03-06T08:00:00Z", "Crossmatch Result", None, None),
+                ("2026-03-06T09:00:00Z", "ABO and Rh group [Type] in Blood", None, None),
+                ("2026-03-06T10:00:00Z", "Blood group antibody screen [Presence] in Serum or Plasma", None, None),
+            ]
+            for idx, (event_time, display, unit, value_num) in enumerate(labels, start=1):
+                obj = {
+                    "canonical_person_id": "p-clinical",
+                    "source": "fhir",
+                    "source_file": f"clinical/clinical-records/obs-{idx}.json",
+                    "event_time": event_time,
+                    "run_id": run_id,
+                    "record_key": f"rk{idx}",
+                    "event_key": f"ek{idx}",
+                    "display": display,
+                }
+                if unit is not None:
+                    obj["unit"] = unit
+                if value_num is not None:
+                    obj["value_num"] = value_num
+                recent_rows.append(_ndjson_line(obj))
+
+            _write_text(ndjson_dir / "observations.ndjson", "".join(recent_rows))
+            _write_text(ndjson_dir / "documents.ndjson", "")
+
+            db_path = root / "out.duckdb"
+            out_dir = root / "note"
+
+            build = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "duckdb",
+                    "build",
+                    "--input",
+                    str(ndjson_dir),
+                    "--db",
+                    str(db_path),
+                    "--replace",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+
+            note = subprocess.run(
+                [sys.executable, "-m", "healthdelta", "note", "build", "--db", str(db_path), "--out", str(out_dir), "--mode", "share"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(note.returncode, 0, msg=f"stdout={note.stdout}\nstderr={note.stderr}")
+
+            rendered = (out_dir / "doctor_note.md").read_text(encoding="utf-8")
+            self.assertIn("Recent clinical activity spans 1 share-safe patient bucket", rendered)
+            self.assertIn("Recent clinical themes included", rendered)
+            self.assertIn("oxygenation monitoring", rendered)
+            self.assertIn("blood counts and differentials", rendered)
+            self.assertIn("serum chemistries", rendered)
+            self.assertIn("blood-bank and transfusion workflow", rendered)
+            self.assertIn("Highest recent clinical activity occurred on 2026-02-09 (3 rows), 2026-02-24 (3 rows), 2026-02-27 (3 rows).", rendered)
+            self.assertIn("recent_clinical.top_themes=", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,10 @@ Notes:
 - The note now uses a two-part structure:
   - `Summary`: a short clinician-style overview of scope, dominant signals, and limits
   - `Facts`: deterministic machine-readable lines used by downstream ORIN refinement
+- When the DB contains sufficiently rich recent FHIR observation labels, the `Summary` also adds a deterministic recent-clinical-happenings block:
+  - share-safe patient-bucket count and active-day count over the latest 60-day clinical window
+  - grouped recent clinical themes such as oxygenation monitoring, blood counts, chemistries, or transfusion workflow
+  - busiest recent clinical days by row volume
 
 ## Outputs
 
@@ -47,3 +51,4 @@ Outputs are byte-stable for the same DB:
   - raw identifiers embedded in fields
 - `canonical_person_id` is used only for counting distinct people; IDs are not printed.
 - Row counts remain available in the `Facts` section for scope/confidence, but the note is intended to foreground health meaning rather than operational volume.
+- Recent clinical theme grouping is deterministic and vocabulary-based; it summarizes only labeled structured observations already present in the DB and does not invent diagnoses or treatment conclusions.
