@@ -194,3 +194,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-13,241,UNASSIGNED,20,codex,UNASSIGNED,"Make doctor's note prompt produce clinically useful summaries instead of row-count filler"
 2026-03-13,242,UNASSIGNED,20,codex,UNASSIGNED,"Recover richer clinical signal from original Apple export and reprocess ORIN baseline"
 2026-03-13,243,UNASSIGNED,20,codex,UNASSIGNED,"Preserve strong labels for numeric wellness data from Apple export"
+2026-03-13,244,UNASSIGNED,20,codex,UNASSIGNED,"Deploy ORIN backend from the latest tagged release image"
