@@ -970,31 +970,39 @@ def _read_current_dataset_patients(*, plane: UploadPlane) -> dict[str, Any]:
         return {"dataset": current.get("dataset"), "patients": []}
 
     patients: list[dict[str, Any]] = []
-    with coverage_by_person.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        ranked_rows: list[dict[str, Any]] = []
-        for row in reader:
-            canonical_person_id = (row.get("canonical_person_id") or "").strip()
-            if not canonical_person_id:
-                continue
-            row_count = 0
-            for key, raw_value in row.items():
-                if not key.endswith("_rows"):
+    def _ranked_rows_from_csv() -> list[dict[str, Any]]:
+        with coverage_by_person.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            ranked_rows: list[dict[str, Any]] = []
+            for row in reader:
+                canonical_person_id = (row.get("canonical_person_id") or "").strip()
+                if not canonical_person_id:
                     continue
-                try:
-                    row_count += int((raw_value or "0").strip() or "0")
-                except Exception:
+                row_count = 0
+                for key, raw_value in row.items():
+                    if not key.endswith("_rows"):
+                        continue
+                    try:
+                        row_count += int((raw_value or "0").strip() or "0")
+                    except Exception:
+                        continue
+                if row_count <= 0:
                     continue
-            if row_count <= 0:
-                continue
-            ranked_rows.append(
-                {
-                    "canonical_person_id": canonical_person_id,
-                    "row_count": row_count,
-                    "min_event_time": (row.get("min_event_time") or "").strip() or None,
-                    "max_event_time": (row.get("max_event_time") or "").strip() or None,
-                }
-            )
+                ranked_rows.append(
+                    {
+                        "canonical_person_id": canonical_person_id,
+                        "row_count": row_count,
+                        "min_event_time": (row.get("min_event_time") or "").strip() or None,
+                        "max_event_time": (row.get("max_event_time") or "").strip() or None,
+                    }
+                )
+        return ranked_rows
+
+    try:
+        ranked_rows = _ranked_rows_from_csv()
+    except PermissionError:
+        build_report(db_path=str(analysis["db_path"]), out_dir=str(analysis["reports_dir"]), mode="share")
+        ranked_rows = _ranked_rows_from_csv()
 
     ranked_rows.sort(
         key=lambda row: (

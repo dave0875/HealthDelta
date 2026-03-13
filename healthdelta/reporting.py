@@ -4,11 +4,15 @@ import csv
 import datetime as dt
 import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
 from healthdelta.progress import progress
+
+
+_SHARE_SAFE_FILE_MODE = 0o644
 
 
 def _sha256_file(path: Path) -> str:
@@ -41,6 +45,7 @@ def _write_text_atomic(path: Path, text: str) -> None:
         if not text.endswith("\n"):
             tf.write("\n")
     tmp.replace(path)
+    os.chmod(path, _SHARE_SAFE_FILE_MODE)
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -56,6 +61,7 @@ def _write_csv(path: Path, *, header: list[str], rows: Iterable[list[object]]) -
         for row in rows:
             w.writerow([_fmt_ts(v) if isinstance(v, (dt.date, dt.datetime)) else ("" if v is None else str(v)) for v in row])
     tmp.replace(path)
+    os.chmod(path, _SHARE_SAFE_FILE_MODE)
 
 
 def _connect_read_only(db_path: Path):

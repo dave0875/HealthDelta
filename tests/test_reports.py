@@ -1,5 +1,6 @@
 import csv
 import json
+import stat
 import subprocess
 import sys
 import tempfile
@@ -144,6 +145,7 @@ class TestReports(unittest.TestCase):
             for p in expected_paths:
                 self.assertTrue(p.exists(), msg=f"missing {p}")
                 self.assertTrue(p.read_bytes().endswith(b"\n"), msg=f"not newline-terminated: {p}")
+                self.assertEqual(stat.S_IMODE(p.stat().st_mode), 0o644, msg=f"unexpected mode for {p}")
 
             before_json = (out_dir / "summary.json").read_bytes()
             before_md = (out_dir / "summary.md").read_bytes()

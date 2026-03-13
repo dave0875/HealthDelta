@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -319,6 +320,39 @@ class TestBackendInsightsAPI(unittest.TestCase):
                 },
             ],
         )
+
+        coverage_by_person = dataset_dir / "analysis" / "reports" / "coverage_by_person.csv"
+        self.assertTrue(coverage_by_person.exists())
+        self.assertEqual(stat.S_IMODE(coverage_by_person.stat().st_mode), 0o644)
+
+    def test_patients_current_recovers_from_unreadable_coverage_csv(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        status, _payload = self._request("GET", "/patients/current")
+        self.assertEqual(status, 200)
+
+        coverage_by_person = dataset_dir / "analysis" / "reports" / "coverage_by_person.csv"
+        coverage_by_person.chmod(0)
+        self.assertEqual(stat.S_IMODE(coverage_by_person.stat().st_mode), 0)
+
+        status, payload = self._request("GET", "/patients/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["dataset"], "dataset_test")
+        self.assertEqual(
+            payload["patients"][0],
+            {
+                "canonical_person_id": "person-a",
+                "display_label": "Patient 1",
+                "row_count": 2,
+                "min_event_time": "2026-03-01T00:00:00Z",
+                "max_event_time": "2026-03-11T00:00:00Z",
+            },
+        )
+        self.assertEqual(stat.S_IMODE(coverage_by_person.stat().st_mode), 0o644)
 
     def test_insights_current_filters_by_window_days(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
