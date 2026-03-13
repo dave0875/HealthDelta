@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree as ET
 
+from healthdelta.healthkit_labels import healthkit_display_label, healthkit_sample_kind
 from healthdelta.progress import progress
 
 
@@ -388,6 +389,12 @@ def _export_healthkit_observations(ctx: ExportContext) -> list[dict]:
         }
         minimal["event_key"] = _sha256_bytes(json.dumps(minimal, sort_keys=True, separators=(",", ":")).encode("utf-8"))
         minimal["record_key"] = minimal["event_key"]
+        display = healthkit_display_label(hk_type)
+        sample_kind = healthkit_sample_kind(hk_type)
+        if display:
+            minimal["display"] = display
+        if sample_kind:
+            minimal["sample_kind"] = sample_kind
         observations.append(minimal)
         el.clear()
         batch += 1

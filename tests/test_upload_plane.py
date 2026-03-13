@@ -417,6 +417,67 @@ class TestUploadPlane(unittest.TestCase):
                 ],
             )
 
+    def test_finalize_session_materializes_strong_healthkit_labels_from_bootstrap_and_delta_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plane = UploadPlane(Path(tmp))
+            _seed_bootstrap_current_dataset(
+                plane,
+                dataset_name="dataset_bootstrap",
+                rows=[
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk-heart",
+                        "canonical_person_id": "patient-a",
+                        "source": "ios",
+                        "event_time": "2026-03-10 01:15:00",
+                        "run_id": "bootstrap-run",
+                        "event_key": "rk-heart",
+                        "source_id": "HKSample/bootstrap-heart",
+                        "effective_start": "2026-03-10 01:00:00",
+                        "effective_end": "2026-03-10 01:15:00",
+                        "hk_type": "HKQuantityTypeIdentifierHeartRate",
+                        "value": "70.0",
+                        "value_num": 70.0,
+                        "unit": "count/min",
+                    }
+                ],
+            )
+
+            delta_zip = Path(tmp) / "delta.zip"
+            delta_payload = _write_ios_export_zip(
+                delta_zip,
+                run_id="run_delta",
+                rows=[
+                    {
+                        "schema_version": 1,
+                        "record_key": "rk-sleep",
+                        "canonical_person_id": "patient-a",
+                        "source": "healthkit",
+                        "source_id": "HKSample/delta-sleep",
+                        "sample_type": "HKCategoryTypeIdentifierSleepAnalysis",
+                        "start_time": "2026-03-11T00:00:00Z",
+                        "end_time": "2026-03-11T07:00:00Z",
+                        "category_value": 1,
+                    }
+                ],
+            )
+
+            session = plane.create_session(
+                total_size=len(delta_payload),
+                sha256=hashlib.sha256(delta_payload).hexdigest(),
+            )
+            plane.put_chunk(session["id"], 0, delta_payload)
+            plane.finalize_session(session["id"])
+
+            current = plane.get_current_dataset()
+            _, rows = _read_current_ios_dataset(Path(current["export_zip"]))
+            by_key = {row["record_key"]: row for row in rows}
+            self.assertEqual(by_key["rk-heart"]["sample_type"], "HKQuantityTypeIdentifierHeartRate")
+            self.assertEqual(by_key["rk-heart"]["sample_kind"], "quantity")
+            self.assertEqual(by_key["rk-heart"]["display"], "Heart rate")
+            self.assertEqual(by_key["rk-sleep"]["sample_kind"], "category")
+            self.assertEqual(by_key["rk-sleep"]["display"], "Sleep analysis")
+
     def test_archive_current_clears_pointer_and_lists_archive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             plane = UploadPlane(Path(tmp))

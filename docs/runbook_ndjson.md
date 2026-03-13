@@ -57,6 +57,10 @@ Fields that MUST NOT appear in NDJSON:
 ### HealthKit XML (`export.xml`)
 - Stream-parses `<Record>` elements and emits them as observation rows.
 - `event_time` selection: prefer `startDate`, otherwise `endDate`.
+- HealthKit wellness rows preserve the source `type=` as `hk_type` and now also carry:
+  - deterministic `display` text grounded in that HealthKit type identifier
+  - deterministic `sample_kind` when it can be inferred from the HealthKit type family
+- This keeps high-volume numeric wellness data strongly labeled at export time instead of forcing downstream analytics to infer signals only from units.
 
 ### FHIR JSON (`clinical-records/*.json`)
 - Treats each file as a single resource (not Bundles).

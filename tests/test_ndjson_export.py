@@ -652,6 +652,48 @@ class TestNdjsonExport(unittest.TestCase):
                 self.assertEqual(len(row.get("source_system", "")), 15)
                 self.assertNotIn("urn:mrn", row.get("source_system", ""))
 
+    def test_export_ndjson_healthkit_rows_include_strong_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_dir = root / "staging" / "run-healthkit"
+            source_dir = run_dir / "source"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            (source_dir / "export.xml").write_text(HEALTHKIT_EXPORT_XML, encoding="utf-8")
+            _write_json(
+                run_dir / "layout.json",
+                {
+                    "run_id": "run-healthkit",
+                    "export_xml": "source/export.xml",
+                    "clinical_json": [],
+                },
+            )
+            out_local = root / "ndjson_local"
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "healthdelta",
+                    "export",
+                    "ndjson",
+                    "--input",
+                    str(run_dir),
+                    "--out",
+                    str(out_local),
+                    "--mode",
+                    "local",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(run.returncode, 0, msg=f"stdout={run.stdout}\nstderr={run.stderr}")
+
+            observations = _read_ndjson(out_local / "observations.ndjson")
+            healthkit_rows = [row for row in observations if row.get("source") == "healthkit"]
+            self.assertEqual(len(healthkit_rows), 1)
+            self.assertEqual(healthkit_rows[0]["hk_type"], "HKQuantityTypeIdentifierHeartRate")
+            self.assertEqual(healthkit_rows[0]["sample_kind"], "quantity")
+            self.assertEqual(healthkit_rows[0]["display"], "Heart rate")
+
     def test_export_ndjson_local_and_share_are_deterministic_and_pii_free(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

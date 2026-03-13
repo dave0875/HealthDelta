@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from healthdelta.healthkit_labels import healthkit_display_label, healthkit_sample_kind
 from healthdelta.time_utils import UTC
 
 
@@ -431,7 +432,7 @@ class UploadPlane:
                     obj = json.loads(line)
                     if not isinstance(obj, dict):
                         continue
-                    rows.append(obj)
+                    rows.append(self._enrich_healthkit_labels(obj))
                 run_id = manifest.get("run_id")
                 if not isinstance(run_id, str) or not run_id:
                     run_id = run_dir.name
@@ -477,6 +478,7 @@ class UploadPlane:
         seen_record_keys: set[str] = set()
         for row in previous_rows + new_rows:
             normalized = dict(row)
+            normalized = self._enrich_healthkit_labels(normalized)
             record_key = self._resolve_record_key(normalized)
             if not record_key or record_key in seen_record_keys:
                 continue
@@ -627,6 +629,7 @@ class UploadPlane:
                                 for key, value in zip(columns, values)
                                 if _jsonable_observation_value(key, value) is not None
                             }
+                            obj = self._enrich_healthkit_labels(obj)
                             out.write(json.dumps(obj, sort_keys=True) + "\n")
 
                     appended_count = 0
@@ -634,7 +637,7 @@ class UploadPlane:
                         record_key = row["record_key"]
                         if record_key in existing_record_keys:
                             continue
-                        out.write(json.dumps(row, sort_keys=True) + "\n")
+                        out.write(json.dumps(self._enrich_healthkit_labels(row), sort_keys=True) + "\n")
                         appended_count += 1
 
                 self._write_cumulative_ios_export_from_ndjson(
@@ -705,13 +708,37 @@ class UploadPlane:
             observations_path = Path(tmp) / "observations.ndjson"
             with observations_path.open("w", encoding="utf-8") as out:
                 for row in rows:
-                    out.write(json.dumps(row, sort_keys=True) + "\n")
+                    out.write(json.dumps(self._enrich_healthkit_labels(row), sort_keys=True) + "\n")
             self._write_cumulative_ios_export_from_ndjson(
                 export_zip=export_zip,
                 observations_path=observations_path,
                 row_count=len(rows),
                 source_runs=source_runs,
             )
+
+    def _enrich_healthkit_labels(self, row: dict[str, Any]) -> dict[str, Any]:
+        sample_type = row.get("sample_type")
+        if not isinstance(sample_type, str) or not sample_type.strip():
+            sample_type = row.get("hk_type")
+        if not isinstance(sample_type, str) or not sample_type.strip():
+            return row
+
+        source = row.get("source")
+        if isinstance(source, str) and source not in {"healthkit", "ios"}:
+            return row
+
+        normalized = dict(row)
+        if not isinstance(normalized.get("sample_type"), str) or not normalized.get("sample_type"):
+            normalized["sample_type"] = sample_type
+        if not isinstance(normalized.get("sample_kind"), str) or not normalized.get("sample_kind"):
+            sample_kind = healthkit_sample_kind(sample_type)
+            if sample_kind:
+                normalized["sample_kind"] = sample_kind
+        if not isinstance(normalized.get("display"), str) or not normalized.get("display"):
+            display = healthkit_display_label(sample_type)
+            if display:
+                normalized["display"] = display
+        return normalized
 
     def _write_cumulative_ios_export_from_ndjson(
         self,

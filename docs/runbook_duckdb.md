@@ -71,6 +71,11 @@ In this mode, HealthDelta loads from the `ndjson/` subdirectory and applies a su
 
 Other streams (documents/medications/conditions) are optional for iOS inputs and may load as empty tables until iOS emits them.
 
+For HealthKit-origin observation rows, the loader preserves strong wellness labels instead of leaving numeric telemetry anonymous:
+- `hk_type` keeps the source HealthKit signal identifier
+- `display` carries deterministic human-readable signal text derived from that HealthKit identifier when the source row does not already provide one
+- `sample_kind` is preserved or inferred deterministically from the HealthKit type family
+
 For fresh iOS loads (`--replace` or a new DB file), duplicate observation rows that share the same `record_key` within a single iOS `observations.ndjson` file are deduplicated deterministically during import. For current iOS exports, that `record_key` is derived from the stable HealthKit `source_id`.
 
 ### `encounters`

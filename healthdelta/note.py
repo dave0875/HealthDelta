@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from healthdelta.healthkit_labels import healthkit_display_label
 from healthdelta.progress import progress
 
 
@@ -30,28 +31,7 @@ def _write_text_atomic(path: Path, text: str) -> None:
 
 
 def _humanize_signal_label(label: str) -> str:
-    known = {
-        "HKQuantityTypeIdentifierHeartRate": "Heart rate",
-        "HKQuantityTypeIdentifierRestingHeartRate": "Resting heart rate",
-        "HKQuantityTypeIdentifierWalkingHeartRateAverage": "Walking heart rate average",
-        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "Heart rate variability (SDNN)",
-        "HKQuantityTypeIdentifierStepCount": "Step count",
-        "HKQuantityTypeIdentifierRespiratoryRate": "Respiratory rate",
-        "HKQuantityTypeIdentifierOxygenSaturation": "Oxygen saturation",
-        "HKQuantityTypeIdentifierActiveEnergyBurned": "Active energy burned",
-        "HKQuantityTypeIdentifierBasalEnergyBurned": "Basal energy burned",
-        "HKQuantityTypeIdentifierDistanceWalkingRunning": "Walking/running distance",
-        "HKQuantityTypeIdentifierBodyMass": "Body mass",
-        "HKQuantityTypeIdentifierBodyFatPercentage": "Body fat percentage",
-        "HKQuantityTypeIdentifierBodyMassIndex": "Body mass index",
-        "HKQuantityTypeIdentifierHeight": "Height",
-        "HKQuantityTypeIdentifierBodyTemperature": "Body temperature",
-        "HKQuantityTypeIdentifierBloodPressureSystolic": "Systolic blood pressure",
-        "HKQuantityTypeIdentifierBloodPressureDiastolic": "Diastolic blood pressure",
-    }
-    if label in known:
-        return known[label]
-    return label
+    return healthkit_display_label(label) or label
 
 
 _RECENT_CLINICAL_THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
