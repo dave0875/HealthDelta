@@ -115,11 +115,23 @@ class TestDoctorNote(unittest.TestCase):
             self.assertTrue(md.read_bytes().endswith(b"\n"))
 
             expected = (
-                "HealthDelta Summary\n"
+                "HealthDelta Doctor's Note\n"
                 "run_id=run123\n"
                 "generated_at=2020-01-03T00:00:00Z\n"
+                "\n"
+                "Summary\n"
+                "- Scope covers 1 person from 2020-01-01T00:00:00Z to 2020-01-03T00:00:00Z across 3 active days.\n"
+                "- Current data is mixed: fitness/wellness observations and structured clinical records are both present.\n"
+                "- Most common observed signals: Heart rate (1 row); 8867-4 (1 row).\n"
+                "- Clinical record coverage includes documents (1 row).\n"
+                "- Source mix includes healthkit (1 row), fhir (1 row), cda (1 row).\n"
+                "- Share-safe note: no names, dates of birth, identifiers, or free-text clinical narratives are included.\n"
+                "\n"
+                "Facts\n"
                 "people=1\n"
+                "active_days=3\n"
                 "event_time_range=2020-01-01T00:00:00Z..2020-01-03T00:00:00Z\n"
+                "domain_mix=mixed\n"
                 "totals.observations=2\n"
                 "totals.documents=1\n"
                 "totals.medications=0\n"
@@ -131,7 +143,6 @@ class TestDoctorNote(unittest.TestCase):
                 "sources.fhir=1\n"
                 "sources.cda=1\n"
                 "signals.top_observations=HKQuantityTypeIdentifierHeartRate:1;8867-4:1\n"
-                "No names, dates of birth, or identifying text included.\n"
             ).encode("utf-8")
             self.assertEqual(txt.read_bytes(), expected)
             self.assertEqual(md.read_bytes(), expected)

@@ -29,6 +29,31 @@ def _write_text_atomic(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
+def _humanize_signal_label(label: str) -> str:
+    known = {
+        "HKQuantityTypeIdentifierHeartRate": "Heart rate",
+        "HKQuantityTypeIdentifierRestingHeartRate": "Resting heart rate",
+        "HKQuantityTypeIdentifierWalkingHeartRateAverage": "Walking heart rate average",
+        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "Heart rate variability (SDNN)",
+        "HKQuantityTypeIdentifierStepCount": "Step count",
+        "HKQuantityTypeIdentifierRespiratoryRate": "Respiratory rate",
+        "HKQuantityTypeIdentifierOxygenSaturation": "Oxygen saturation",
+        "HKQuantityTypeIdentifierActiveEnergyBurned": "Active energy burned",
+        "HKQuantityTypeIdentifierBasalEnergyBurned": "Basal energy burned",
+        "HKQuantityTypeIdentifierDistanceWalkingRunning": "Walking/running distance",
+        "HKQuantityTypeIdentifierBodyMass": "Body mass",
+        "HKQuantityTypeIdentifierBodyFatPercentage": "Body fat percentage",
+        "HKQuantityTypeIdentifierBodyMassIndex": "Body mass index",
+        "HKQuantityTypeIdentifierHeight": "Height",
+        "HKQuantityTypeIdentifierBodyTemperature": "Body temperature",
+        "HKQuantityTypeIdentifierBloodPressureSystolic": "Systolic blood pressure",
+        "HKQuantityTypeIdentifierBloodPressureDiastolic": "Diastolic blood pressure",
+    }
+    if label in known:
+        return known[label]
+    return label
+
+
 def _connect_read_only(db_path: Path):
     try:
         import duckdb
@@ -103,10 +128,18 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         with progress.phase("note: compute event_time range"):
             min_et_s = None
             max_et_s = None
+            active_days = 0
             union_et = union_all("event_time")
             if union_et is not None:
                 min_et = _scalar(con, f"SELECT MIN(event_time) FROM ({union_et}) WHERE event_time IS NOT NULL;")
                 max_et = _scalar(con, f"SELECT MAX(event_time) FROM ({union_et}) WHERE event_time IS NOT NULL;")
+                active_days = int(
+                    _scalar(
+                        con,
+                        f"SELECT COUNT(DISTINCT CAST(event_time AS DATE)) FROM ({union_et}) WHERE event_time IS NOT NULL;",
+                    )
+                    or 0
+                )
                 min_et_s = _fmt_ts(min_et)
                 max_et_s = _fmt_ts(max_et)
 
@@ -151,6 +184,7 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         # signals: top-N observation types/codes (no free-text)
         with progress.phase("note: compute signals"):
             signals = ""
+            top_signal_rows: list[tuple[str, int]] = []
             if "observations" in present and totals["observations"] > 0:
                 raw = [
                     (label, int(n))
@@ -167,19 +201,73 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
                     if isinstance(label, str)
                 ]
                 raw.sort(key=lambda x: (-x[1], 0 if x[0].startswith("HK") else 1, x[0]))
-                top = raw[:5]
-                signals = ";".join([f"{k}:{v}" for k, v in top])
+                top_signal_rows = raw[:5]
+                signals = ";".join([f"{k}:{v}" for k, v in top_signal_rows])
 
-        # Build <= ~25 lines, deterministic order.
+        clinical_table_counts = {
+            key: totals[key]
+            for key in ["documents", "medications", "conditions", "encounters", "procedures", "diagnostic_reports"]
+            if totals[key] > 0
+        }
+        fitness_present = totals["observations"] > 0 and sources["healthkit"] > 0
+        clinical_present = bool(clinical_table_counts) or sources["fhir"] > 0 or sources["cda"] > 0
+        if fitness_present and clinical_present:
+            domain_mix = "mixed"
+        elif fitness_present:
+            domain_mix = "fitness"
+        elif clinical_present:
+            domain_mix = "clinical"
+        else:
+            domain_mix = "limited"
+
+        def _summary_signal_line() -> str:
+            if not top_signal_rows:
+                return "- No dominant observation signal was available in the current structured data."
+            top_parts = [f"{_humanize_signal_label(label)} ({count} row{'s' if count != 1 else ''})" for label, count in top_signal_rows[:3]]
+            return "- Most common observed signals: " + "; ".join(top_parts) + "."
+
+        def _summary_clinical_line() -> str:
+            if clinical_table_counts:
+                parts = [f"{name} ({count} row{'s' if count != 1 else ''})" for name, count in clinical_table_counts.items()]
+                return "- Clinical record coverage includes " + ", ".join(parts) + "."
+            if clinical_present:
+                return "- Structured clinical-source records are present in the current scope."
+            return "- Structured clinical records are not present in the current scope."
+
+        nonzero_sources = [(source, count) for source, count in sources.items() if count > 0]
+        source_summary = ", ".join([f"{source} ({count} row{'s' if count != 1 else ''})" for source, count in nonzero_sources]) or "no structured sources"
+
         lines: list[str] = []
-        lines.append("HealthDelta Summary")
+        lines.append("HealthDelta Doctor's Note")
         lines.append(f"run_id={run_id_val}")
         lines.append(f"generated_at={generated_at}")
+        lines.append("")
+        lines.append("Summary")
+        if min_et_s and max_et_s:
+            lines.append(f"- Scope covers {people} person{'s' if people != 1 else ''} from {min_et_s} to {max_et_s} across {active_days} active day{'s' if active_days != 1 else ''}.")
+        else:
+            lines.append(f"- Scope covers {people} person{'s' if people != 1 else ''}, but no event-time range was available in the current structured data.")
+        if domain_mix == "mixed":
+            lines.append("- Current data is mixed: fitness/wellness observations and structured clinical records are both present.")
+        elif domain_mix == "fitness":
+            lines.append("- Current data is fitness-led: Apple Health wellness observations are present, but structured clinical records are not.")
+        elif domain_mix == "clinical":
+            lines.append("- Current data is clinical-led: structured clinical records are present without Apple Health fitness observations.")
+        else:
+            lines.append("- Current data is limited and does not yet support a richer bedside summary.")
+        lines.append(_summary_signal_line())
+        lines.append(_summary_clinical_line())
+        lines.append(f"- Source mix includes {source_summary}.")
+        lines.append("- Share-safe note: no names, dates of birth, identifiers, or free-text clinical narratives are included.")
+        lines.append("")
+        lines.append("Facts")
         lines.append(f"people={people}")
+        lines.append(f"active_days={active_days}")
         if min_et_s and max_et_s:
             lines.append(f"event_time_range={min_et_s}..{max_et_s}")
         else:
             lines.append("event_time_range=")
+        lines.append(f"domain_mix={domain_mix}")
         lines.append(f"totals.observations={totals['observations']}")
         lines.append(f"totals.documents={totals['documents']}")
         lines.append(f"totals.medications={totals['medications']}")
@@ -192,7 +280,6 @@ def build_doctor_note(*, db_path: str, out_dir: str, mode: str = "share") -> Non
         lines.append(f"sources.cda={sources['cda']}")
         if signals:
             lines.append(f"signals.top_observations={signals}")
-        lines.append("No names, dates of birth, or identifying text included.")
 
         text = "\n".join(lines) + "\n"
         with progress.phase("note: write artifacts"):

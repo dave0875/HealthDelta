@@ -193,6 +193,7 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertIsNotNone(ollama.last_request_json)
         self.assertIn("doctor_note", ollama.last_request_json["prompt"])
         self.assertIn("summary_json", ollama.last_request_json["prompt"])
+        self.assertIn("Prioritize clinically or behaviorally meaningful findings", ollama.last_request_json["prompt"])
 
     def test_insights_current_falls_back_when_ollama_output_is_invalid(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))

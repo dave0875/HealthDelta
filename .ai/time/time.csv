@@ -191,3 +191,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-12,238,UNASSIGNED,20,codex,UNASSIGNED,"Replace generic ORIN patient labels on iPhone with a durable local-only patient naming flow"
 2026-03-12,239,UNASSIGNED,20,codex,UNASSIGNED,"Separate fitness and clinical domains in the iPhone dashboard while preserving a combined bedside view"
 2026-03-12,240,UNASSIGNED,20,codex,UNASSIGNED,"Make the iPhone home screen health-centered instead of operational or debugging-like"
+2026-03-13,241,UNASSIGNED,20,codex,UNASSIGNED,"Make doctor's note prompt produce clinically useful summaries instead of row-count filler"

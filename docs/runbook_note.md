@@ -13,6 +13,9 @@ healthdelta note build --db <path> --out <dir> [--mode local|share]
 Notes:
 - This is a share-safe summary intended for quick copy/paste sharing.
 - It is non-diagnostic and contains no names, DOB, or free-text identifiers.
+- The note now uses a two-part structure:
+  - `Summary`: a short clinician-style overview of scope, dominant signals, and limits
+  - `Facts`: deterministic machine-readable lines used by downstream ORIN refinement
 
 ## Outputs
 
@@ -28,6 +31,7 @@ Outputs are byte-stable for the same DB:
 - Stable line ordering and formatting
 - Newline-terminated files
 - No wall-clock timestamps
+- Human-facing summary text is still deterministic because it is derived only from ordered DuckDB aggregates
 
 `generated_at` is deterministic by design:
 - It is set to the maximum `event_time` present in the DB (UTC, ISO-8601 `Z`).
@@ -35,11 +39,11 @@ Outputs are byte-stable for the same DB:
 
 ## Privacy guarantees and limitations
 
-- Includes only aggregate counts and minimal structured “signals”.
+- Includes only share-safe aggregate counts and structured signal labels.
 - Does not print:
   - patient names
   - dates of birth
   - free-text clinical notes
   - raw identifiers embedded in fields
 - `canonical_person_id` is used only for counting distinct people; IDs are not printed.
-
+- Row counts remain available in the `Facts` section for scope/confidence, but the note is intended to foreground health meaning rather than operational volume.
