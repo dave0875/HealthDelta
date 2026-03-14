@@ -224,6 +224,87 @@ final class IncrementalNDJSONExporterTests: XCTestCase {
         XCTAssertEqual(row["total_distance_unit"] as? String, "m")
     }
 
+    func testRunWithLayoutWritesManifestDeltaWindowFromExportedSamples() async throws {
+        let type = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let plan = HealthKitExportPlan(key: "steps", type: type)
+        let sampleA = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .count(), doubleValue: 10),
+            start: Date(timeIntervalSince1970: 100),
+            end: Date(timeIntervalSince1970: 200)
+        )
+        let sampleB = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .count(), doubleValue: 20),
+            start: Date(timeIntervalSince1970: 300),
+            end: Date(timeIntervalSince1970: 500)
+        )
+
+        let script: [FakeAnchoredQueryClient.ScriptedResponse] = [
+            .init(result: AnchoredQueryResult(addedSamples: [sampleA, sampleB], deletedObjects: [], newAnchor: HKQueryAnchor(fromValue: 1)))
+        ]
+
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let layout = IOSExportLayout(baseDirectoryURL: tmp.appendingPathComponent("HealthDelta", isDirectory: true))
+        let exporter = IncrementalNDJSONExporter(
+            anchorStore: AnchorStore(directoryURL: tmp.appendingPathComponent("anchors", isDirectory: true)),
+            queryClient: FakeAnchoredQueryClient(script: script),
+            canonicalPersonIDProvider: { self._fixedCanonicalPersonID }
+        )
+
+        _ = try await exporter.runOnce(runID: "run_1", layout: layout, plan: plan)
+
+        let manifestURL = layout.manifestURL(runID: "run_1")
+        let manifestData = try Data(contentsOf: manifestURL)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+
+        XCTAssertEqual(object["delta_start"] as? String, "1970-01-01T00:01:40.000Z")
+        XCTAssertEqual(object["delta_end"] as? String, "1970-01-01T00:08:20.000Z")
+    }
+
+    func testRunWithLayoutMergesManifestDeltaWindowAcrossPlans() async throws {
+        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let heartType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        let stepsPlan = HealthKitExportPlan(key: "steps", type: stepsType)
+        let heartPlan = HealthKitExportPlan(key: "heart_rate", type: heartType)
+
+        let earlySample = HKQuantitySample(
+            type: heartType,
+            quantity: HKQuantity(unit: .count().unitDivided(by: .minute()), doubleValue: 70),
+            start: Date(timeIntervalSince1970: 50),
+            end: Date(timeIntervalSince1970: 75)
+        )
+        let lateSample = HKQuantitySample(
+            type: stepsType,
+            quantity: HKQuantity(unit: .count(), doubleValue: 100),
+            start: Date(timeIntervalSince1970: 300),
+            end: Date(timeIntervalSince1970: 900)
+        )
+
+        let script: [FakeAnchoredQueryClient.ScriptedResponse] = [
+            .init(result: AnchoredQueryResult(addedSamples: [lateSample], deletedObjects: [], newAnchor: HKQueryAnchor(fromValue: 1))),
+            .init(result: AnchoredQueryResult(addedSamples: [earlySample], deletedObjects: [], newAnchor: HKQueryAnchor(fromValue: 2))),
+        ]
+
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let layout = IOSExportLayout(baseDirectoryURL: tmp.appendingPathComponent("HealthDelta", isDirectory: true))
+        let exporter = IncrementalNDJSONExporter(
+            anchorStore: AnchorStore(directoryURL: tmp.appendingPathComponent("anchors", isDirectory: true)),
+            queryClient: FakeAnchoredQueryClient(script: script),
+            canonicalPersonIDProvider: { self._fixedCanonicalPersonID }
+        )
+
+        _ = try await exporter.runOnce(runID: "run_1", layout: layout, plan: stepsPlan)
+        _ = try await exporter.runOnce(runID: "run_1", layout: layout, plan: heartPlan)
+
+        let manifestURL = layout.manifestURL(runID: "run_1")
+        let manifestData = try Data(contentsOf: manifestURL)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+
+        XCTAssertEqual(object["delta_start"] as? String, "1970-01-01T00:00:50.000Z")
+        XCTAssertEqual(object["delta_end"] as? String, "1970-01-01T00:15:00.000Z")
+    }
+
     private func _rows(from bytes: Data) throws -> [[String: Any]] {
         guard let s = String(data: bytes, encoding: .utf8) else {
             XCTFail("invalid UTF-8")

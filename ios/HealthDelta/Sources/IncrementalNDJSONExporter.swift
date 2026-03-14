@@ -3,6 +3,12 @@ import Foundation
 import HealthKit
 
 final class IncrementalNDJSONExporter {
+    private struct ExportBatch {
+        let changed: Bool
+        let deltaStart: Date?
+        let deltaEnd: Date?
+    }
+
     private let anchorStore: AnchorStore
     private let queryClient: AnchoredQuerying
     private let writer: NDJSONWriter
@@ -27,23 +33,13 @@ final class IncrementalNDJSONExporter {
         limit: Int = HKObjectQueryNoLimit,
         outputURL: URL
     ) async throws -> Bool {
-        let currentAnchor = anchorStore.load(forKey: plan.key)
-        let result = try await queryClient.execute(type: plan.type, predicate: predicate, anchor: currentAnchor, limit: limit)
-
-        // Persist anchor regardless of whether anything changed (deterministic bytes).
-        try anchorStore.save(anchor: result.newAnchor, forKey: plan.key)
-
-        guard result.didChange else {
-            return false
-        }
-
-        let canonicalPersonID = try canonicalPersonIDProvider()
-        let rows = result.addedSamples.map { sampleToRow(sample: $0, canonicalPersonID: canonicalPersonID) }
-        let sorted = rows.sorted { a, b in
-            (a["record_key"] as? String ?? "") < (b["record_key"] as? String ?? "")
-        }
-        try writer.appendLines(sorted, to: outputURL)
-        return true
+        let batch = try await exportBatch(
+            plan: plan,
+            predicate: predicate,
+            limit: limit,
+            outputURL: outputURL
+        )
+        return batch.changed
     }
 
     @discardableResult
@@ -57,9 +53,46 @@ final class IncrementalNDJSONExporter {
         try layout.ensureDirectories(runID: runID)
         let outputURL = layout.observationsNDJSONURL(runID: runID)
 
-        let changed = try await runOnce(plan: plan, predicate: predicate, limit: limit, outputURL: outputURL)
-        try IOSExportManifestWriter(layout: layout).writeManifestIfChanged(runID: runID)
-        return changed
+        let batch = try await exportBatch(
+            plan: plan,
+            predicate: predicate,
+            limit: limit,
+            outputURL: outputURL
+        )
+        try IOSExportManifestWriter(layout: layout).writeManifestIfChanged(
+            runID: runID,
+            deltaStart: batch.deltaStart,
+            deltaEnd: batch.deltaEnd
+        )
+        return batch.changed
+    }
+
+    private func exportBatch(
+        plan: HealthKitExportPlan,
+        predicate: NSPredicate?,
+        limit: Int,
+        outputURL: URL
+    ) async throws -> ExportBatch {
+        let currentAnchor = anchorStore.load(forKey: plan.key)
+        let result = try await queryClient.execute(type: plan.type, predicate: predicate, anchor: currentAnchor, limit: limit)
+
+        // Persist anchor regardless of whether anything changed (deterministic bytes).
+        try anchorStore.save(anchor: result.newAnchor, forKey: plan.key)
+
+        guard result.didChange else {
+            return ExportBatch(changed: false, deltaStart: nil, deltaEnd: nil)
+        }
+
+        let canonicalPersonID = try canonicalPersonIDProvider()
+        let rows = result.addedSamples.map { sampleToRow(sample: $0, canonicalPersonID: canonicalPersonID) }
+        let sorted = rows.sorted { a, b in
+            (a["record_key"] as? String ?? "") < (b["record_key"] as? String ?? "")
+        }
+        try writer.appendLines(sorted, to: outputURL)
+
+        let deltaStart = result.addedSamples.map(\.startDate).min()
+        let deltaEnd = result.addedSamples.map(\.endDate).max()
+        return ExportBatch(changed: true, deltaStart: deltaStart, deltaEnd: deltaEnd)
     }
 
     private func sampleToRow(sample: HKSample, canonicalPersonID: String) -> [String: Any] {

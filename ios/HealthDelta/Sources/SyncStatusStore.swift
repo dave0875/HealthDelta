@@ -142,7 +142,8 @@ struct SyncStatusStore {
             }
         }
         let totalRows = normalizedRowCounts.values.reduce(0, +)
-        let (deltaStart, deltaEnd) = deltaWindow(runDirectory: runDirectory, files: files)
+        let deltaStart = parseISO8601(manifest["delta_start"] as? String)
+        let deltaEnd = parseISO8601(manifest["delta_end"] as? String)
 
         let attrs = try? fileManager.attributesOfItem(atPath: manifestURL.path)
         let generatedAt = attrs?[.modificationDate] as? Date
@@ -213,45 +214,10 @@ struct SyncStatusStore {
             return fileManager.fileExists(atPath: url.appendingPathComponent(path, isDirectory: false).path)
         }
     }
-
-    private func deltaWindow(runDirectory: URL, files: [[String: Any]]) -> (Date?, Date?) {
-        var minStart: Date?
-        var maxEnd: Date?
-
-        for file in files {
-            guard let path = file["path"] as? String, path.hasSuffix(".ndjson") else {
-                continue
-            }
-            let ndjsonURL = runDirectory.appendingPathComponent(path, isDirectory: false)
-            guard let text = try? String(contentsOf: ndjsonURL, encoding: .utf8) else {
-                continue
-            }
-
-            for rawLine in text.split(separator: "\n") {
-                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !line.isEmpty, let data = line.data(using: .utf8) else {
-                    continue
-                }
-                guard
-                    let object = try? JSONSerialization.jsonObject(with: data, options: []),
-                    let row = object as? [String: Any]
-                else {
-                    continue
-                }
-
-                if let value = row["start_time"] as? String, let parsed = parseISO8601(value) {
-                    minStart = min(minStart ?? parsed, parsed)
-                }
-                if let value = row["end_time"] as? String, let parsed = parseISO8601(value) {
-                    maxEnd = max(maxEnd ?? parsed, parsed)
-                }
-            }
+    private func parseISO8601(_ value: String?) -> Date? {
+        guard let value else {
+            return nil
         }
-
-        return (minStart, maxEnd)
-    }
-
-    private func parseISO8601(_ value: String) -> Date? {
         if let d = Self.iso8601WithFractional.date(from: value) {
             return d
         }

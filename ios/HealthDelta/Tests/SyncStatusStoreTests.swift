@@ -44,13 +44,12 @@ final class SyncStatusStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: runDir.appendingPathComponent("ndjson", isDirectory: true), withIntermediateDirectories: true)
 
         let manifest = """
-        {"files":[{"path":"ndjson/observations.ndjson","sha256":"x","size_bytes":1250}],"row_counts":{"observations":2},"run_id":"run_20260202_010203"}
+        {"delta_end":"2026-02-01T08:30:00.000Z","delta_start":"2026-02-01T00:00:00.000Z","files":[{"path":"ndjson/observations.ndjson","sha256":"x","size_bytes":1250}],"row_counts":{"observations":2},"run_id":"run_20260202_010203"}
         """
         try manifest.write(to: runDir.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
 
         let ndjson = """
-        {"start_time":"2026-02-01T00:00:00.000Z","end_time":"2026-02-01T01:00:00.000Z"}
-        {"start_time":"2026-02-01T05:00:00.000Z","end_time":"2026-02-01T08:30:00.000Z"}
+        {"unexpected":"payload"}
         """
         try ndjson.write(to: runDir.appendingPathComponent("ndjson/observations.ndjson"), atomically: true, encoding: .utf8)
 
@@ -84,6 +83,35 @@ final class SyncStatusStoreTests: XCTestCase {
         XCTAssertEqual(snapshot.deltaEnd!.timeIntervalSince1970, 1_769_934_600.0, accuracy: 1.0)
         XCTAssertNotEqual(snapshot.lastSyncLabel, "Unknown")
         XCTAssertNotEqual(snapshot.lastDeltaLabel, "Not available yet")
+    }
+
+    func testLoadLatestDoesNotParseNDJSONWhenManifestLacksDeltaWindow() throws {
+        let fixture = try FixtureDirs()
+        let runDir = fixture.documents.appendingPathComponent("HealthDelta/run_legacy", isDirectory: true)
+        try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: runDir.appendingPathComponent("ndjson", isDirectory: true), withIntermediateDirectories: true)
+
+        let manifest = """
+        {"files":[{"path":"ndjson/observations.ndjson","sha256":"x","size_bytes":12}],"row_counts":{"observations":1},"run_id":"run_legacy"}
+        """
+        try manifest.write(to: runDir.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
+        try "not-json-at-all\n".write(
+            to: runDir.appendingPathComponent("ndjson/observations.ndjson"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = SyncStatusStore(
+            fileManager: .default,
+            appDocumentsURL: fixture.documents,
+            appSupportURL: fixture.appSupport
+        )
+        let snapshot = try store.loadLatest()
+
+        XCTAssertEqual(snapshot.runID, "run_legacy")
+        XCTAssertNil(snapshot.deltaStart)
+        XCTAssertNil(snapshot.deltaEnd)
+        XCTAssertEqual(snapshot.lastDeltaLabel, "Not available yet")
     }
 
     func testLoadLatestThrowsWhenNoRunDirectoryExists() throws {
