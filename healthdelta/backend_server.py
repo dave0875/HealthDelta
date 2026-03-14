@@ -20,6 +20,7 @@ import duckdb
 
 from healthdelta.deid import deidentify_run
 from healthdelta.duckdb_tools import build_duckdb
+from healthdelta.healthkit_labels import healthkit_display_label
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.note import build_doctor_note
@@ -603,6 +604,30 @@ def _filtered_observation_facts(
                 filtered_params,
             ).fetchall()
         }
+        fitness_active_days = int(
+            con.execute(
+                f"""
+                SELECT COUNT(DISTINCT CAST(TRY_CAST(event_time AS DATE) AS VARCHAR))
+                FROM observations
+                WHERE {filtered_where}
+                  AND COALESCE(source, '') IN ('healthkit', 'ios')
+                """,
+                filtered_params,
+            ).fetchone()[0]
+            or 0
+        )
+        clinical_active_days = int(
+            con.execute(
+                f"""
+                SELECT COUNT(DISTINCT CAST(TRY_CAST(event_time AS DATE) AS VARCHAR))
+                FROM observations
+                WHERE {filtered_where}
+                  AND COALESCE(source, '') NOT IN ('healthkit', 'ios', 'unknown', '')
+                """,
+                filtered_params,
+            ).fetchone()[0]
+            or 0
+        )
         top_signal_row = con.execute(
             f"""
             SELECT COALESCE(record_type, code, 'unknown') AS signal, COUNT(*) AS n
@@ -614,6 +639,48 @@ def _filtered_observation_facts(
             """,
             filtered_params,
         ).fetchone()
+        healthkit_signals: list[str] = []
+        for display, hk_type, unit, _count in con.execute(
+            f"""
+            SELECT display, hk_type, unit, COUNT(*) AS n
+            FROM observations
+            WHERE {filtered_where}
+              AND COALESCE(source, '') IN ('healthkit', 'ios')
+            GROUP BY 1, 2, 3
+            ORDER BY n DESC, display ASC NULLS LAST, hk_type ASC NULLS LAST, unit ASC NULLS LAST
+            LIMIT 20
+            """,
+            filtered_params,
+        ).fetchall():
+            label = _healthkit_signal_label(
+                display=str(display) if isinstance(display, str) else None,
+                hk_type=str(hk_type) if isinstance(hk_type, str) else None,
+                unit=str(unit) if isinstance(unit, str) else None,
+            )
+            if label and label not in healthkit_signals:
+                healthkit_signals.append(label)
+            if len(healthkit_signals) >= 4:
+                break
+        clinical_themes: list[str] = []
+        for signal, _count in con.execute(
+            f"""
+            SELECT COALESCE(display, code, record_type, 'unknown') AS signal, COUNT(*) AS n
+            FROM observations
+            WHERE {filtered_where}
+              AND COALESCE(source, '') NOT IN ('healthkit', 'ios', 'unknown', '')
+            GROUP BY 1
+            ORDER BY n DESC, signal ASC
+            LIMIT 40
+            """,
+            filtered_params,
+        ).fetchall():
+            if not isinstance(signal, str):
+                continue
+            theme = _clinical_theme_for_display(signal)
+            if theme and theme not in clinical_themes:
+                clinical_themes.append(theme)
+            if len(clinical_themes) >= 4:
+                break
 
         return {
             "canonical_person_id": canonical_person_id,
@@ -624,6 +691,10 @@ def _filtered_observation_facts(
             "active_days": int(row[3] or 0),
             "distinct_people": int(row[4] or 0),
             "rows_by_source": rows_by_source,
+            "fitness_active_days": fitness_active_days,
+            "clinical_active_days": clinical_active_days,
+            "healthkit_signals": healthkit_signals,
+            "clinical_themes": clinical_themes,
             "top_signal": str(top_signal_row[0]) if top_signal_row else "",
         }
     finally:
@@ -646,17 +717,131 @@ def _filtered_note_text(*, facts: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any]) -> list[dict[str, str]]:
-    overview_lines = [f"ORIN analyzed {int(facts['total_rows']):,} observation rows for the selected scope."]
-    if facts.get("canonical_person_id"):
-        overview_lines.append("Filtered to the requested patient.")
-    if facts.get("window_days") is not None:
-        overview_lines.append(f"Evaluation window: last {int(facts['window_days'])} days relative to the latest matching observation.")
-    if facts.get("min_event_time") and facts.get("max_event_time"):
-        overview_lines.append(f"Observed window: {facts['min_event_time']} to {facts['max_event_time']}.")
-    if facts.get("top_signal"):
-        overview_lines.append(f"Primary observed signal in this scope: {facts['top_signal']}.")
+_RECENT_CLINICAL_THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("oxygenation monitoring", ("spo2", "oxygen saturation")),
+    (
+        "blood counts and differentials",
+        (
+            "hemoglobin",
+            "hematocrit",
+            "leukocyte",
+            "lymphocyte",
+            "neutrophil",
+            "eosinophil",
+            "basophil",
+            "monocyte",
+            "erythrocyte",
+            "platelet",
+            "mch",
+            "mcv",
+            "mchc",
+            "nucleated erythrocyte",
+            "rdw",
+        ),
+    ),
+    (
+        "serum chemistries",
+        (
+            "glucose",
+            "creatinine",
+            "sodium",
+            "potassium",
+            "chloride",
+            "calcium",
+            "magnesium",
+            "phosphate",
+            "carbon dioxide",
+            "urea nitrogen",
+            "anion gap",
+            "albumin",
+            "bilirubin",
+            "protein",
+            "aspartate aminotransferase",
+            "alanine aminotransferase",
+            "alkaline phosphatase",
+            "lactate dehydrogenase",
+            "urate",
+            "glomerular filtration rate",
+        ),
+    ),
+    (
+        "blood-bank and transfusion workflow",
+        (
+            "crossmatch",
+            "abo and rh",
+            "blood group antibody",
+            "blood component",
+            "transfusion",
+            "isbt",
+            "dispense status",
+            "product type",
+            "unit ",
+            "unit blood type",
+            "unit expiration",
+            "issue date and time",
+        ),
+    ),
+    ("infectious testing", ("influenza", "bacteria identified", "culture", "virus", "sars", "covid")),
+    ("cardiac monitoring", ("ekg", "ecg", "troponin")),
+)
 
+_HEALTHKIT_UNIT_SIGNAL_LABELS: dict[str, str] = {
+    "count/min": "heart-rate-style telemetry",
+    "count": "step and activity counts",
+    "cal": "energy expenditure",
+    "%": "percentage-based wellness signals",
+    "in": "walking step length",
+    "mi/hr": "walking speed",
+    "mi": "walking and running distance",
+    "dbaspl": "headphone audio exposure",
+}
+
+
+def _clinical_theme_for_display(label: str) -> str | None:
+    lowered = label.strip().lower()
+    if not lowered:
+        return None
+    for theme, needles in _RECENT_CLINICAL_THEME_RULES:
+        if any(needle in lowered for needle in needles):
+            return theme
+    return None
+
+
+def _join_human_list(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _healthkit_signal_label(*, display: str | None, hk_type: str | None, unit: str | None) -> str | None:
+    for candidate in [display, hk_type]:
+        label = healthkit_display_label(candidate)
+        if label and label.lower() != "unknown":
+            return label
+    if isinstance(unit, str):
+        return _HEALTHKIT_UNIT_SIGNAL_LABELS.get(unit.strip().lower())
+    return None
+
+
+def _is_low_information_body(text: str) -> bool:
+    normalized = " ".join((text or "").strip().split())
+    if not normalized:
+        return True
+    lowered = normalized.lower()
+    if re.fullmatch(r"[0-9,]+\s+rows?\.?", lowered):
+        return True
+    if re.fullmatch(r"[0-9,]+\s+observation\s+rows?\.?", lowered):
+        return True
+    if "row" in lowered and len(lowered.split()) <= 4:
+        return True
+    return False
+
+
+def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any]) -> list[dict[str, str]]:
     rows_by_source = facts.get("rows_by_source") or {}
     fitness_rows = int(rows_by_source.get("healthkit") or 0) + int(rows_by_source.get("ios") or 0)
     clinical_rows = sum(
@@ -664,6 +849,29 @@ def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any
         for source, count in rows_by_source.items()
         if source not in {"healthkit", "ios", "unknown"}
     )
+    fitness_active_days = int(facts.get("fitness_active_days") or 0)
+    clinical_active_days = int(facts.get("clinical_active_days") or 0)
+    healthkit_signals = [str(item) for item in facts.get("healthkit_signals") or [] if isinstance(item, str) and item.strip()]
+    clinical_themes = [str(item) for item in facts.get("clinical_themes") or [] if isinstance(item, str) and item.strip()]
+
+    if fitness_rows and clinical_rows:
+        overview_lines = ["This window combines near-daily Apple Health activity with structured clinical monitoring."]
+    elif fitness_rows:
+        overview_lines = ["This window is led by Apple Health fitness and wellness data."]
+    elif clinical_rows:
+        overview_lines = ["This window is led by structured clinical monitoring."]
+    else:
+        overview_lines = ["ORIN generated a scoped overview for the selected window."]
+    if facts.get("canonical_person_id"):
+        overview_lines.append("Filtered to the requested patient.")
+    if facts.get("window_days") is not None:
+        overview_lines.append(f"Evaluation window: last {int(facts['window_days'])} days relative to the latest matching observation.")
+    if facts.get("min_event_time") and facts.get("max_event_time"):
+        overview_lines.append(f"Observed window: {facts['min_event_time']} to {facts['max_event_time']}.")
+    if healthkit_signals:
+        overview_lines.append("Wellness signals include " + _join_human_list(healthkit_signals[:3]) + ".")
+    if clinical_themes:
+        overview_lines.append("Clinical themes include " + _join_human_list(clinical_themes[:3]) + ".")
 
     cards = [
         {
@@ -678,12 +886,15 @@ def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any
     ]
 
     if fitness_rows:
-        fitness_lines = [
-            f"Fitness observations in scope: {fitness_rows:,} rows.",
-            f"Active days in scope: {int(facts['active_days']):,}.",
-        ]
-        if facts.get("top_signal"):
-            fitness_lines.append(f"Primary observed fitness signal: {facts['top_signal']}.")
+        if fitness_active_days >= 7:
+            fitness_lines = [f"Near-daily Apple Health activity is present across {fitness_active_days:,} active days in this window."]
+        elif fitness_active_days > 0:
+            fitness_lines = [f"Apple Health activity is present across {fitness_active_days:,} active days in this window."]
+        else:
+            fitness_lines = ["Apple Health activity is present in this window."]
+        if healthkit_signals:
+            fitness_lines.append("The strongest fitness signals are " + _join_human_list(healthkit_signals[:4]) + ".")
+        fitness_lines.append(f"Apple Health contributed {fitness_rows:,} rows in this scope.")
         cards.append(
             {
                 "id": f"{run_id}-orin-filtered-fitness",
@@ -697,11 +908,14 @@ def _filtered_insight_cards(*, run_id: str, freshness: str, facts: dict[str, Any
         )
 
     if clinical_rows:
-        clinical_lines = [
-            f"Clinical-source observations in scope: {clinical_rows:,} rows.",
-            f"Distinct canonical people in scope: {int(facts['distinct_people']):,}.",
-            "Share-safe: no names/DOB/free-text patient identifiers. Reports key by canonical_person_id only.",
-        ]
+        if clinical_active_days > 0:
+            clinical_lines = [f"Structured clinical monitoring is present across {clinical_active_days:,} active days in this window."]
+        else:
+            clinical_lines = ["Structured clinical monitoring is present in this window."]
+        if clinical_themes:
+            clinical_lines.append("The clearest themes are " + _join_human_list(clinical_themes[:4]) + ".")
+        clinical_lines.append(f"Clinical-source observations were captured for {int(facts['distinct_people']):,} share-safe patient bucket(s).")
+        clinical_lines.append(f"Clinical rows in scope: {clinical_rows:,}.")
         cards.append(
             {
                 "id": f"{run_id}-orin-filtered-clinical",
@@ -832,6 +1046,8 @@ def _ollama_refined_insight_cards(
                 continue
             if not isinstance(body_text, str) or not body_text.strip():
                 continue
+            if _is_low_information_body(body_text):
+                return None
             if domain not in {"combined", "fitness", "clinical"}:
                 domain = "combined"
             out.append(

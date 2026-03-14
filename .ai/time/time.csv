@@ -197,3 +197,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-13,244,UNASSIGNED,20,codex,UNASSIGNED,"Deploy ORIN backend from the latest tagged release image"
 2026-03-13,245,UNASSIGNED,20,codex,UNASSIGNED,"Fix /patients/current permission failure on Apple bootstrap dataset"
 2026-03-13,246,UNASSIGNED,20,codex,UNASSIGNED,"Fix iPhone app freeze during initial load and refresh"
+2026-03-14,247,UNASSIGNED,20,codex,UNASSIGNED,"Replace row-count-only ORIN insight cards with meaningful summaries"

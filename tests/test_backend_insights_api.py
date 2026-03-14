@@ -73,6 +73,115 @@ def _write_ios_export_zip(path: Path) -> None:
         archive.writestr("run_20260311_151707/ndjson/observations.ndjson", observations)
 
 
+def _write_mixed_scope_ios_export_zip(path: Path) -> None:
+    manifest = {
+        "run_id": "run_20260314_000001",
+        "files": [
+            {"path": "ndjson/observations.ndjson", "size_bytes": 456, "sha256": "1" * 64},
+        ],
+        "row_counts": {"observations": 8},
+    }
+    observations = "\n".join(
+        [
+            json.dumps(
+                {
+                    "record_key": "hk-rate-1",
+                    "canonical_person_id": "wellness-a",
+                    "source": "healthkit",
+                    "event_time": "2026-03-10T08:00:00Z",
+                    "value_num": 72,
+                    "unit": "count/min",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "hk-rate-2",
+                    "canonical_person_id": "wellness-a",
+                    "source": "healthkit",
+                    "event_time": "2026-03-12T08:00:00Z",
+                    "value_num": 68,
+                    "unit": "count/min",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "hk-step-1",
+                    "canonical_person_id": "wellness-b",
+                    "source": "healthkit",
+                    "event_time": "2026-03-11T09:00:00Z",
+                    "value_num": 1200,
+                    "unit": "count",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "hk-cal-1",
+                    "canonical_person_id": "wellness-b",
+                    "source": "healthkit",
+                    "event_time": "2026-03-13T09:00:00Z",
+                    "value_num": 220,
+                    "unit": "Cal",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "fhir-spo2-1",
+                    "canonical_person_id": "clinical-a",
+                    "source": "fhir",
+                    "event_time": "2026-03-12T10:00:00Z",
+                    "display": "SpO2",
+                    "value_num": 96,
+                    "unit": "%",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "fhir-hgb-1",
+                    "canonical_person_id": "clinical-a",
+                    "source": "fhir",
+                    "event_time": "2026-03-11T10:00:00Z",
+                    "display": "Hemoglobin [Mass/volume] in Blood",
+                    "value_num": 8.1,
+                    "unit": "g/dL",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "fhir-plt-1",
+                    "canonical_person_id": "clinical-a",
+                    "source": "fhir",
+                    "event_time": "2026-03-10T10:00:00Z",
+                    "display": "Platelets [#/volume] in Blood by Automated count",
+                    "value_num": 150,
+                    "unit": "K/UL",
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "record_key": "fhir-cr-1",
+                    "canonical_person_id": "clinical-a",
+                    "source": "fhir",
+                    "event_time": "2026-03-09T10:00:00Z",
+                    "display": "Creatinine [Mass/volume] in Serum or Plasma",
+                    "value_num": 1.2,
+                    "unit": "mg/dL",
+                },
+                sort_keys=True,
+            ),
+        ]
+    ) + "\n"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("run_20260314_000001/manifest.json", json.dumps(manifest, sort_keys=True))
+        archive.writestr("run_20260314_000001/ndjson/observations.ndjson", observations)
+
+
 class TestBackendInsightsAPI(unittest.TestCase):
     def setUp(self) -> None:
         self._old_data = os.environ.get("HEALTHDELTA_DATA_DIR")
@@ -286,6 +395,40 @@ class TestBackendInsightsAPI(unittest.TestCase):
         self.assertEqual(payload["cards"][0]["domain"], "combined")
         self.assertEqual(ollama.request_count, 1)
 
+    def test_insights_current_falls_back_when_ollama_output_is_only_row_counts(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_test"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_test")
+
+        ollama = _FakeOllamaServer(
+            status_code=200,
+            body={
+                "response": json.dumps(
+                    {
+                        "cards": [
+                            {"title": "Fitness", "body": "28,872 rows.", "domain": "fitness"},
+                            {"title": "Clinical", "body": "1,213 rows.", "domain": "clinical"},
+                            {"title": "Overview", "body": "30,085 rows.", "domain": "combined"},
+                        ]
+                    },
+                    sort_keys=True,
+                )
+            },
+        )
+        ollama.start()
+        self.addCleanup(ollama.stop)
+        os.environ["HEALTHDELTA_OLLAMA_BASE_URL"] = ollama.base_url
+        os.environ["HEALTHDELTA_OLLAMA_MODEL"] = "llama3.2:latest"
+
+        status, payload = self._request("GET", "/insights/current")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["cards"][0]["sourceLabel"], "orin/analysis/overview")
+        self.assertNotEqual(payload["cards"][0]["body"], "30,085 rows.")
+        self.assertEqual(ollama.request_count, 1)
+
     def test_insights_current_rejects_invalid_bearer(self) -> None:
         status, payload = self._request("GET", "/insights/current", auth=False)
         self.assertEqual(status, 401)
@@ -369,7 +512,30 @@ class TestBackendInsightsAPI(unittest.TestCase):
         status, payload = self._request("GET", "/insights/current?window_days=3")
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
-        self.assertIn("2 observation rows", payload["cards"][0]["body"])
+        self.assertIn("Evaluation window: last 3 days", payload["cards"][0]["body"])
+
+    def test_insights_current_filtered_cards_summarize_real_fitness_and_clinical_signals(self) -> None:
+        plane = UploadPlane(Path(self._tmp.name))
+        dataset_dir = Path(self._tmp.name) / "datasets" / "dataset_mixed"
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        _write_mixed_scope_ios_export_zip(dataset_dir / "export.zip")
+        plane._set_current_dataset("dataset_mixed")
+
+        status, payload = self._request("GET", "/insights/current?window_days=30")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["status"], "ok")
+
+        by_domain = {card["domain"]: card for card in payload["cards"]}
+        self.assertIn("fitness", by_domain)
+        self.assertIn("clinical", by_domain)
+        self.assertIn("Apple Health activity is present across 4 active days", by_domain["fitness"]["body"])
+        self.assertIn("heart-rate-style telemetry", by_domain["fitness"]["body"])
+        self.assertIn("step and activity counts", by_domain["fitness"]["body"])
+        self.assertIn("energy expenditure", by_domain["fitness"]["body"])
+        self.assertIn("Structured clinical monitoring", by_domain["clinical"]["body"])
+        self.assertIn("oxygenation monitoring", by_domain["clinical"]["body"])
+        self.assertIn("blood counts and differentials", by_domain["clinical"]["body"])
+        self.assertIn("serum chemistries", by_domain["clinical"]["body"])
 
     def test_insights_current_filters_by_canonical_person_id(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
@@ -381,7 +547,7 @@ class TestBackendInsightsAPI(unittest.TestCase):
         status, payload = self._request("GET", "/insights/current?canonical_person_id=person-a")
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
-        self.assertIn("2 observation rows", payload["cards"][0]["body"])
+        self.assertIn("Filtered to the requested patient.", payload["cards"][0]["body"])
 
     def test_insights_current_returns_no_insights_yet_for_empty_filter_match(self) -> None:
         plane = UploadPlane(Path(self._tmp.name))
