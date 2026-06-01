@@ -17,6 +17,14 @@ class TestOrinDataPlaneConfig(unittest.TestCase):
         self.assertIn("/app/data", text)
         self.assertIn("restart", text)
 
+    def test_benchmark_workflow_bootstraps_isolated_python_dependencies(self) -> None:
+        text = Path(".github/workflows/orin_backend_benchmark.yml").read_text(encoding="utf-8")
+        self.assertIn('python3 -m pip install --target .orin-benchmark-python "duckdb>=1.0.0,<2.0.0"', text)
+        self.assertIn('python3 -c \'import duckdb; print("duckdb_version=" + duckdb.__version__)\'', text)
+        self.assertIn("PYTHONPATH=$GITHUB_WORKSPACE/.orin-benchmark-python", text)
+        self.assertIn("python3 scripts/cd/orin_benchmark_backend.py", text)
+        self.assertIn("python3 scripts/cd/check_benchmark_thresholds.py", text)
+
 
 if __name__ == "__main__":
     unittest.main()
