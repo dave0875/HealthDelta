@@ -198,3 +198,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-03-13,245,UNASSIGNED,20,codex,UNASSIGNED,"Fix /patients/current permission failure on Apple bootstrap dataset"
 2026-03-13,246,UNASSIGNED,20,codex,UNASSIGNED,"Fix iPhone app freeze during initial load and refresh"
 2026-03-14,247,UNASSIGNED,20,codex,UNASSIGNED,"Replace row-count-only ORIN insight cards with meaningful summaries"
+2026-06-01,254,UNASSIGNED,20,codex,UNASSIGNED,"Fix iOS DashboardViewModel unit tests leaking live ORIN patient-scope requests"

@@ -281,7 +281,8 @@ final class DashboardViewModelTests: XCTestCase {
             insightsStore: FakeInsightsStore(cards: []),
             manualExporter: FakeManualExporter(),
             runUploader: uploader,
-            insightsFetcher: FakeInsightsFetcher()
+            insightsFetcher: FakeInsightsFetcher(),
+            patientScopeFetcher: FakePatientScopeFetcher()
         )
 
         viewModel.refresh()
@@ -382,7 +383,8 @@ final class DashboardViewModelTests: XCTestCase {
             insightsStore: FakeInsightsStore(cards: []),
             manualExporter: FakeManualExporter(),
             runUploader: uploader,
-            insightsFetcher: FakeInsightsFetcher()
+            insightsFetcher: FakeInsightsFetcher(),
+            patientScopeFetcher: FakePatientScopeFetcher()
         )
 
         viewModel.refresh()
@@ -446,7 +448,8 @@ final class DashboardViewModelTests: XCTestCase {
             insightsStore: FakeInsightsStore(cards: []),
             manualExporter: FakeManualExporter(),
             runUploader: uploader,
-            insightsFetcher: FakeInsightsFetcher()
+            insightsFetcher: FakeInsightsFetcher(),
+            patientScopeFetcher: FakePatientScopeFetcher()
         )
 
         viewModel.refresh()
@@ -574,7 +577,8 @@ final class DashboardViewModelTests: XCTestCase {
             insightsStore: FakeInsightsStore(cards: localCards),
             manualExporter: FakeManualExporter(),
             runUploader: FakeRunUploader(),
-            insightsFetcher: FakeInsightsFetcher(result: .cards(remoteCards))
+            insightsFetcher: FakeInsightsFetcher(result: .cards(remoteCards)),
+            patientScopeFetcher: FakePatientScopeFetcher()
         )
 
         await viewModel.refreshDashboard(baseURLString: "http://orin.local:8080", bearerToken: "token")
