@@ -48,6 +48,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Python dependencies
+        run: |
+          set -euo pipefail
+          rm -rf .orin-benchmark-python
+          python3 -m pip install --target .orin-benchmark-python "duckdb>=1.0.0,<2.0.0"
+          PYTHONPATH="$GITHUB_WORKSPACE/.orin-benchmark-python" python3 -c 'import duckdb; print("duckdb_version=" + duckdb.__version__)'
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/.orin-benchmark-python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
+
       - name: Run ORIN benchmark
         run: |
           set -euo pipefail
