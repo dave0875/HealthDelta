@@ -6,6 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_validate import validate_ndjson_dir
+
 
 HEALTHKIT_EXPORT_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <HealthData>
@@ -418,6 +421,60 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 class TestNdjsonExport(unittest.TestCase):
+    def test_export_ndjson_normalizes_real_world_fhir_validation_edges(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            run_dir = root / "staging" / "run-fhir-validation"
+            clinical_dir = run_dir / "source" / "clinical-records"
+            clinical_dir.mkdir(parents=True, exist_ok=True)
+
+            resources = {
+                "allergy.json": {
+                    "resourceType": "AllergyIntolerance",
+                    "id": "allergy-patient-reference",
+                    "patient": {"reference": "Patient/p1"},
+                    "recordedDate": "2020-01-01T00:00:00Z",
+                    "clinicalStatus": {"coding": [{"code": "active"}]},
+                    "code": {"coding": [{"system": "urn:test", "code": "allergy"}]},
+                },
+                "diagnostic-report.json": {
+                    "resourceType": "DiagnosticReport",
+                    "id": "report-text-code-only",
+                    "subject": {"reference": "Patient/p1"},
+                    "issued": "2020-01-02T00:00:00Z",
+                    "status": "final",
+                    "code": {"text": "Text-only report code"},
+                },
+                "immunization-without-id.json": {
+                    "resourceType": "Immunization",
+                    "patient": {"reference": "Patient/p1"},
+                    "occurrenceDateTime": "2020-01-03T00:00:00Z",
+                    "status": "completed",
+                    "vaccineCode": {"coding": [{"system": "urn:test", "code": "vaccine"}]},
+                },
+            }
+            for name, resource in resources.items():
+                _write_json(clinical_dir / name, resource)
+            _write_json(
+                run_dir / "layout.json",
+                {
+                    "run_id": "run-fhir-validation",
+                    "clinical_json": [f"source/clinical-records/{name}" for name in sorted(resources)],
+                },
+            )
+
+            out = root / "ndjson"
+            export_ndjson(input_dir=str(run_dir), out_dir=str(out), mode="local")
+
+            allergy = _read_ndjson(out / "conditions.ndjson")[0]
+            self.assertEqual(allergy["subject_reference"], "Patient/p1")
+            report = _read_ndjson(out / "diagnostic_reports.ndjson")[0]
+            self.assertNotIn("code", report)
+            self.assertNotIn("code_system", report)
+            immunization = _read_ndjson(out / "observations.ndjson")[0]
+            self.assertTrue(immunization["source_id"].startswith("Immunization/source-"))
+            self.assertEqual(validate_ndjson_dir(input_dir=str(out)), [])
+
     def test_export_ndjson_uses_clinical_records_fixture_pack(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

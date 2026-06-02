@@ -320,6 +320,24 @@ def _extract_fhir_reference_id(ref: str, resource_type: str) -> str | None:
     return None
 
 
+def _fhir_subject_reference(resource: dict) -> str | None:
+    for key in ("subject", "patient"):
+        ref = resource.get(key)
+        if not isinstance(ref, dict):
+            continue
+        value = ref.get("reference")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _fhir_source_id(resource_type: str, resource_id: str | None, rel: str) -> str:
+    if resource_id:
+        return f"{resource_type}/{resource_id}"
+    digest = _sha256_bytes(_safe_relpath(rel).encode("utf-8"))[:16]
+    return f"{resource_type}/source-{digest}"
+
+
 def _first_fhir_coding_value(codable: object, field: str) -> str | None:
     if not isinstance(codable, dict):
         return None
@@ -659,8 +677,11 @@ def _export_fhir_streams(
             "event_time": event_time,
             "run_id": ctx.run_id,
             "resource_type": rt,
-            "source_id": f"{rt}/{rid}" if rid else None,
+            "source_id": _fhir_source_id(rt, rid, rel),
         }
+        subject_reference = _fhir_subject_reference(res)
+        if subject_reference is not None:
+            base["subject_reference"] = subject_reference
 
         def register_source_record_key(row: dict) -> None:
             source_id = row.get("source_id")
@@ -1875,14 +1896,15 @@ def export_ndjson(*, input_dir: str, out_dir: str, mode: str = "local") -> None:
         seen: set[str] = set()
         out: list[dict] = []
         for r in rows:
-            k = r.get("event_key")
+            cleaned = {key: value for key, value in r.items() if value is not None or key == "event_time"}
+            k = cleaned.get("event_key")
             if not isinstance(k, str):
-                k = _sha256_bytes(json.dumps(r, sort_keys=True, separators=(",", ":")).encode("utf-8"))
-                r["event_key"] = k
+                k = _sha256_bytes(json.dumps(cleaned, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+                cleaned["event_key"] = k
             if k in seen:
                 continue
             seen.add(k)
-            out.append(r)
+            out.append(cleaned)
         return out
 
     def sort_rows(rows: list[dict]) -> list[dict]:
