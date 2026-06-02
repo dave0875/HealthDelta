@@ -1,4 +1,5 @@
 import csv
+import os
 import subprocess
 import sys
 import tempfile
@@ -81,6 +82,7 @@ class TestDuckdbLoader(unittest.TestCase):
             _write_text(ndjson / "diagnostic_reports.ndjson", diagnostic_reports)
 
             db_path = root / "out.duckdb"
+            duckdb_env = {**os.environ, "TZ": "America/New_York"}
 
             build = subprocess.run(
                 [
@@ -97,8 +99,10 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(build.returncode, 0, msg=f"stdout={build.stdout}\nstderr={build.stderr}")
+            self.assertIn("phase start name=duckdb: bulk load canonical observations", build.stderr)
             self.assertTrue(db_path.exists())
 
             # Verify tables exist and row counts.
@@ -116,6 +120,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q1.returncode, 0, msg=f"stdout={q1.stdout}\nstderr={q1.stderr}")
             rows = list(csv.DictReader(q1.stdout.splitlines()))
@@ -136,6 +141,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q1b.returncode, 0, msg=f"stdout={q1b.stdout}\nstderr={q1b.stderr}")
             rows = list(csv.DictReader(q1b.stdout.splitlines()))
@@ -166,6 +172,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q2.returncode, 0, msg=f"stdout={q2.stdout}\nstderr={q2.stderr}")
             rows = list(csv.DictReader(q2.stdout.splitlines()))
@@ -185,6 +192,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q3.returncode, 0, msg=f"stdout={q3.stdout}\nstderr={q3.stderr}")
             rows = list(csv.DictReader(q3.stdout.splitlines()))
@@ -204,6 +212,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q3b.returncode, 0, msg=f"stdout={q3b.stdout}\nstderr={q3b.stderr}")
             rows = list(csv.DictReader(q3b.stdout.splitlines()))
@@ -233,6 +242,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q4.returncode, 0, msg=f"stdout={q4.stdout}\nstderr={q4.stderr}")
             rows = list(csv.DictReader(q4.stdout.splitlines()))
@@ -252,6 +262,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q5.returncode, 0, msg=f"stdout={q5.stdout}\nstderr={q5.stderr}")
             rows = list(csv.DictReader(q5.stdout.splitlines()))
@@ -271,6 +282,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q6.returncode, 0, msg=f"stdout={q6.stdout}\nstderr={q6.stderr}")
             rows = list(csv.DictReader(q6.stdout.splitlines()))
@@ -304,6 +316,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(build2.returncode, 0, msg=f"stdout={build2.stdout}\nstderr={build2.stderr}")
 
@@ -322,6 +335,7 @@ class TestDuckdbLoader(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
+                env=duckdb_env,
             )
             self.assertEqual(q1b.returncode, 0, msg=f"stdout={q1b.stdout}\nstderr={q1b.stderr}")
             rows = list(csv.DictReader(q1b.stdout.splitlines()))
