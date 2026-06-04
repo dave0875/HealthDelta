@@ -44,7 +44,7 @@ def _parse_event_time(s: object) -> dt.datetime | None:
         d = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
         if d.tzinfo is None:
             d = d.replace(tzinfo=dt.timezone.utc)
-        return d.astimezone(dt.timezone.utc).replace(microsecond=0)
+        return d.astimezone(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
     except ValueError:
         return None
 
@@ -163,6 +163,13 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
             con.execute("PRAGMA threads=1;")
             con.execute("PRAGMA enable_progress_bar=false;")
             con.execute("BEGIN;")
+            con.execute(
+                """
+                CREATE OR REPLACE MACRO parse_canonical_ts(value) AS (
+                  TRY_CAST(regexp_replace(trim(value), 'Z$', '') AS TIMESTAMP)
+                );
+                """
+            )
 
         with progress.phase("duckdb: ensure schema"):
             con.execute(
@@ -364,8 +371,8 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                       NULL,
                       ?,
                       COALESCE(
-                        TRY_CAST(json_extract_string(payload, '$.event_time') AS TIMESTAMP),
-                        TRY_CAST(json_extract_string(payload, '$.start_time') AS TIMESTAMP)
+                        parse_canonical_ts(json_extract_string(payload, '$.event_time')),
+                        parse_canonical_ts(json_extract_string(payload, '$.start_time'))
                       ),
                       ?,
                       COALESCE(NULLIF(json_extract_string(payload, '$.event_key'), ''), resolved_record_key),
@@ -421,6 +428,98 @@ def build_duckdb(*, input_dir: str, db_path: str, replace: bool = False) -> None
                 )
                 inserted = con.execute("SELECT COUNT(*) FROM observations;").fetchone()
                 task.advance(int(inserted[0]) if inserted and inserted[0] is not None else 0)
+            elif append_only:
+                with progress.phase("duckdb: bulk load canonical observations"):
+                    con.execute(
+                        """
+                        WITH src AS (
+                          SELECT
+                            json AS payload,
+                            COALESCE(
+                              NULLIF(json_extract_string(json, '$.record_key'), ''),
+                              NULLIF(json_extract_string(json, '$.event_key'), '')
+                            ) AS resolved_record_key,
+                            ROW_NUMBER() OVER (
+                              PARTITION BY COALESCE(
+                                NULLIF(json_extract_string(json, '$.record_key'), ''),
+                                NULLIF(json_extract_string(json, '$.event_key'), '')
+                              )
+                              ORDER BY
+                                COALESCE(json_extract_string(json, '$.event_time'), ''),
+                                COALESCE(json_extract_string(json, '$.source'), ''),
+                                COALESCE(json_extract_string(json, '$.source_file'), '')
+                            ) AS resolved_record_key_rank
+                          FROM read_ndjson_objects(?)
+                        )
+                        INSERT INTO observations (
+                          """
+                        + observation_columns_sql
+                        + """
+                        )
+                        SELECT
+                          TRY_CAST(json_extract_string(payload, '$.schema_version') AS INTEGER),
+                          resolved_record_key,
+                          json_extract_string(payload, '$.canonical_person_id'),
+                          json_extract_string(payload, '$.source'),
+                          json_extract_string(payload, '$.source_system'),
+                          json_extract_string(payload, '$.source_file'),
+                          parse_canonical_ts(json_extract_string(payload, '$.event_time')),
+                          json_extract_string(payload, '$.run_id'),
+                          COALESCE(NULLIF(json_extract_string(payload, '$.event_key'), ''), resolved_record_key),
+                          json_extract_string(payload, '$.source_id'),
+                          json_extract_string(payload, '$.record_id'),
+                          json_extract_string(payload, '$.record_type'),
+                          json_extract_string(payload, '$.observation_id'),
+                          json_extract_string(payload, '$.subject_reference'),
+                          json_extract_string(payload, '$.encounter_id'),
+                          parse_canonical_ts(json_extract_string(payload, '$.effective_start')),
+                          parse_canonical_ts(json_extract_string(payload, '$.effective_end')),
+                          COALESCE(
+                            json_extract_string(payload, '$.hk_type'),
+                            json_extract_string(payload, '$.sample_type')
+                          ),
+                          json_extract_string(payload, '$.sample_kind'),
+                          json_extract_string(payload, '$.resource_type'),
+                          json_extract_string(payload, '$.code_system'),
+                          json_extract_string(payload, '$.code'),
+                          COALESCE(
+                            json_extract_string(payload, '$.display'),
+                            json_extract_string(payload, '$.value_text'),
+                            json_extract_string(payload, '$.activity_type')
+                          ),
+                          COALESCE(
+                            json_extract_string(payload, '$.value'),
+                            json_extract_string(payload, '$.value_num')
+                          ),
+                          COALESCE(
+                            TRY_CAST(json_extract_string(payload, '$.value_num') AS DOUBLE),
+                            TRY_CAST(json_extract_string(payload, '$.value') AS DOUBLE)
+                          ),
+                          json_extract_string(payload, '$.value_text'),
+                          TRY_CAST(json_extract_string(payload, '$.category_value') AS INTEGER),
+                          json_extract_string(payload, '$.activity_type'),
+                          TRY_CAST(json_extract_string(payload, '$.duration_seconds') AS DOUBLE),
+                          TRY_CAST(json_extract_string(payload, '$.total_energy_burned_num') AS DOUBLE),
+                          json_extract_string(payload, '$.total_energy_burned_unit'),
+                          TRY_CAST(json_extract_string(payload, '$.total_distance_num') AS DOUBLE),
+                          json_extract_string(payload, '$.total_distance_unit'),
+                          json_extract_string(payload, '$.unit'),
+                          json_extract_string(payload, '$.section_code'),
+                          json_extract_string(payload, '$.section_display'),
+                          json_extract_string(payload, '$.section_title'),
+                          CAST(json_extract(payload, '$.components') AS VARCHAR),
+                          CAST(json_extract(payload, '$.code_coding') AS VARCHAR),
+                          CAST(json_extract(payload, '$.type_coding') AS VARCHAR),
+                          json_extract_string(payload, '$.status')
+                        FROM src
+                        WHERE resolved_record_key IS NOT NULL
+                          AND resolved_record_key <> ''
+                          AND resolved_record_key_rank = 1;
+                        """,
+                        [str(observations_path)],
+                    )
+                    inserted = con.execute("SELECT COUNT(*) FROM observations;").fetchone()
+                    task.advance(int(inserted[0]) if inserted and inserted[0] is not None else 0)
             else:
                 batch_rows: list[list[object]] = []
                 seen_record_keys: set[str] = set()
