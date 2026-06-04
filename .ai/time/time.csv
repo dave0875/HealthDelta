@@ -204,3 +204,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-06-01,251,UNASSIGNED,20,codex,UNASSIGNED,"Fix ORIN benchmark workflow dependency bootstrap"
 2026-06-01,254,UNASSIGNED,20,codex,UNASSIGNED,"Fix iOS DashboardViewModel unit tests leaking live ORIN patient-scope requests"
 2026-06-02,249,UNASSIGNED,20,codex,UNASSIGNED,"Prepare FHIR export validation edge-case fix for issue-scoped PR and CI"
+2026-06-02,250,UNASSIGNED,20,codex,UNASSIGNED,"Prepare DuckDB bulk loader timestamp contract fix for issue-scoped PR and CI"
