@@ -56,6 +56,7 @@ Optional clarifications or constraints.
 ## Runbooks
 - Xcode + self-hosted runner operations are documented in `docs/runbook_xcode.md` and must be followed for iOS work and CI reliability.
 - iOS incremental export artifacts and ingestion are documented in `docs/runbook_ios_export.md` and must be followed when transferring iOS outputs into the Python toolchain.
+- Full baseline refresh automation from Drive via GORF into `mail` is documented in `docs/runbook_mail_refresh.md` and must be followed for automated bootstrap refreshes.
 - Ingest staging operations are documented in `docs/runbook_ingest.md` and must be followed for bootstrap ingest work.
 - Identity bootstrap operations are documented in `docs/runbook_identity.md` and must be followed for canonical identity work.
 - De-identification operations are documented in `docs/runbook_deid.md` and must be followed for share-safe dataset work.

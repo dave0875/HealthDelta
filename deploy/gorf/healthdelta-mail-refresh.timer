@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll Drive for a new HealthDelta full baseline export
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

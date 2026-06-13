@@ -1,0 +1,7 @@
+[Unit]
+Description=HealthDelta full baseline refresh from Drive to mail
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Code/HealthDelta
+ExecStart=%h/Code/HealthDelta/.venv/bin/python scripts/mail_drive_refresh.py --drive-source gdrive:HEALTH/Exports/export.zip --work-root %h/private/healthdelta_mail_refresh --repo-root %h/Code/HealthDelta --state-json %h/private/healthdelta_mail_refresh/state.json --mail-host mail --mail-data-root /opt/healthdelta/data --verify-base-url http://127.0.0.1:8080

@@ -206,3 +206,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-06-02,249,UNASSIGNED,20,codex,UNASSIGNED,"Prepare FHIR export validation edge-case fix for issue-scoped PR and CI"
 2026-06-02,250,UNASSIGNED,20,codex,UNASSIGNED,"Prepare DuckDB bulk loader timestamp contract fix for issue-scoped PR and CI"
 2026-06-13,258,UNASSIGNED,20,codex,UNASSIGNED,"Realign mail server HealthDelta deployment from issue247-live to release tag v0.0.10; verify /healthz, /version, and remote compose pin"
+2026-06-13,259,UNASSIGNED,45,codex,UNASSIGNED,"Automate Drive HEALTH/Exports baseline refresh on GORF with mail promotion script, runbook, systemd templates, and blocker audit for expired gdrive token"
