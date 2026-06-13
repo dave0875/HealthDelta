@@ -57,7 +57,7 @@ The script:
 On `GORF`:
 - `rclone` installed and configured with a remote that can access the private Drive source
 - repo checkout available locally
-- Python environment able to run `python -m healthdelta`
+- system `python3` with `pip`
 - `rsync`
 - `ssh` access to `mail`
 
@@ -104,6 +104,8 @@ ExecStart=%h/Code/HealthDelta/.venv/bin/python scripts/mail_drive_refresh.py \
 The same unit templates are checked into the repo at:
 - `deploy/gorf/healthdelta-mail-refresh.service`
 - `deploy/gorf/healthdelta-mail-refresh.timer`
+
+The service bootstraps a repo-local dependency target at `.mail-refresh-python/` on first run so it does not depend on a separately maintained virtualenv.
 
 Install them with:
 

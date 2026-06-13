@@ -24,6 +24,8 @@ class TestMailDriveRefreshConfig(unittest.TestCase):
         timer = Path("deploy/gorf/healthdelta-mail-refresh.timer").read_text(encoding="utf-8")
         self.assertIn("gdrive:HEALTH/Exports/export.zip", service)
         self.assertIn("scripts/mail_drive_refresh.py", service)
+        self.assertIn(".mail-refresh-python", service)
+        self.assertIn("python3 -m pip install --target .mail-refresh-python", service)
         self.assertIn("OnUnitActiveSec=15m", timer)
 
 
