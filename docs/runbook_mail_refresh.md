@@ -79,6 +79,7 @@ python3 scripts/mail_drive_refresh.py \
 
 This matches the prior manual baseline-refresh constraint where the raw received ZIP remained unchanged but the derived work tree omitted the malformed member.
 The exclusion matches either an exact ZIP member path or the member basename, so `--exclude-member export_cda.xml` also excludes nested paths like `apple_health_export/export_cda.xml`.
+Each run recreates the derived extraction tree from scratch before unpacking, so a retry against the same Drive file ID does not reuse stale excluded members from a prior failed attempt.
 
 For the current watched `HEALTH/Exports` source, the checked-in `GORF` service template includes:
 

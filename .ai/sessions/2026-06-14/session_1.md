@@ -15,6 +15,9 @@ Progress
 - Added a focused regression test covering exclusion of nested `apple_health_export/export_cda.xml` when the operator passes `--exclude-member export_cda.xml`.
 - Updated the extractor to treat exclusions as matching either the full ZIP path or the member basename.
 - Updated the runbook to document that basename exclusions also match nested member paths.
+- Re-ran the live `GORF` service and observed that the malformed CDA file still existed in `derived_input` because the build root for the same Drive file ID was being reused across retries.
+- Added a second regression test covering stale excluded members in an existing extraction destination.
+- Updated extraction to recreate the derived input tree from scratch before each unpack, so retries against the same Drive file ID do not preserve stale excluded members.
 
 Verification
 - `python3 -m unittest tests.test_mail_drive_refresh tests.test_mail_drive_refresh_config -v`
@@ -22,4 +25,4 @@ Verification
 - `git diff --check`
 
 Next step
-- Commit and push the issue-scoped fix, then rerun the `healthdelta-mail-refresh.service` user unit on `GORF` and verify whether `mail` promotes to a new dataset.
+- Commit and push the retry-cleanup fix, then rerun the `healthdelta-mail-refresh.service` user unit on `GORF` and verify whether `mail` promotes to a new dataset.

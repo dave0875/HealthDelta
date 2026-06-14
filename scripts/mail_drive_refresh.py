@@ -123,6 +123,8 @@ def _member_is_excluded(member_path: PurePosixPath, excluded_members: set[str]) 
 
 
 def extract_export_zip(export_zip: Path, destination: Path, *, excluded_members: list[str]) -> None:
+    if destination.exists():
+        shutil.rmtree(destination)
     destination.mkdir(parents=True, exist_ok=True)
     excluded = {PurePosixPath(name).as_posix() for name in excluded_members}
     resolved_root = destination.resolve()

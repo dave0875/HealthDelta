@@ -33,6 +33,24 @@ class TestMailDriveRefresh(unittest.TestCase):
             self.assertTrue((derived / "apple_health_export" / "export.xml").exists())
             self.assertFalse((derived / "apple_health_export" / "export_cda.xml").exists())
 
+    def test_extract_export_zip_replaces_existing_destination_tree(self) -> None:
+        mod = _load_module()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            export_zip = root / "export.zip"
+            with zipfile.ZipFile(export_zip, "w") as archive:
+                archive.writestr("apple_health_export/export.xml", "<root />")
+
+            derived = root / "derived"
+            stale = derived / "apple_health_export" / "export_cda.xml"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("<stale />", encoding="utf-8")
+
+            mod.extract_export_zip(export_zip, derived, excluded_members=["export_cda.xml"])
+
+            self.assertTrue((derived / "apple_health_export" / "export.xml").exists())
+            self.assertFalse(stale.exists())
+
     def test_select_latest_zip_prefers_newest_modtime(self) -> None:
         mod = _load_module()
         rows = [

@@ -208,3 +208,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-06-13,258,UNASSIGNED,20,codex,UNASSIGNED,"Realign mail server HealthDelta deployment from issue247-live to release tag v0.0.10; verify /healthz, /version, and remote compose pin"
 2026-06-13,259,UNASSIGNED,45,codex,UNASSIGNED,"Automate Drive HEALTH/Exports baseline refresh on GORF with mail promotion script, runbook, systemd templates, and blocker audit for expired gdrive token"
 2026-06-14,259,UNASSIGNED,35,codex,UNASSIGNED,"Fix Drive refresh nested ZIP exclusion so malformed export_cda.xml is omitted from derived input, then rerun GORF watcher against newest export"
+2026-06-14,259,UNASSIGNED,20,codex,UNASSIGNED,"Fix Drive refresh retry cleanup so reused build roots do not preserve stale excluded members before rerunning the live GORF service"
