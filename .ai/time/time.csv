@@ -209,3 +209,4 @@ date,issue_id,client,minutes,agent,activity,notes
 2026-06-13,259,UNASSIGNED,45,codex,UNASSIGNED,"Automate Drive HEALTH/Exports baseline refresh on GORF with mail promotion script, runbook, systemd templates, and blocker audit for expired gdrive token"
 2026-06-14,259,UNASSIGNED,35,codex,UNASSIGNED,"Fix Drive refresh nested ZIP exclusion so malformed export_cda.xml is omitted from derived input, then rerun GORF watcher against newest export"
 2026-06-14,259,UNASSIGNED,20,codex,UNASSIGNED,"Fix Drive refresh retry cleanup so reused build roots do not preserve stale excluded members before rerunning the live GORF service"
+2026-06-14,260,UNASSIGNED,25,codex,UNASSIGNED,"Design streaming repair path for malformed multi-GB export_cda.xml, inspect live defect shape on GORF, and add truncation failure requirement"

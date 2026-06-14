@@ -6,7 +6,7 @@ from healthdelta.ingest import ingest_ios_to_staging, ingest_to_staging
 from healthdelta.deid import deidentify_run
 from healthdelta.identity import build_identity, confirm_identity_link, review_identity_links
 from healthdelta.duckdb_tools import build_duckdb, query_duckdb
-from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_export_repaired import export_ndjson
 from healthdelta.ndjson_validate import validate_ndjson_dir
 from healthdelta.pipeline import run_pipeline
 from healthdelta.reporting import build_report, show_report

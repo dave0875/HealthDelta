@@ -6,7 +6,7 @@ from healthdelta.deid import deidentify_run
 from healthdelta.duckdb_tools import build_duckdb
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
-from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_export_repaired import export_ndjson
 from healthdelta.ndjson_validate import validate_ndjson_dir
 from healthdelta.reporting import build_report
 from healthdelta.note import build_doctor_note

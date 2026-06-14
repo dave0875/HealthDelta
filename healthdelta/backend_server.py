@@ -24,7 +24,7 @@ from healthdelta.healthkit_labels import healthkit_display_label
 from healthdelta.identity import build_identity
 from healthdelta.ingest import ingest_to_staging
 from healthdelta.note import build_doctor_note
-from healthdelta.ndjson_export import export_ndjson
+from healthdelta.ndjson_export_repaired import export_ndjson
 from healthdelta.qa import answer_question
 from healthdelta.reporting import build_report
 from healthdelta.risk_flags import build_risk_flags

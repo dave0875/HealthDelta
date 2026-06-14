@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from healthdelta.cda_xml import repaired_cda_path
 from healthdelta.export_layout import resolve_export_layout
 from healthdelta.progress import progress
 
@@ -411,8 +412,13 @@ def build_export_profile(*, input_dir: str, out_dir: str, sample_json: int = 200
         fhir_counts, fhir_meta, fhir_schema, sensitive_map = _count_clinical_resource_types(clinical_dir, sample_json=sample_json)
 
     with progress.phase("profile: scan export_cda.xml"):
-        cda_counts = _count_cda_tags(export_cda, top_n=50) if export_cda.exists() else []
-        cda_sections = _count_cda_sections(export_cda) if export_cda.exists() else []
+        if export_cda.exists():
+            with repaired_cda_path(export_cda) as repaired_cda:
+                cda_counts = _count_cda_tags(repaired_cda, top_n=50)
+                cda_sections = _count_cda_sections(repaired_cda)
+        else:
+            cda_counts = []
+            cda_sections = []
 
     with progress.phase("profile: aggregate"):
         ext_counts = _counts_by_ext(files)
@@ -641,7 +647,11 @@ def build_coverage_matrix(*, input_dir: str, out_dir: str) -> None:
     with progress.phase("coverage: scan clinical JSON"):
         fhir_counts, fhir_meta, _schema, _sensitive = _count_clinical_resource_types(clinical_dir, sample_json=0)
     with progress.phase("coverage: scan CDA sections"):
-        cda_sections = _count_cda_sections(export_cda) if export_cda.exists() else []
+        if export_cda.exists():
+            with repaired_cda_path(export_cda) as repaired_cda:
+                cda_sections = _count_cda_sections(repaired_cda)
+        else:
+            cda_sections = []
 
     mapped = set(FHIR_CANONICAL_MAPPING_RESOURCE_TYPES)
     rows_unsorted = []

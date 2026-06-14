@@ -1,6 +1,5 @@
 import csv
 import json
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,6 +17,58 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 class TestExportProfile(unittest.TestCase):
+    def test_export_profile_repairs_recoverable_cda(self) -> None:
+        malformed_cda = """<?xml version="1.0"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3">
+ <component>
+  <section>
+   <code code="11450-4" displayName="Problem List"/>
+   <title>Problems</title>
+  </section>
+ </component>
+</ClinicalDocument>
+<component>
+ <section>
+  <code code="8716-3" displayName="Vital signs"/>
+  <title>Vital Signs</title>
+ </section>
+</component>
+"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            export_dir = root / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            (export_dir / "export.xml").write_text("<?xml version=\"1.0\" encoding=\"UTF-8\"?><HealthData></HealthData>\n", encoding="utf-8")
+            (export_dir / "export_cda.xml").write_text(malformed_cda, encoding="utf-8")
+            out = root / "out"
+            from healthdelta.profile import build_export_profile
+
+            build_export_profile(input_dir=str(export_dir), out_dir=str(out))
+
+            inventory = json.loads((out / "clinical_inventory.json").read_text(encoding="utf-8"))
+            self.assertEqual(inventory["summary"]["cda_section_total"], 2)
+
+    def test_export_profile_fails_clearly_on_truncated_cda(self) -> None:
+        truncated_cda = """<?xml version="1.0"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3">
+ <component>
+  <section>
+   <title>Vital Signs</title>
+"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            export_dir = root / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            (export_dir / "export.xml").write_text("<?xml version=\"1.0\" encoding=\"UTF-8\"?><HealthData></HealthData>\n", encoding="utf-8")
+            (export_dir / "export_cda.xml").write_text(truncated_cda, encoding="utf-8")
+            out = root / "out"
+            from healthdelta.cda_xml import CdaRepairError
+            from healthdelta.profile import build_export_profile
+
+            with self.assertRaises(CdaRepairError) as cm:
+                build_export_profile(input_dir=str(export_dir), out_dir=str(out))
+            self.assertIn("dave0875@gmail.com", str(cm.exception))
+
     def test_export_profile_is_deterministic_and_share_safe(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             out = Path(td) / "out"

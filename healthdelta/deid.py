@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from healthdelta.cda_xml import repaired_cda_path
 from healthdelta.progress import progress
 
 
@@ -147,6 +148,41 @@ def _deid_export_xml(xml_text: str, people: list[PersonPseudonym]) -> str:
     return _apply_name_replacements(xml_text, people)
 
 
+_BIRTHTIME_RE = re.compile(r'(<birthTime\b[^>]*\bvalue=")[^"]*(")')
+
+
+def _stream_replace_names(*, src: Path, dst: Path, people: list[PersonPseudonym]) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with src.open("r", encoding="utf-8", errors="replace") as fin, dst.open("w", encoding="utf-8") as fout:
+        task = progress.task(f"deid stream {src.name}", total=src.stat().st_size, unit="bytes")
+        for line in fin:
+            encoded = line.encode("utf-8", errors="replace")
+            task.advance(len(encoded))
+            fout.write(_apply_name_replacements(line, people))
+
+
+def _stream_deid_cda_xml(*, src: Path, dst: Path, people: list[PersonPseudonym]) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    capture_name = False
+    with src.open("r", encoding="utf-8", errors="replace") as fin, dst.open("w", encoding="utf-8") as fout:
+        task = progress.task("deid stream export_cda.xml", total=src.stat().st_size, unit="bytes")
+        for line in fin:
+            task.advance(len(line.encode("utf-8", errors="replace")))
+            stripped = line.lstrip()
+            if capture_name:
+                if "</name>" in line:
+                    capture_name = False
+                continue
+            if stripped.startswith("<name") or stripped.startswith("<cda:name"):
+                indent = line[: len(line) - len(stripped)]
+                fout.write(f"{indent}<name>Patient 1</name>\n")
+                if "</name>" not in line:
+                    capture_name = True
+                continue
+            line = _BIRTHTIME_RE.sub(r"\g<1>19000101\2", line)
+            fout.write(_apply_name_replacements(line, people))
+
+
 def _deep_replace_strings(obj: Any, *, people: list[PersonPseudonym]) -> Any:
     if isinstance(obj, str):
         return _apply_name_replacements(obj, people)
@@ -261,17 +297,14 @@ def deidentify_run(*, staging_run_dir: str, identity_dir: str, out_dir: str) -> 
             src = run_dir / export_xml_rel
             if src.exists():
                 dst = out_root / export_xml_rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                text = src.read_text(encoding="utf-8", errors="replace")
-                dst.write_text(_deid_export_xml(text, people), encoding="utf-8")
+                _stream_replace_names(src=src, dst=dst, people=people)
                 output_files.append(dst)
 
     if has_cda:
         with progress.phase("deid: export_cda.xml"):
             dst = out_root / export_cda_rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            text = export_cda_path.read_text(encoding="utf-8", errors="replace")
-            dst.write_text(_deid_cda_xml(text, people), encoding="utf-8")
+            with repaired_cda_path(export_cda_path) as repaired_cda:
+                _stream_deid_cda_xml(src=repaired_cda, dst=dst, people=people)
             output_files.append(dst)
 
     out_clinical_rels: list[str] = []
