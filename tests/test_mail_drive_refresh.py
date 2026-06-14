@@ -4,6 +4,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -17,6 +18,32 @@ def _load_module():
 
 
 class TestMailDriveRefresh(unittest.TestCase):
+    def test_extract_export_zip_excludes_nested_member_by_basename(self) -> None:
+        mod = _load_module()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            export_zip = root / "export.zip"
+            with zipfile.ZipFile(export_zip, "w") as archive:
+                archive.writestr("apple_health_export/export.xml", "<root />")
+                archive.writestr("apple_health_export/export_cda.xml", "<bad />")
+
+            derived = root / "derived"
+            mod.extract_export_zip(export_zip, derived, excluded_members=["export_cda.xml"])
+
+            self.assertTrue((derived / "apple_health_export" / "export.xml").exists())
+            self.assertFalse((derived / "apple_health_export" / "export_cda.xml").exists())
+
+    def test_select_latest_zip_prefers_newest_modtime(self) -> None:
+        mod = _load_module()
+        rows = [
+            {"Name": "export.zip", "Path": "export.zip", "ModTime": "2026-05-30T21:09:49.539Z", "Size": 1, "ID": "old"},
+            {"Name": "notes.txt", "Path": "notes.txt", "ModTime": "2026-06-13T21:16:21.178Z", "Size": 2, "ID": "ignore"},
+            {"Name": "export 3.zip", "Path": "export 3.zip", "ModTime": "2026-06-13T21:16:21.178Z", "Size": 3, "ID": "new"},
+        ]
+        chosen = mod.select_latest_zip(rows)
+        self.assertEqual(chosen["Name"], "export 3.zip")
+        self.assertEqual(chosen["ID"], "new")
+
     def test_needs_refresh_uses_remote_identity_and_size(self) -> None:
         mod = _load_module()
         remote = {

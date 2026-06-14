@@ -7,7 +7,7 @@ This runbook describes the automated path for watching the Google Drive source u
 Use this path when you need `mail` to analyze the newest full Apple Health export, including records that do not flow through the iPhone incremental upload path.
 
 Why this path exists:
-- the prior validated source was Drive path `HEALTH/Exports/export.zip`
+- the prior validated source folder was Drive path `HEALTH/Exports`
 - the full baseline must be built on `GORF`
 - `mail` is the serving target, not the large-export build host
 
@@ -17,7 +17,7 @@ One-shot refresh command:
 
 ```bash
 python3 scripts/mail_drive_refresh.py \
-  --drive-source 'gdrive:HEALTH/Exports/export.zip' \
+  --drive-source 'gdrive:HEALTH/Exports' \
   --work-root "$HOME/private/healthdelta_mail_refresh" \
   --repo-root "$HOME/Code/HealthDelta" \
   --state-json "$HOME/private/healthdelta_mail_refresh/state.json" \
@@ -28,7 +28,8 @@ python3 scripts/mail_drive_refresh.py \
 ```
 
 The script:
-- checks the remote export fingerprint via `rclone lsjson`
+- checks the remote export folder via `rclone lsjson`
+- selects the newest `.zip` file in that folder by modification time
 - exits cleanly with `status=no_changes` if the remote export matches the last processed file
 - downloads the new `export.zip` unchanged to a private work area on `GORF`
 - verifies ZIP integrity
@@ -77,6 +78,15 @@ python3 scripts/mail_drive_refresh.py \
 ```
 
 This matches the prior manual baseline-refresh constraint where the raw received ZIP remained unchanged but the derived work tree omitted the malformed member.
+The exclusion matches either an exact ZIP member path or the member basename, so `--exclude-member export_cda.xml` also excludes nested paths like `apple_health_export/export_cda.xml`.
+
+For the current watched `HEALTH/Exports` source, the checked-in `GORF` service template includes:
+
+```bash
+--exclude-member export_cda.xml
+```
+
+That matches the previously validated manual baseline-refresh workaround for the malformed CDA member while preserving the raw ZIP unchanged.
 
 ## Suggested automation cadence
 
@@ -92,7 +102,7 @@ Description=HealthDelta mail baseline refresh
 Type=oneshot
 WorkingDirectory=%h/Code/HealthDelta
 ExecStart=%h/Code/HealthDelta/.venv/bin/python scripts/mail_drive_refresh.py \
-  --drive-source gdrive:HEALTH/Exports/export.zip \
+  --drive-source gdrive:HEALTH/Exports \
   --work-root %h/private/healthdelta_mail_refresh \
   --repo-root %h/Code/HealthDelta \
   --state-json %h/private/healthdelta_mail_refresh/state.json \
@@ -106,6 +116,10 @@ The same unit templates are checked into the repo at:
 - `deploy/gorf/healthdelta-mail-refresh.timer`
 
 The service bootstraps a repo-local dependency target at `.mail-refresh-python/` on first run so it does not depend on a separately maintained virtualenv.
+
+Filename note:
+- the watcher does not require the newest export to be named exactly `export.zip`
+- it scans the folder and selects the newest `.zip`, for example `export.zip`, `export 2.zip`, or `export 3.zip`
 
 Install them with:
 

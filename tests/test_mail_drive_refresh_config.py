@@ -8,9 +8,10 @@ class TestMailDriveRefreshConfig(unittest.TestCase):
     def test_runbook_references_script_and_drive_source(self) -> None:
         text = Path("docs/runbook_mail_refresh.md").read_text(encoding="utf-8")
         self.assertIn("scripts/mail_drive_refresh.py", text)
-        self.assertIn("gdrive:HEALTH/Exports/export.zip", text)
-        self.assertIn("HEALTH/Exports/export.zip", text)
+        self.assertIn("gdrive:HEALTH/Exports", text)
+        self.assertIn("HEALTH/Exports", text)
         self.assertIn("status=no_changes", text)
+        self.assertIn("newest `.zip`", text)
         self.assertIn("/datasets/current", text)
         self.assertIn("/patients/current", text)
         self.assertIn("/insights/current", text)
@@ -22,10 +23,11 @@ class TestMailDriveRefreshConfig(unittest.TestCase):
     def test_systemd_templates_exist(self) -> None:
         service = Path("deploy/gorf/healthdelta-mail-refresh.service").read_text(encoding="utf-8")
         timer = Path("deploy/gorf/healthdelta-mail-refresh.timer").read_text(encoding="utf-8")
-        self.assertIn("gdrive:HEALTH/Exports/export.zip", service)
+        self.assertIn("gdrive:HEALTH/Exports", service)
         self.assertIn("scripts/mail_drive_refresh.py", service)
         self.assertIn(".mail-refresh-python", service)
         self.assertIn("python3 -m pip install --target .mail-refresh-python", service)
+        self.assertIn("--exclude-member export_cda.xml", service)
         self.assertIn("OnUnitActiveSec=15m", timer)
 
 

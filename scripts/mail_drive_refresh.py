@@ -55,6 +55,12 @@ def quote_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
+def _parse_remote_modtime(value: object) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
 def run_cmd(cmd: list[str], *, cwd: Path | None = None) -> str:
     proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -64,20 +70,42 @@ def run_cmd(cmd: list[str], *, cwd: Path | None = None) -> str:
     return proc.stdout
 
 
+def select_latest_zip(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    candidates = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and isinstance(row.get("Name"), str)
+        and str(row.get("Name")).lower().endswith(".zip")
+        and not bool(row.get("IsDir"))
+    ]
+    if not candidates:
+        raise RuntimeError("rclone lsjson returned no ZIP candidates")
+    candidates.sort(
+        key=lambda row: (
+            _parse_remote_modtime(row.get("ModTime")),
+            int(row.get("Size") or 0),
+            str(row.get("Name") or ""),
+        )
+    )
+    return candidates[-1]
+
+
 def fetch_remote_metadata(source: str) -> dict[str, Any]:
     raw = run_cmd(["rclone", "lsjson", source, "--hash"])
     rows = json.loads(raw)
     if not isinstance(rows, list) or not rows:
         raise RuntimeError(f"rclone lsjson returned no rows for source {source}")
-    row = rows[0]
+    row = select_latest_zip(rows)
     if not isinstance(row, dict):
         raise RuntimeError(f"rclone lsjson returned malformed row for source {source}")
     return row
 
 
-def download_remote_export(source: str, destination: Path) -> None:
+def download_remote_export(source: str, remote_path: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    run_cmd(["rclone", "copyto", source, str(destination)])
+    source_spec = source.rstrip("/") + "/" + remote_path.lstrip("/")
+    run_cmd(["rclone", "copyto", source_spec, str(destination)])
 
 
 def verify_zip(path: Path) -> None:
@@ -87,6 +115,13 @@ def verify_zip(path: Path) -> None:
             raise RuntimeError(f"zip integrity failure in {path}: first bad member is {bad_member}")
 
 
+def _member_is_excluded(member_path: PurePosixPath, excluded_members: set[str]) -> bool:
+    normalized = member_path.as_posix()
+    if normalized in excluded_members:
+        return True
+    return member_path.name in excluded_members
+
+
 def extract_export_zip(export_zip: Path, destination: Path, *, excluded_members: list[str]) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     excluded = {PurePosixPath(name).as_posix() for name in excluded_members}
@@ -94,7 +129,7 @@ def extract_export_zip(export_zip: Path, destination: Path, *, excluded_members:
     with zipfile.ZipFile(export_zip, "r") as archive:
         for member in archive.infolist():
             rel = PurePosixPath(member.filename)
-            if rel.as_posix() in excluded:
+            if _member_is_excluded(rel, excluded):
                 continue
             target = (destination / Path(rel.as_posix())).resolve()
             if target != resolved_root and resolved_root not in target.parents:
@@ -232,7 +267,8 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
     bundle_root = build_root / "bundle"
     download_zip = download_dir / "export.zip"
 
-    download_remote_export(args.drive_source, download_zip)
+    remote_path = str(remote.get("Path") or remote.get("Name") or "export.zip")
+    download_remote_export(args.drive_source, remote_path, download_zip)
     verify_zip(download_zip)
     extract_export_zip(download_zip, derived_input_dir, excluded_members=list(args.exclude_member))
     run_root = run_healthdelta_build(
@@ -276,7 +312,7 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Refresh the mail baseline from a monitored Drive export.zip source.")
-    p.add_argument("--drive-source", required=True, help="rclone source for the watched export.zip, e.g. drive:HEALTH/Exports/export.zip")
+    p.add_argument("--drive-source", required=True, help="rclone source for the watched Drive folder, e.g. gdrive:HEALTH/Exports")
     p.add_argument("--work-root", required=True, help="Private working directory on GORF.")
     p.add_argument("--repo-root", default=".", help="HealthDelta repository root.")
     p.add_argument("--state-json", required=True, help="State file used to remember the last processed remote export.")
